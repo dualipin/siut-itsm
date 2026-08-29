@@ -1,23 +1,8 @@
 <script setup lang="ts">
 import ContactForm from '@/components/contact-form.vue'
+import { SyndicateConfig } from '@/types/syndicate';
 import { Sparkles, Phone, Mail, MapPin } from '@lucide/vue'
 
-interface SyndicateConfig {
-  name: string
-  acronym: string
-  email: string
-  phone: string
-  address: string
-  socialMedia: {
-    facebook: string
-    whatsapp: string
-  }
-  logo: {
-    src: string
-    alt: string
-  }
-  slogan: string
-}
 
 defineProps<{
   syndicate: SyndicateConfig
@@ -110,7 +95,7 @@ defineProps<{
           </div>
 
           <!-- Banner de atención presencial -->
-          <div class="p-6 rounded-3xl bg-gradient-to-r from-primary/10 via-base-200 to-secondary/10 border border-primary/20 text-center sm:text-left">
+          <div class="p-6 rounded-3xl bg-linear-to-r from-primary/10 via-base-200 to-secondary/10 border border-primary/20 text-center sm:text-left">
             <span class="text-xs uppercase font-bold tracking-widest text-primary block mb-1">
               Atención Presencial
             </span>
