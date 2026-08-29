@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
-use App\Models\Document;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -69,6 +68,13 @@ class TransparencyRecordFactory extends Factory
      */
     public function withDocuments(int $count = 3): static
     {
-        return $this->has(Document::factory()->count($count), 'documents');
+        return $this->afterCreating(function (TransparencyRecord $record) use ($count) {
+            for ($i = 0; $i < $count; $i++) {
+                $record->addMediaFromString('Contenido de prueba')
+                    ->setName(fake()->word())
+                    ->setFileName(fake()->word().'.pdf')
+                    ->toMediaCollection('documents');
+            }
+        });
     }
 }

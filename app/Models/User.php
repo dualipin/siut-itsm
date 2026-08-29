@@ -105,26 +105,6 @@ class User extends Authenticatable implements HasAvatar
     }
 
     /**
-     * Get the documents uploaded by the user.
-     *
-     * @return HasMany<Document, $this>
-     */
-    public function documents(): HasMany
-    {
-        return $this->hasMany(Document::class, 'uploaded_by');
-    }
-
-    /**
-     * Get the documents owned by the user.
-     *
-     * @return HasMany<Document, $this>
-     */
-    public function ownedDocuments(): HasMany
-    {
-        return $this->hasMany(Document::class, 'owner_id');
-    }
-
-    /**
      * Determine if the user has the admin role.
      */
     public function isAdmin(): bool

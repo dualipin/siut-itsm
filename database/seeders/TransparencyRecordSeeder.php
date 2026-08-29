@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
-use App\Models\Document;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -93,14 +92,19 @@ class TransparencyRecordSeeder extends Seeder
             ]);
 
             // Generar 1 a 3 documentos por registro
-            Document::factory()
-                ->count(fake()->numberBetween(1, 3))
-                ->create([
-                    'record_id' => $record->id,
-                    'owner_id' => $admin->id,
-                    'uploaded_by' => $admin->id,
-                    'is_public' => $record->status === TransparencyRecordStatus::Publicado,
-                ]);
+            $count = fake()->numberBetween(1, 3);
+            for ($i = 0; $i < $count; $i++) {
+                $extension = fake()->randomElement(['pdf', 'xlsx', 'docx']);
+                $record->addMediaFromString('Contenido de prueba')
+                    ->setName(fake()->words(3, true))
+                    ->setFileName(fake()->word().'.'.$extension)
+                    ->withCustomProperties([
+                        'owner_id' => $admin->id,
+                        'uploaded_by' => $admin->id,
+                        'is_public' => $record->status === TransparencyRecordStatus::Publicado,
+                    ])
+                    ->toMediaCollection('documents');
+            }
         }
 
         // Generar registros adicionales variados vía factory
