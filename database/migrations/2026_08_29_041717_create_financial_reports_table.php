@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('financial_reports', function (Blueprint $table) {
             $table->id();
             $table->year('year')->unique();
-            $table->string('status')->default('draft');
             $table->foreignId('created_by')->constrained('users');
             $table->timestamps();
         });
