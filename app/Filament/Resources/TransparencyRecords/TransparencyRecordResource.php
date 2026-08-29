@@ -6,6 +6,7 @@ use App\Filament\Resources\TransparencyRecords\Pages\CreateTransparencyRecord;
 use App\Filament\Resources\TransparencyRecords\Pages\EditTransparencyRecord;
 use App\Filament\Resources\TransparencyRecords\Pages\ListTransparencyRecords;
 use App\Filament\Resources\TransparencyRecords\Pages\ViewTransparencyRecord;
+use App\Filament\Resources\TransparencyRecords\RelationManagers\DocumentsRelationManager;
 use App\Filament\Resources\TransparencyRecords\Schemas\TransparencyRecordForm;
 use App\Filament\Resources\TransparencyRecords\Schemas\TransparencyRecordInfolist;
 use App\Filament\Resources\TransparencyRecords\Tables\TransparencyRecordsTable;
@@ -50,7 +51,7 @@ class TransparencyRecordResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            DocumentsRelationManager::class,
         ];
     }
 

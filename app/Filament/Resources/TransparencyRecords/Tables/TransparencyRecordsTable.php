@@ -19,20 +19,31 @@ class TransparencyRecordsTable
         return $table
             ->columns([
                 TextColumn::make('name')
+                    ->label('Nombre')
                     ->searchable(),
                 TextColumn::make('fiscal_year')
-                    ->numeric()
+                    ->label('Año Fiscal')
+                    ->numeric(thousandsSeparator: false)
                     ->sortable(),
                 TextColumn::make('period')
+                    ->label('Periodo')
                     ->searchable(),
                 TextColumn::make('type')
+                    ->label('Tipo')
                     ->badge()
                     ->searchable(),
                 TextColumn::make('status')
+                    ->label('Estado')
                     ->badge()
                     ->searchable(),
-                TextColumn::make('created_by')
-                    ->numeric()
+                TextColumn::make('documents_count')
+                    ->counts('documents')
+                    ->label('Documentos')
+                    ->badge()
+                    ->color('info')
+                    ->sortable(),
+                TextColumn::make('creator.name')
+                    ->label('Creado por')
                     ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()

@@ -10,6 +10,8 @@ class ViewTransparencyRecord extends ViewRecord
 {
     protected static string $resource = TransparencyRecordResource::class;
 
+    protected static ?string $title = 'Transparencia';
+
     protected function getHeaderActions(): array
     {
         return [

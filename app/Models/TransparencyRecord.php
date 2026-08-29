@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -54,6 +55,16 @@ class TransparencyRecord extends Model implements HasMedia
     }
 
     /**
+     * Get the documents associated with the record.
+     *
+     * @return HasMany<TransparencyDocument, $this>
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(TransparencyDocument::class, 'transparency_record_id');
+    }
+
+    /**
      * Scope a query to only include published records.
      *
      * @param  Builder<static>  $query
@@ -81,5 +92,14 @@ class TransparencyRecord extends Model implements HasMedia
     public function isPublished(): bool
     {
         return $this->status === TransparencyRecordStatus::Publicado;
+    }
+
+    /**
+     * Register media collections for the model.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('document')
+            ->singleFile();
     }
 }

@@ -12,30 +12,38 @@ class TransparencyRecordInfolist
     {
         return $schema
             ->components([
-                TextEntry::make('name'),
+                TextEntry::make('name')->label('Nombre'),
                 TextEntry::make('summary')
+                    ->label('Resumen')
                     ->placeholder('-')
                     ->columnSpanFull(),
                 TextEntry::make('fiscal_year')
-                    ->numeric(),
-                TextEntry::make('period'),
-                TextEntry::make('observations')
-                    ->placeholder('-')
-                    ->columnSpanFull(),
+                    ->label('Año Fiscal')
+                    ->numeric(thousandsSeparator: false),
+                TextEntry::make('period')->label('Periodo'),
                 TextEntry::make('type')
+                    ->label('Tipo')
                     ->badge(),
                 TextEntry::make('status')
+                    ->label('Estado')
                     ->badge(),
-                TextEntry::make('created_by')
-                    ->numeric()
+                TextEntry::make('observations')
+                    ->label('Observaciones')
+                    ->placeholder('Ninguna')
+                    ->columnSpanFull(),
+                TextEntry::make('creator.full_name')
+                    ->label('Creado por')
                     ->placeholder('-'),
                 TextEntry::make('created_at')
+                    ->label('Creado el')
                     ->dateTime()
                     ->placeholder('-'),
                 TextEntry::make('updated_at')
+                    ->label('Actualizado el')
                     ->dateTime()
                     ->placeholder('-'),
                 TextEntry::make('deleted_at')
+                    ->label('Eliminado el')
                     ->dateTime()
                     ->visible(fn (TransparencyRecord $record): bool => $record->trashed()),
             ]);
