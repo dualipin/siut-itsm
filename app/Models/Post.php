@@ -7,12 +7,14 @@ use Database\Factories\PostFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Post extends Model
+class Post extends Model implements HasMedia
 {
     /** @use HasFactory<PostFactory> */
-    use HasFactory;
+    use HasFactory, InteractsWithMedia;
 
     protected $fillable = [
         'author_id',
@@ -22,7 +24,6 @@ class Post extends Model
         'content',
         'thumbnail',
         'expires_at',
-        'post_attachments',
     ];
 
     protected $casts = [
@@ -39,18 +40,30 @@ class Post extends Model
     }
 
     /**
-     * Get the attachments for the post.
-     */
-    public function attachments(): HasMany
-    {
-        return $this->hasMany(PostAttachment::class, 'post_id');
-    }
-
-    /**
      * Determine if the post has expired.
      */
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    /**
+     * Register media collections for the post.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('thumbnail')
+            ->singleFile();
+
+        $this->addMediaCollection('attachments');
+    }
+
+    /**
+     * Get the thumbnail URL (from media library or fallback).
+     */
+    public function getThumbnailUrlAttribute(): string
+    {
+        return $this->getFirstMediaUrl('thumbnail')
+            ?: ($this->thumbnail ? Storage::url($this->thumbnail) : 'https://img.daisyui.com/images/stock/photo-1625726411847-8cbb60cc71e6.webp');
     }
 }

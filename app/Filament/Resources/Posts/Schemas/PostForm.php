@@ -4,11 +4,10 @@ namespace App\Filament\Resources\Posts\Schemas;
 
 use App\Enums\PostType;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
@@ -38,14 +37,12 @@ class PostForm
                 RichEditor::make('content')
                     ->required()
                     ->columnSpanFull(),
-                FileUpload::make('thumbnail')
+                SpatieMediaLibraryFileUpload::make('thumbnail')
                     ->label('Imagen destacada')
+                    ->collection('thumbnail')
                     ->image()
-                    ->disk('public')
-                    ->previewable(true)
+                    ->downloadable()
                     ->openable()
-                    ->directory('post-thumbnails')
-                    ->visibility('public')
                     ->required()
                     ->validationMessages([
                         'required' => 'La imagen destacada es obligatoria para guardar la publicación.',
@@ -54,20 +51,13 @@ class PostForm
                     ->label('Fecha de expiración')
                     ->minDate(now())
                     ->helperText('La publicación expirará después de esta fecha.'),
-                Repeater::make('attachments')
-                    ->relationship('attachments')
-                    ->schema([
-                        FileUpload::make('file_path')
-                            ->label('Archivo')
-                            ->disk('public')
-                            ->directory('post-attachments')
-                            ->visibility('public')
-                            ->storeFileNamesIn('file_name')
-                            ->openable()
-                            ->previewable(true)
-                            ->required(),
-                    ])
+                SpatieMediaLibraryFileUpload::make('attachments')
                     ->label('Archivos Adjuntos')
+                    ->collection('attachments')
+                    ->multiple()
+                    ->reorderable()
+                    ->downloadable()
+                    ->openable()
                     ->columnSpanFull(),
             ]);
     }

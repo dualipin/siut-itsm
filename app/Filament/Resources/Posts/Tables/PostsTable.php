@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Posts\Tables;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -14,14 +15,16 @@ class PostsTable
     {
         return $table
             ->columns([
-                TextColumn::make('author.name')
-                    ->label('Autor')
-                    ->searchable(),
-                TextColumn::make('type')
-                    ->label('Tipo')
-                    ->searchable(),
+                SpatieMediaLibraryImageColumn::make('thumbnail')
+                    ->label('Imagen')
+                    ->collection('thumbnail')
+                    ->circular(),
                 TextColumn::make('title')
                     ->label('Título')
+                    ->searchable()
+                    ->limit(35),
+                TextColumn::make('author.name')
+                    ->label('Autor')
                     ->searchable(),
                 TextColumn::make('expires_at')
                     ->label('Fecha de expiración')
