@@ -1,6 +1,7 @@
 <?php
 
-use App\Http\Middleware\HandleLandingInertiaRequests;
+use App\Http\Controllers\ContactController;
+use App\Http\Controllers\InquiryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -11,12 +12,18 @@ Route::get('/about', function () {
     return view('landing.about');
 })->name('about');
 
-// with landing inertia middleware
-Route::middleware(HandleLandingInertiaRequests::class)->group(function () {
+Route::get('/contact', function () {
+    return view('landing.contact', [
+        'syndicate' => config('syndicate'),
+    ]);
+})->name('contact');
 
-    Route::get('/contact', function () {
-        return inertia('landing/contact', [
-            'syndicate' => config('syndicate'),
-        ]);
-    })->name('contact');
-});
+Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
+
+Route::get('/dudas', [InquiryController::class, 'index'])->name('inquiries.index');
+Route::post('/dudas', [InquiryController::class, 'store'])->name('inquiries.store');
+Route::get('/dudas/{slug}', [InquiryController::class, 'show'])->name('inquiries.show');
+Route::get('/dudas/adjuntos/{media}', [InquiryController::class, 'downloadAttachment'])->name('inquiries.attachment.download');
+
+Route::redirect('/sindicato/transparencia/dudas', '/dudas');
+Route::redirect('/sindicato/transparencia/preguntas-frecuentes', '/dudas');

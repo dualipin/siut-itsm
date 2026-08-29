@@ -1,5 +1,9 @@
 @extends('base')
 
+@section('base-head')
+    @vite(['resources/js/island.ts'])
+@endsection
+
 @section('base-content')
     <div class="drawer drawer-end">
         <input id="landing-drawer" type="checkbox" class="drawer-toggle" />

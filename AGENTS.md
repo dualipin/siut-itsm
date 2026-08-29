@@ -196,4 +196,16 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 Vue components must have a single root element.
 - IMPORTANT: Activate `inertia-vue-development` when working with Inertia Vue client-side patterns.
 
+=== vue-islands rules ===
+
+# Vue Islands Architecture (Blade + Vue Islands)
+
+Public landing pages (`resources/views/landing/**`) are rendered as server-side Blade views for SEO and social media previews, mounting Vue components as interactive islands (`resources/js/island.ts`).
+
+- **CRITICAL**: Never use Inertia's `useForm()` or Inertia routing helpers (`router.visit`, `page.props`) in Vue components mounted inside Blade islands. They will fail with `TypeError: Cannot read properties of undefined (reading 'url')` because there is no Inertia root context.
+- **Form Composable**: Always use `useIslandForm` from `resources/js/composables/useIslandForm.ts` (`import { useIslandForm } from '@/composables/useIslandForm'`) for any form in a Vue island.
+- `useIslandForm` handles CSRF token extraction, Laravel 422 error mapping to `form.errors`, and reactive submission state (`form.processing`, `form.statusMessage`).
+- When creating a new island, mount it in Blade using: `<div data-vue="component-name" data-props="{{ json_encode([...]) }}"></div>`.
+
 </laravel-boost-guidelines>
+

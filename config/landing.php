@@ -64,7 +64,7 @@ return [
                         ],
                         [
                             'label' => '¿Tienes dudas?',
-                            'href' => '/sindicato/transparencia/dudas',
+                            'href' => '/dudas',
                         ],
                         [
                             'label' => 'Preguntas frecuentes',

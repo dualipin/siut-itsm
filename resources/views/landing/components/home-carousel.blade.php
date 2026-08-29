@@ -3,7 +3,7 @@
 @endphp
 
 @if ($slides && $slides->isNotEmpty())
-  <div class="carousel w-full">
+  <div class="carousel w-full h-full flex-1">
     @foreach ($slides as $index => $slide)
       <div id="slide{{ $index + 1 }}" class="carousel-item relative w-full {{ $index === 0 ? '' : 'hidden' }}">
         <img

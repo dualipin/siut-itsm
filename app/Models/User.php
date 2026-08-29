@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -115,6 +116,68 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     /**
+     * Get the contact replies authored by the user.
+     *
+     * @return HasMany<ContactReply, $this>
+     */
+    public function contactReplies(): HasMany
+    {
+        return $this->hasMany(ContactReply::class, 'user_id');
+    }
+
+    /**
+     * Get the conversations initiated by the user.
+     *
+     * @return HasMany<Conversation, $this>
+     */
+    public function conversationsCreated(): HasMany
+    {
+        return $this->hasMany(Conversation::class, 'created_by');
+    }
+
+    /**
+     * Get all conversations the user is participating in.
+     *
+     * @return BelongsToMany<Conversation, $this>
+     */
+    public function conversations(): BelongsToMany
+    {
+        return $this->belongsToMany(Conversation::class, 'conversation_participants')
+            ->withPivot(['last_read_at'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Get the messages sent by the user.
+     *
+     * @return HasMany<ConversationMessage, $this>
+     */
+    public function conversationMessages(): HasMany
+    {
+        return $this->hasMany(ConversationMessage::class, 'sender_id');
+    }
+
+    /**
+     * Get the inquiries submitted by the user.
+     *
+     * @return HasMany<Inquiry, $this>
+     */
+    public function inquiries(): HasMany
+    {
+        return $this->hasMany(Inquiry::class, 'user_id');
+    }
+
+    /**
+     * Get the inquiry answers authored by the user.
+     *
+     * @return HasMany<InquiryAnswer, $this>
+     */
+    public function inquiryAnswers(): HasMany
+    {
+        return $this->hasMany(InquiryAnswer::class, 'user_id');
+    }
+
+    /**
      * Determine if the user has the admin role.
      */
     public function isAdmin(): bool
@@ -136,5 +199,13 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     public function isAgremiado(): bool
     {
         return $this->role === UserRole::Agremiado;
+    }
+
+    /**
+     * Determine if the user has leader or admin role.
+     */
+    public function isLeaderOrAdmin(): bool
+    {
+        return $this->isAdmin() || $this->isLider();
     }
 }
