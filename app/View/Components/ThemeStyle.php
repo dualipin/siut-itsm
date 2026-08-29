@@ -16,8 +16,7 @@ class ThemeStyle extends Component
      */
     public function __construct()
     {
-        $this->theme = Theme::where('id', 1)->first();
-
+        $this->theme = Theme::where('id', 1)->first() ?? Theme::first();
     }
 
     /**
