@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "daisyui": {
+      "source": "saadeghi/daisyui",
+      "sourceType": "github",
+      "skillPath": "skills/daisyui/SKILL.md",
+      "computedHash": "c762724db0ab971c3dae08e3be1ecf049de461af431de28510066e7bda210581"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
+    "frontend-ui-engineering": {
+      "source": "addyosmani/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-ui-engineering/SKILL.md",
+      "computedHash": "cb4e981ecb5f701b451fc4e937a38049b49fd4523f213e06cffbd00b007060dc"
+    },
+    "tailwind-animations": {
+      "source": "midudev/tailwind-animations",
+      "sourceType": "github",
+      "skillPath": "skills/tailwind-animations/SKILL.md",
+      "computedHash": "7f0454b13779051b37193be5f0be833f1d90f68c7e54a0bd0ad03828ebe7a550"
+    }
+  }
+}

@@ -1,0 +1,64 @@
+@import url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css");
+@import 'tailwindcss';
+@import 'tailwind-animations';
+@plugin "daisyui";
+
+@source "../**/*.blade.php";
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-serif: 'Fraunces', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    --font-mono: 'JetBrains Mono', ui-monospace --font-display: 'Spline Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display: 'Spline Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@plugin "daisyui/theme" {
+    name: "siut";
+    default: true;
+    prefersdark: false;
+    color-scheme: "light";
+
+
+    --color-base-100: var(--siut-color-base-100);
+    --color-base-200: var(--siut-color-base-200);
+    --color-base-300: var(--siut-color-base-300);
+    --color-base-content: var(--siut-color-base-content);
+
+    --color-primary: var(--siut-color-primary);
+    --color-primary-content: var(--siut-color-primary-content);
+
+    --color-secondary: var(--siut-color-secondary);
+    --color-secondary-content: var(--siut-color-secondary-content);
+
+    --color-accent: var(--siut-color-accent);
+    --color-accent-content: var(--siut-color-accent-content);
+
+    --color-neutral: var(--siut-color-neutral);
+    --color-neutral-content: var(--siut-color-neutral-content);
+
+    --color-info: var(--siut-color-info);
+    --color-info-content: var(--siut-color-info-content);
+
+    --color-success: var(--siut-color-success);
+    --color-success-content: var(--siut-color-success-content);
+
+    --color-warning: var(--siut-color-warning);
+    --color-warning-content: var(--siut-color-warning-content);
+
+    --color-error: var(--siut-color-error);
+    --color-error-content: var(--siut-color-error-content);
+
+    --radius-selector: var(--siut-radius-selector);
+    --radius-field: var(--siut-radius-field);
+    --radius-box: var(--siut-radius-box);
+    --size-selector: var(--siut-size-selector);
+    --size-field: var(--siut-size-field);
+    --border: var(--siut-border-width);
+    --depth: 0;
+    --noise: 1;
+}

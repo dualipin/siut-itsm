@@ -1,0 +1,47 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/**/*.blade.php';
+@source '../../../../vendor/diogogpinto/filament-auth-ui-enhancer/resources/**/*.blade.php';
+
+
+.fi-sidebar {
+    @apply bg-primary-500!;
+
+    & .fi-logo {
+        @apply text-zinc-100!;
+    }
+}
+
+.fi-sidebar-item {
+    
+ & .fi-sidebar-item-label {
+        @apply text-zinc-100!;
+    }
+
+ & .fi-sidebar-item-icon {
+        @apply text-zinc-100!;
+    }
+}
+
+.fi-sidebar-item.fi-active {
+  
+  & .fi-sidebar-item-label {
+    @apply text-primary-500!;
+  }
+
+  & .fi-sidebar-item-icon {
+    @apply text-primary-500!;
+  }
+}
+
+.fi-sidebar-item:hover {
+  
+  & .fi-sidebar-item-label {
+    @apply text-primary-600!;
+  }
+
+  & .fi-sidebar-item-icon {
+    @apply text-primary-600!;
+  }
+}
