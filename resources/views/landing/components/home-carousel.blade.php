@@ -8,7 +8,7 @@
       <div id="slide{{ $index + 1 }}" class="carousel-item relative w-full {{ $index === 0 ? '' : 'hidden' }}">
         <img
           alt="{{ $slide->title }}"
-          src="{{ Storage::url($slide->thumbnail) ?? 'https://img.daisyui.com/images/stock/photo-1625726411847-8cbb60cc71e6.webp' }}"
+          src="{{ $slide->thumbnail_url }}"
           class="w-full h-100 object-cover" />
         
         <!-- Overlay with Title and Content -->
