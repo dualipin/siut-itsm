@@ -24,7 +24,7 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 use function asset;
 use function config;
 
-class AdminPanelProvider extends PanelProvider
+class PortalPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
@@ -38,7 +38,7 @@ class AdminPanelProvider extends PanelProvider
 
         return $panel
             ->default()
-            ->id('admin')
+            ->id('portal')
             ->path('portal')
             ->darkMode(false)
             ->viteTheme('resources/css/filament/admin/theme.css')

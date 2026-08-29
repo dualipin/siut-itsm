@@ -27,7 +27,7 @@
     </div>
 
     <div class="navbar-end gap-2">
-        <a href="{{ url('/auth/register') }}" class="btn btn-secondary hidden sm:flex gap-2 font-semibold">
+        <a href="{{ url('/portal/login') }}" class="btn btn-secondary hidden sm:flex gap-2 font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -37,7 +37,7 @@
             </svg>
             Registrarse
         </a>
-        <a href="{{ url('admin.login') }}" class="btn btn-soft gap-2 font-semibold">
+        <a href="{{ url('/portal/login') }}" class="btn btn-soft gap-2 font-semibold">
             Acceder
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
