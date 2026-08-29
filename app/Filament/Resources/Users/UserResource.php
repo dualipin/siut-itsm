@@ -30,6 +30,16 @@ class UserResource extends Resource
 
     protected static ?string $modelLabel = 'Usuario';
 
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->isAdmin() ?? false;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return static::canAccess();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return UserForm::configure($schema);

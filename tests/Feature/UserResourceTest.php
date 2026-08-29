@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
@@ -11,7 +12,13 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    Filament::setCurrentPanel(Filament::getPanel('portal'));
+
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $this->actingAs($admin);
 });
 
 test('password is required when creating a user', function () {
@@ -95,4 +102,14 @@ test('profile photo provides root relative url on edit to avoid cors infinite lo
     expect($uploadedFiles)->not->toBeEmpty();
     $fileData = array_values($uploadedFiles)[0];
     expect($fileData['url'])->toBe('/storage/profile-photos/sample.jpg');
+});
+
+test('non-admin user cannot access users resource', function () {
+    $agremiado = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $this->actingAs($agremiado);
+
+    $this->get('/portal/users')->assertForbidden();
 });

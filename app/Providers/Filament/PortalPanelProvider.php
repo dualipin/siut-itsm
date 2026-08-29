@@ -2,16 +2,19 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Profile;
 use App\Models\Theme;
 use DiogoGPinto\AuthUIEnhancer\AuthUIEnhancerPlugin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -43,6 +46,14 @@ class PortalPanelProvider extends PanelProvider
             ->darkMode(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->login()
+            ->profile(Profile::class, isSimple: false)
+            ->navigationItems([
+                NavigationItem::make('Mi Perfil')
+                    ->url(fn (): string => route('filament.portal.auth.profile'))
+                    ->icon(Heroicon::UserCircle)
+                    ->isActiveWhen(fn (): bool => request()->routeIs('filament.portal.auth.profile'))
+                    ->sort(100),
+            ])
             ->colors([
                 'primary' => $theme?->getVariants($theme?->color_primary) ?? Color::Red,
                 'success' => $theme?->color_success ?? Color::Emerald,

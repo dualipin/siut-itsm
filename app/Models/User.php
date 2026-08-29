@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -33,10 +35,18 @@ use Illuminate\Support\Facades\Storage;
     'password',
 ])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements HasAvatar
+class User extends Authenticatable implements FilamentUser, HasAvatar
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, SoftDeletes;
+
+    /**
+     * Determine if the user can access the given Filament panel.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return (bool) $this->is_active;
+    }
 
     /**
      * Get the attributes that should be cast.
