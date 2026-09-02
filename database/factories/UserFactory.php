@@ -33,7 +33,7 @@ class UserFactory extends Factory
             'is_active' => true,
             'curp' => strtoupper(fake()->unique()->bothify('????######??????##')),
             'birth_date' => fake()->dateTimeBetween('-60 years', '-18 years')->format('Y-m-d'),
-            'phone' => fake()->phoneNumber(),
+            'phone' => fake()->numerify('##########'),
             'address' => fake()->address(),
             'photo_path' => null,
             'category' => fake()->randomElement(['Docente', 'Administrativo', 'Técnico', 'Mantenimiento', 'Directivo']),

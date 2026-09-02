@@ -2,13 +2,17 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\DocumentStatus;
+use App\Enums\UserDocumentType;
 use App\Models\User;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -21,7 +25,10 @@ class Profile extends BaseEditProfile
 
     public function form(Schema $schema): Schema
     {
+        $user = $this->getUser();
+
         return $schema
+            ->model($user)
             ->components([
                 Section::make('Fotografía y Datos Personales')
                     ->description('Actualiza tu información personal, datos de contacto y compensación.')
@@ -95,7 +102,23 @@ class Profile extends BaseEditProfile
                                 TextEntry::make('status_display')
                                     ->label('Estado de Cuenta')
                                     ->state(fn (?Model $record): string => $record instanceof User ? ($record->is_active ? 'Activo' : 'Inactivo') : '-'),
+                                TextEntry::make('document_status_display')
+                                    ->label('Estatus de Validación de Documentos')
+                                    ->badge()
+                                    ->state(fn (?Model $record): string => $record instanceof User ? $record->getOverallDocumentStatus()->getLabel() : '-')
+                                    ->color(fn (?Model $record): string => $record instanceof User ? $record->getOverallDocumentStatus()->getColor() : 'gray'),
                             ]),
+                    ]),
+
+                Section::make('Documentos de Afiliación (PDF)')
+                    ->description('Sube y gestiona tus 5 documentos obligatorios en PDF. Estos documentos son revisados y validados por la administración.')
+                    ->icon(Heroicon::DocumentCheck)
+                    ->schema([
+                        $this->buildDocumentUploadField(UserDocumentType::Afiliacion, '1. Comprobante de Afiliación'),
+                        $this->buildDocumentUploadField(UserDocumentType::ComprobanteDomicilio, '2. Comprobante de Domicilio'),
+                        $this->buildDocumentUploadField(UserDocumentType::Ine, '3. INE / Identificación Oficial'),
+                        $this->buildDocumentUploadField(UserDocumentType::ComprobantePago, '4. Comprobante de Pago'),
+                        $this->buildDocumentUploadField(UserDocumentType::Curp, '5. CURP (Documento Oficial)'),
                     ]),
 
                 Section::make('Seguridad')
@@ -110,5 +133,111 @@ class Profile extends BaseEditProfile
                             ]),
                     ]),
             ]);
+    }
+
+    /**
+     * Build a standardized Spatie Media file upload component for an affiliation document.
+     */
+    protected function buildDocumentUploadField(UserDocumentType $type, string $label): SpatieMediaLibraryFileUpload
+    {
+        return SpatieMediaLibraryFileUpload::make($type->value)
+            ->label($label)
+            ->collection($type->value)
+            ->acceptedFileTypes(['application/pdf'])
+            ->maxSize(10240)
+            ->downloadable()
+            ->openable()
+            ->disabled(fn (?Model $record): bool => $record instanceof User && $record->getDocumentStatus($type) === DocumentStatus::Valid)
+            ->hint(function (?Model $record) use ($type): ?string {
+                if (! $record instanceof User) {
+                    return null;
+                }
+
+                $status = $record->getDocumentStatus($type);
+                if ($status === DocumentStatus::Valid) {
+                    return '✓ Validado y Aprobado';
+                }
+                if ($status === DocumentStatus::Invalid) {
+                    return '⚠ Inválido - Requiere corrección';
+                }
+                if ($status === DocumentStatus::Pending) {
+                    return '⏳ Pendiente de revisión';
+                }
+
+                return 'Pendiente de subir';
+            })
+            ->hintColor(function (?Model $record) use ($type): string {
+                if (! $record instanceof User) {
+                    return 'gray';
+                }
+
+                $status = $record->getDocumentStatus($type);
+                if ($status === DocumentStatus::Valid) {
+                    return 'success';
+                }
+                if ($status === DocumentStatus::Invalid) {
+                    return 'danger';
+                }
+                if ($status === DocumentStatus::Pending) {
+                    return 'warning';
+                }
+
+                return 'gray';
+            })
+            ->helperText(function (?Model $record) use ($type): ?string {
+                if (! $record instanceof User) {
+                    return null;
+                }
+
+                $status = $record->getDocumentStatus($type);
+                if ($status === DocumentStatus::Valid) {
+                    return 'Este documento ha sido validado satisfactoriamente por la administración. No requiere cambios.';
+                }
+                if ($status === DocumentStatus::Invalid) {
+                    $reason = $record->getDocumentRejectionReason($type);
+
+                    return 'Observación de la administración: "'.($reason ?: 'Documento no válido').'". Por favor selecciona un nuevo archivo en PDF para reemplazarlo.';
+                }
+                if ($status === DocumentStatus::Pending) {
+                    return 'Documento en proceso de revisión por parte de la administración.';
+                }
+
+                return 'Documento pendiente. Sube un archivo PDF válido.';
+            });
+    }
+
+    /**
+     * Handle updating user profile, saving media relationships, and resetting status on replaced files.
+     */
+    protected function handleRecordUpdate(Model $record, array $data): Model
+    {
+        $record = parent::handleRecordUpdate($record, $data);
+        $this->form->model($record)->saveRelationships();
+
+        // Check if any media was uploaded or replaced
+        $updatedAny = false;
+        foreach (UserDocumentType::cases() as $type) {
+            $media = $record->getFirstMedia($type->value);
+            if ($media) {
+                $status = $media->getCustomProperty('status');
+                // If it's freshly uploaded without status or was invalid and now replaced
+                if (! $status || $status === DocumentStatus::Invalid->value) {
+                    $media->setCustomProperty('status', DocumentStatus::Pending->value);
+                    $media->forgetCustomProperty('rejection_reason');
+                    $media->save();
+                    $updatedAny = true;
+                }
+            }
+        }
+
+        if ($updatedAny) {
+            Notification::make()
+                ->title('Documentación actualizada')
+                ->body('Tus documentos han sido actualizados y enviados a revisión por parte de la administración.')
+                ->info()
+                ->send();
+        }
+
+        return $record;
     }
 }

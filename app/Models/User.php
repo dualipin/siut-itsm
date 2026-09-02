@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\DocumentStatus;
+use App\Enums\UserDocumentType;
 use App\Enums\UserRole;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -17,6 +19,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 #[Fillable([
     'name',
@@ -36,10 +41,10 @@ use Illuminate\Support\Facades\Storage;
     'password',
 ])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements FilamentUser, HasAvatar
+class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, SoftDeletes;
+    use HasFactory, InteractsWithMedia, Notifiable, SoftDeletes;
 
     /**
      * Determine if the user can access the given Filament panel.
@@ -178,6 +183,16 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     /**
+     * Get the requests submitted by the user.
+     *
+     * @return HasMany<UserRequest, $this>
+     */
+    public function userRequests(): HasMany
+    {
+        return $this->hasMany(UserRequest::class, 'user_id');
+    }
+
+    /**
      * Determine if the user has the admin role.
      */
     public function isAdmin(): bool
@@ -203,9 +218,128 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
 
     /**
      * Determine if the user has leader or admin role.
+     * Both 'lider' and 'admin' share the same privilege level across the platform.
      */
     public function isLeaderOrAdmin(): bool
     {
         return $this->isAdmin() || $this->isLider();
+    }
+
+    /**
+     * Register Spatie media collections for affiliation documents.
+     */
+    public function registerMediaCollections(): void
+    {
+        foreach (UserDocumentType::cases() as $documentType) {
+            $this->addMediaCollection($documentType->value)
+                ->singleFile()
+                ->acceptsMimeTypes(['application/pdf', 'application/x-empty']);
+        }
+    }
+
+    /**
+     * Get the media record for a specific document type.
+     */
+    public function getDocumentMedia(UserDocumentType|string $type): ?Media
+    {
+        $collection = $type instanceof UserDocumentType ? $type->value : $type;
+
+        return $this->getFirstMedia($collection);
+    }
+
+    /**
+     * Get the status of a specific document type.
+     */
+    public function getDocumentStatus(UserDocumentType|string $type): DocumentStatus|string
+    {
+        $media = $this->getDocumentMedia($type);
+
+        if (! $media) {
+            return 'sin_subir';
+        }
+
+        $statusValue = $media->getCustomProperty('status', DocumentStatus::Pending->value);
+
+        return DocumentStatus::tryFrom($statusValue) ?? DocumentStatus::Pending;
+    }
+
+    /**
+     * Get the rejection reason / observations of a specific document.
+     */
+    public function getDocumentRejectionReason(UserDocumentType|string $type): ?string
+    {
+        $media = $this->getDocumentMedia($type);
+
+        return $media?->getCustomProperty('rejection_reason');
+    }
+
+    /**
+     * Check if all 5 required documents have been uploaded and validated.
+     */
+    public function areAllDocumentsValid(): bool
+    {
+        foreach (UserDocumentType::cases() as $type) {
+            $media = $this->getDocumentMedia($type);
+
+            if (! $media) {
+                return false;
+            }
+
+            if ($media->getCustomProperty('status') !== DocumentStatus::Valid->value) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the overall document status for this user.
+     * Returns DocumentStatus::Valid if all 5 documents are valid.
+     * Returns DocumentStatus::Invalid if any document is invalid.
+     * Returns DocumentStatus::Pending otherwise (pending review or missing documents).
+     */
+    public function getOverallDocumentStatus(): DocumentStatus
+    {
+        $hasInvalid = false;
+        $allValid = true;
+
+        foreach (UserDocumentType::cases() as $type) {
+            $media = $this->getDocumentMedia($type);
+
+            if (! $media) {
+                $allValid = false;
+
+                continue;
+            }
+
+            $status = $media->getCustomProperty('status', DocumentStatus::Pending->value);
+
+            if ($status === DocumentStatus::Invalid->value) {
+                $hasInvalid = true;
+            }
+
+            if ($status !== DocumentStatus::Valid->value) {
+                $allValid = false;
+            }
+        }
+
+        if ($hasInvalid) {
+            return DocumentStatus::Invalid;
+        }
+
+        if ($allValid) {
+            return DocumentStatus::Valid;
+        }
+
+        return DocumentStatus::Pending;
+    }
+
+    /**
+     * Determine if the user is considered valid based on all documents.
+     */
+    public function isDocumentValid(): bool
+    {
+        return $this->areAllDocumentsValid();
     }
 }

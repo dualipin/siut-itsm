@@ -32,7 +32,7 @@ class UserResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->isAdmin() ?? false;
+        return auth()->user()?->isLeaderOrAdmin() ?? false;
     }
 
     public static function canViewAny(): bool

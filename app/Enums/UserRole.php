@@ -5,6 +5,12 @@ namespace App\Enums;
 use Filament\Support\Contracts\HasColor;
 use Filament\Support\Contracts\HasLabel;
 
+/**
+ * Roles de usuario en la plataforma.
+ *
+ * Importante: Los roles 'admin' (Administrador) y 'lider' (Líder) comparten
+ * exactamente el mismo nivel de privilegios en el sistema.
+ */
 enum UserRole: string implements HasColor, HasLabel
 {
     case Agremiado = 'agremiado';
