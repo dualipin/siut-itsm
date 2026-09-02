@@ -145,6 +145,20 @@ const handleSubmit = async () => {
 ```
 
 
+
+## Roles y Privilegios
+
+La plataforma gestiona el acceso mediante tres roles definidos en el enum [`App\Enums\UserRole`](app/Enums/UserRole.php):
+
+| Rol | Identificador | Nivel de Privilegios | Descripción |
+| :--- | :--- | :--- | :--- |
+| **Administrador** | `admin` | **Total (Mismo nivel que Líder)** | Acceso administrativo completo al portal (`/portal`), gestión y administración general del sistema, atención de mensajes y dudas ciudadanas, y publicación de contenidos institucionales. |
+| **Líder** | `lider` | **Total (Mismo nivel que Administrador)** | **Posee exactamente el mismo nivel de privilegios que el Administrador**. Dispone de las mismas facultades y capacidades de gestión y operación administrativa dentro de la plataforma. |
+| **Agremiado** | `agremiado` | Estándar / Miembro | Acceso al portal para consultar su información personal y de perfil, enviar dudas o consultas y comunicarse mediante mensajería interna con líderes y administradores. |
+
+> [!NOTE]
+> **Equivalencia de Privilegios**: Tanto `admin` como `lider` tienen el mismo nivel de privilegios en el sistema. Para verificar permisos compartidos a nivel de modelo, políticas y controladores, se utiliza el método de conveniencia [`User::isLeaderOrAdmin()`](app/Models/User.php).
+
 ## Contributing
 
 Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).

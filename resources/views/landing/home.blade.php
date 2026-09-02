@@ -26,8 +26,8 @@
                 Transparencia
               </a>
               <a class="btn btn-outline btn-primary"
-                href="/cuentas/login.php?redirect=/portal/documentos/informe-financiero-2025.php">
-                Informe Financiero 2025
+                href="{{ route('financial-reports.index') }}">
+                Informes Financieros
               </a>
               <a class="btn btn-outline" href="/simulador.php">
                 Simulador de prestamo

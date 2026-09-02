@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\Register;
 use App\Filament\Pages\Profile;
 use App\Models\Theme;
 use DiogoGPinto\AuthUIEnhancer\AuthUIEnhancerPlugin;
@@ -46,6 +47,8 @@ class PortalPanelProvider extends PanelProvider
             ->darkMode(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->login()
+            ->registration(Register::class)
+            ->databaseNotifications()
             ->profile(Profile::class, isSimple: false)
             ->navigationItems([
                 NavigationItem::make('Mi Perfil')

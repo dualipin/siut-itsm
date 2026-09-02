@@ -127,10 +127,10 @@
         <div class="lg:col-span-5 lg:order-1 space-y-6">
           <div class="sticky top-24 space-y-6">
             <div
-              class="card bg-base-200 shadow-md p-4 overflow-hidden border border-base-content/10 animate-fade-in-up timeline-view animate-range-entry">
+              class="card bg-base-200 shadow-md overflow-hidden border border-base-content/10 animate-fade-in-up timeline-view animate-range-entry">
               <img
                 class="w-full h-auto rounded-xl object-cover shadow-sm hover:scale-[1.02] transition-transform duration-300"
-                src="/assets/images/about_2-min.jpg" alt="Imagen Sindicato OSTITSM">
+                src="{{ asset('assets/images/about_2-min.jpg') }}" alt="Imagen Sindicato OSTITSM">
 
               <div class="mt-4 text-center">
                 <div class="font-bold text-lg text-base-content">MIDS. Luiz Sosa Castro</div>
