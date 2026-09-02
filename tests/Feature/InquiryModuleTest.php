@@ -16,7 +16,7 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-test('guest can submit public inquiry', function () {
+test('guest can submit inquiry and defaults to private General', function () {
     $response = $this->post('/dudas', [
         'title' => '¿Cómo afiliarme al sindicato?',
         'body' => 'Soy de nuevo ingreso en el ITSM y quisiera conocer los requisitos.',
@@ -32,11 +32,12 @@ test('guest can submit public inquiry', function () {
         'title' => '¿Cómo afiliarme al sindicato?',
         'guest_name' => 'María Visitante',
         'guest_email' => 'maria@visitante.com',
-        'is_public' => true,
+        'category' => 'General',
+        'is_public' => false,
     ]);
 });
 
-test('logged in agremiado can submit private inquiry', function () {
+test('logged in agremiado can submit inquiry and defaults to private General', function () {
     $agremiado = User::factory()->create([
         'name' => 'Pedro',
         'role' => UserRole::Agremiado,
@@ -46,7 +47,7 @@ test('logged in agremiado can submit private inquiry', function () {
         'title' => 'Duda sobre deducciones en nómina',
         'body' => 'Tengo una discrepancia en mis deducciones de este mes.',
         'category' => 'Cuotas y Finanzas',
-        'is_public' => false,
+        'is_public' => true,
     ]);
 
     $response->assertSessionHas('success');
@@ -54,7 +55,30 @@ test('logged in agremiado can submit private inquiry', function () {
     $this->assertDatabaseHas('inquiries', [
         'user_id' => $agremiado->id,
         'title' => 'Duda sobre deducciones en nómina',
+        'category' => 'General',
         'is_public' => false,
+    ]);
+});
+
+test('admin can submit inquiry with custom category and public status', function () {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $response = $this->actingAs($admin)->post('/dudas', [
+        'title' => '¿Cómo solicitar la revisión de escalafón?',
+        'body' => 'Guía oficial para todos los agremiados.',
+        'category' => 'Escalafón',
+        'is_public' => true,
+    ]);
+
+    $response->assertSessionHas('success');
+
+    $this->assertDatabaseHas('inquiries', [
+        'user_id' => $admin->id,
+        'title' => '¿Cómo solicitar la revisión de escalafón?',
+        'category' => 'Escalafón',
+        'is_public' => true,
     ]);
 });
 

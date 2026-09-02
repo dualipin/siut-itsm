@@ -25,6 +25,7 @@
                          'name' => auth()->user()->full_name ?: auth()->user()->name,
                          'email' => auth()->user()->email,
                          'role' => auth()->user()->role?->getLabel() ?? '',
+                         'isAdmin' => auth()->user()->isLeaderOrAdmin(),
                      ] : null
                  ]) }}">
             </div>

@@ -115,7 +115,7 @@
                                             @endif
                                         </div>
                                         <p class="text-[11px] text-base-content/60 mb-0">
-                                            {{ $ans->user?->role?->getLabel() ?? 'Sindicato' }} &bull; {{ $ans->created_at->format('d/m/Y H:i') }}
+                                            {{ $ans->user?->category ?? 'Sindicato' }} &bull; {{ $ans->created_at->format('d/m/Y H:i') }}
                                         </p>
                                     </div>
                                 </div>

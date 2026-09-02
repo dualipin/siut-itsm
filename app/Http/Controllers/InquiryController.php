@@ -69,7 +69,7 @@ class InquiryController extends Controller
         $inquiry = Inquiry::where('slug', $slug)
             ->with([
                 'user:id,name,surnames,role',
-                'answers.user:id,name,surnames,role',
+                'answers.user:id,name,surnames,category,role',
                 'answers.media',
             ])
             ->firstOrFail();
@@ -96,13 +96,17 @@ class InquiryController extends Controller
     public function store(Request $request): JsonResponse|RedirectResponse
     {
         $user = $request->user();
+        $isAdmin = $user && $user->isLeaderOrAdmin();
 
         $rules = [
             'title' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string', 'max:5000'],
-            'category' => ['nullable', 'string', 'max:100'],
-            'is_public' => ['boolean'],
         ];
+
+        if ($isAdmin) {
+            $rules['category'] = ['nullable', 'string', 'max:100'];
+            $rules['is_public'] = ['boolean'];
+        }
 
         if (! $user) {
             $rules['guest_name'] = ['required', 'string', 'max:150'];
@@ -122,8 +126,8 @@ class InquiryController extends Controller
         $data = [
             'title' => $validated['title'],
             'body' => $validated['body'],
-            'category' => $validated['category'] ?? 'General',
-            'is_public' => $request->boolean('is_public', false),
+            'category' => $isAdmin ? ($validated['category'] ?? 'General') : 'General',
+            'is_public' => $isAdmin ? $request->boolean('is_public', false) : false,
             'status' => InquiryStatus::Pending,
         ];
 
@@ -138,7 +142,7 @@ class InquiryController extends Controller
 
         $flashMessage = $inquiry->is_public
             ? 'Tu duda ha sido publicada con éxito. El sindicato la atenderá a la brevedad.'
-            : 'Tu duda privada ha sido registrada. La atenderemos de forma confidencial.';
+            : 'Tu duda ha sido registrada y será atendida de forma confidencial por el sindicato.';
 
         if ($request->wantsJson()) {
             return response()->json([
