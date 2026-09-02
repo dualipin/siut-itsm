@@ -59,11 +59,52 @@ class Post extends Model implements HasMedia
     }
 
     /**
-     * Get the thumbnail URL (from media library or fallback).
+     * Scope a query to only include active (non-expired) posts.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('expires_at')
+                ->orWhere('expires_at', '>=', now()->toDateString());
+        });
+    }
+
+    /**
+     * Get the thumbnail URL (from media library, external URL, or local storage fallback).
      */
     public function getThumbnailUrlAttribute(): string
     {
-        return $this->getFirstMediaUrl('thumbnail')
-            ?: ($this->thumbnail ? Storage::url($this->thumbnail) : 'https://img.daisyui.com/images/stock/photo-1625726411847-8cbb60cc71e6.webp');
+        $mediaUrl = $this->getFirstMediaUrl('thumbnail');
+        if ($mediaUrl) {
+            return $mediaUrl;
+        }
+
+        if ($this->thumbnail) {
+            if (str_starts_with($this->thumbnail, 'http://') || str_starts_with($this->thumbnail, 'https://')) {
+                return $this->thumbnail;
+            }
+
+            return Storage::url($this->thumbnail);
+        }
+
+        return 'https://img.daisyui.com/images/stock/photo-1625726411847-8cbb60cc71e6.webp';
+    }
+
+    /**
+     * Get estimated reading time in minutes based on content word count.
+     */
+    public function getReadingTimeAttribute(): int
+    {
+        $wordCount = str_word_count(strip_tags($this->content ?? ''));
+
+        return max(1, (int) ceil($wordCount / 200));
+    }
+
+    /**
+     * Get the slug for this post's type.
+     */
+    public function getTypeSlugAttribute(): string
+    {
+        return $this->type?->getSlug() ?? 'publicaciones';
     }
 }
