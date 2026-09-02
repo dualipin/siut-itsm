@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
+use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -95,15 +96,20 @@ class TransparencyRecordSeeder extends Seeder
             $count = fake()->numberBetween(1, 3);
             for ($i = 0; $i < $count; $i++) {
                 $extension = fake()->randomElement(['pdf', 'xlsx', 'docx']);
-                $record->addMediaFromString('Contenido de prueba')
-                    ->setName(fake()->words(3, true))
+                $docName = fake()->words(3, true);
+
+                $document = TransparencyDocument::query()->create([
+                    'transparency_record_id' => $record->id,
+                    'name' => $docName,
+                    'published_at' => now()->subDays(fake()->numberBetween(1, 30)),
+                    'is_public' => $record->status === TransparencyRecordStatus::Publicado,
+                    'uploaded_by' => $admin->id,
+                ]);
+
+                $document->addMediaFromString('Contenido de prueba')
+                    ->setName($docName)
                     ->setFileName(fake()->word().'.'.$extension)
-                    ->withCustomProperties([
-                        'owner_id' => $admin->id,
-                        'uploaded_by' => $admin->id,
-                        'is_public' => $record->status === TransparencyRecordStatus::Publicado,
-                    ])
-                    ->toMediaCollection('documents');
+                    ->toMediaCollection('file');
             }
         }
 
