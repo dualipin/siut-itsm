@@ -17,7 +17,7 @@ class PublicTransparencyController extends Controller
      */
     public function index(Request $request, string $type): View
     {
-        $typeEnum = TransparencyRecordType::tryFrom(strtolower(trim($type)));
+        $typeEnum = TransparencyRecordType::fromSlug($type);
 
         if ($typeEnum === null) {
             abort(404, 'Tipo de registro de transparencia no encontrado.');

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TransparencyRecordType;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\InquiryController;
@@ -43,7 +44,7 @@ Route::redirect('sindicato/transparencia/normativos', '/transparencia/normativos
 
 // Registros de Transparencia por Tipo
 Route::get('/transparencia/{type}', [PublicTransparencyController::class, 'index'])
-    ->whereIn('type', ['financiero', 'normativo', 'convenio', 'acta', 'otro'])
+    ->whereIn('type', collect(TransparencyRecordType::cases())->flatMap(fn ($type) => [strtolower($type->value), $type->value])->all())
     ->name('transparency.type');
 
 Route::get('/transparencia/documentos/{document}/descargar', [PublicTransparencyController::class, 'download'])
@@ -66,9 +67,12 @@ Route::get('/publicaciones/{type}', [PublicationController::class, 'type'])->nam
 Route::get('/publicaciones/{type}/{slug}', [PublicationController::class, 'show'])->name('publications.show');
 
 // Legacy redirects
+Route::redirect('/transparencia/acta', '/transparencia/minutas');
+Route::redirect('/transparencia/convenio', '/transparencia/legal');
+Route::redirect('/transparencia/normativo', '/transparencia/normativos');
 Route::redirect('/sindicato/recursos/formatos', '/publicaciones/formatos');
 Route::redirect('/sindicato/recursos/biblioteca', '/publicaciones/acervo');
-Route::redirect('/sindicato/repositorios/gestoria', '/publicaciones/gestiones');
-Route::redirect('/sindicato/repositorios/gremiales', '/publicaciones/noticias');
-Route::redirect('/sindicato/repositorios/tramites', '/publicaciones/formatos');
-Route::redirect('/sindicato/repositorios/minutas', '/transparencia/acta');
+Route::redirect('/sindicato/repositorios/gestoria', '/transparencia/gestoria');
+Route::redirect('/sindicato/repositorios/gremiales', '/transparencia/gremiales');
+Route::redirect('/sindicato/repositorios/tramites', '/transparencia/tramites');
+Route::redirect('/sindicato/repositorios/minutas', '/transparencia/minutas');

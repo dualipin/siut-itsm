@@ -65,58 +65,44 @@ return [
                     'label' => 'Transparencia',
                     'items' => [
                         [
-                            'label' => 'Informes Financieros',
+                            'label' => 'Financiero',
                             'href' => '/transparencia/financiero',
                         ],
                         [
-                            'label' => 'Normativos',
-                            'href' => '/transparencia/normativo',
+                            'label' => 'Administrativo',
+                            'href' => '/transparencia/administrativo',
                         ],
                         [
-                            'label' => 'Convenios y Contratos',
-                            'href' => '/transparencia/convenio',
+                            'label' => 'Legal',
+                            'href' => '/transparencia/legal',
                         ],
                         [
-                            'label' => 'Actas y Minutas',
-                            'href' => '/transparencia/acta',
+                            'label' => 'Sindical',
+                            'href' => '/transparencia/sindical',
+                        ],
+                        [
+                            'label' => 'Gestoría',
+                            'href' => '/transparencia/gestoria',
+                        ],
+                        [
+                            'label' => 'Gremiales',
+                            'href' => '/transparencia/gremiales',
+                        ],
+                        [
+                            'label' => 'Trámites',
+                            'href' => '/transparencia/tramites',
+                        ],
+                        [
+                            'label' => 'Minutas',
+                            'href' => '/transparencia/minutas',
                         ],
                         [
                             'label' => 'Otros',
                             'href' => '/transparencia/otro',
                         ],
                         [
-                            'label' => 'Repositorios',
-                            'items' => [
-                                [
-                                    'label' => 'Gestoria',
-                                    'href' => '/publicaciones/gestiones',
-                                ],
-                                [
-                                    'label' => 'Gremiales',
-                                    'href' => '/publicaciones/noticias',
-                                ],
-                                [
-                                    'label' => 'Tramites',
-                                    'href' => '/publicaciones/formatos',
-                                ],
-                                [
-                                    'label' => 'Minutas',
-                                    'href' => '/transparencia/acta',
-                                ],
-                            ],
-                        ],
-                        [
-                            'label' => 'Recursos',
-                            'items' => [
-                                [
-                                    'label' => 'Formatos',
-                                    'href' => '/publicaciones/formatos',
-                                ],
-                                [
-                                    'label' => 'Acervo y Biblioteca',
-                                    'href' => '/publicaciones/acervo',
-                                ],
-                            ],
+                            'label' => 'Portales Oficiales',
+                            'href' => '/transparencia/normativos',
                         ],
                         [
                             'label' => '¿Tienes dudas?',

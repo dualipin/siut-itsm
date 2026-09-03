@@ -15,33 +15,14 @@
                     {{ $type->getLabel() }}
                 </h1>
                 <p class="text-base-content/70 text-sm sm:text-base leading-relaxed">
-                    @if($type->value === 'financiero')
-                        Consulta los balances contables, presupuestos de operación anuales y dictámenes de egresos del sindicato.
-                    @elseif($type->value === 'normativo')
-                        Consulta los reglamentos internos, estatutos vigentes y normas que rigen el funcionamiento del sindicato.
-                    @elseif($type->value === 'convenio')
-                        Consulta los convenios de colaboración, contratos colectivos de trabajo y revisiones salariales con validez jurídica.
-                    @elseif($type->value === 'acta')
-                        Consulta las actas oficiales, minutas y resoluciones emanadas de nuestras asambleas generales ordinarias y extraordinarias.
-                    @else
-                        Consulta otros documentos informativos, archivos históricos y de transparencia general de la organización.
-                    @endif
+                    {{ $type->getDescription() }}
                 </p>
             </div>
             
             <!-- Icono decorativo según el tipo -->
             <div class="hidden md:block shrink-0 animate-bounce animate-iteration-count-infinite animate-duration-[5s]">
                 <div class="p-6 bg-primary/5 rounded-3xl border border-primary/10">
-                    @php
-                        $iconClass = match ($type->value) {
-                            'financiero' => 'bi-cash-coin',
-                            'normativo' => 'bi-journal-bookmark',
-                            'convenio' => 'bi-file-earmark-handshake',
-                            'acta' => 'bi-file-earmark-check',
-                            default => 'bi-folder2-open',
-                        };
-                    @endphp
-                    <i class="bi {{ $iconClass }} text-primary/30" style="font-size: 4.5rem; line-height: 1;"></i>
+                    <i class="bi {{ $type->getIcon() }} text-primary/30" style="font-size: 4.5rem; line-height: 1;"></i>
                 </div>
             </div>
         </div>

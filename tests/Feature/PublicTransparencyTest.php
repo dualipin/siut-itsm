@@ -16,7 +16,7 @@ test('guest can visit the public transparency type page and see records', functi
 
     $publishedRecord = TransparencyRecord::factory()->create([
         'name' => 'Reporte Financiero Publico 2025',
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Publicado,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -25,7 +25,7 @@ test('guest can visit the public transparency type page and see records', functi
 
     $draftRecord = TransparencyRecord::factory()->create([
         'name' => 'Borrador Financiero Oculto 2025',
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Borrador,
         'fiscal_year' => 2025,
         'period' => '2do Trimestre',
@@ -54,7 +54,7 @@ test('guest can download public document of public record', function () {
     $author = User::factory()->create();
 
     $record = TransparencyRecord::factory()->create([
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Publicado,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -84,7 +84,7 @@ test('guest cannot download private document of public record', function () {
     $author = User::factory()->create();
 
     $record = TransparencyRecord::factory()->create([
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Publicado,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -113,7 +113,7 @@ test('guest cannot download document of non-published record', function () {
     $author = User::factory()->create();
 
     $record = TransparencyRecord::factory()->create([
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Borrador,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -144,7 +144,7 @@ test('public page does not render download link for private documents or non-pub
     // 1. Published record with one public and one private document
     $publicRecord = TransparencyRecord::factory()->create([
         'name' => 'Record Publico',
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Publicado,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -178,7 +178,7 @@ test('public page does not render download link for private documents or non-pub
     // 2. Draft record with a public document
     $draftRecord = TransparencyRecord::factory()->create([
         'name' => 'Record Borrador',
-        'type' => TransparencyRecordType::Financiero,
+        'type' => TransparencyRecordType::FINANCIERO,
         'status' => TransparencyRecordStatus::Borrador,
         'fiscal_year' => 2025,
         'period' => '1er Trimestre',
@@ -221,14 +221,35 @@ test('public page does not render download link for private documents or non-pub
 
 test('legacy repositorios urls redirect to correct public pages', function () {
     $this->get('/sindicato/repositorios/gestoria')
-        ->assertRedirect('/publicaciones/gestiones');
+        ->assertRedirect('/transparencia/gestoria');
 
     $this->get('/sindicato/repositorios/gremiales')
-        ->assertRedirect('/publicaciones/noticias');
+        ->assertRedirect('/transparencia/gremiales');
 
     $this->get('/sindicato/repositorios/tramites')
-        ->assertRedirect('/publicaciones/formatos');
+        ->assertRedirect('/transparencia/tramites');
 
     $this->get('/sindicato/repositorios/minutas')
-        ->assertRedirect('/transparencia/acta');
+        ->assertRedirect('/transparencia/minutas');
 });
+
+test('legacy transparency type urls redirect to new routes', function () {
+    $this->get('/transparencia/acta')
+        ->assertRedirect('/transparencia/minutas');
+
+    $this->get('/transparencia/convenio')
+        ->assertRedirect('/transparencia/legal');
+
+    $this->get('/transparencia/normativo')
+        ->assertRedirect('/transparencia/normativos');
+});
+
+test('guest can visit all new transparency types in both lower and upper case', function (TransparencyRecordType $type) {
+    $responseLower = $this->get('/transparencia/'.strtolower($type->value));
+    $responseLower->assertSuccessful();
+    $responseLower->assertSee($type->getLabel());
+
+    $responseUpper = $this->get('/transparencia/'.$type->value);
+    $responseUpper->assertSuccessful();
+    $responseUpper->assertSee($type->getLabel());
+})->with(TransparencyRecordType::cases());
