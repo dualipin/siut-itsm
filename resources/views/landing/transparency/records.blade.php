@@ -7,11 +7,7 @@
         <!-- Hero / Encabezado de la Sección -->
         <div class="flex flex-col md:flex-row items-center justify-between gap-8 mb-12 animate-fade-in-down">
             <div class="max-w-2xl text-center md:text-left space-y-3">
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary mb-1">
-                    <i class="bi bi-shield-check text-xs"></i>
-                    Transparencia Pública
-                </span>
-                <h1 class="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-base-content">
+                <h1 class="text-3xl sm:text-4xl font-display md:text-5xl font-black tracking-tight text-base-content">
                     {{ $type->getLabel() }}
                 </h1>
                 <p class="text-base-content/70 text-sm sm:text-base leading-relaxed">
@@ -20,7 +16,7 @@
             </div>
             
             <!-- Icono decorativo según el tipo -->
-            <div class="hidden md:block shrink-0 animate-bounce animate-iteration-count-infinite animate-duration-[5s]">
+            <div class="hidden md:block shrink-0 animate-fade-in-up">
                 <div class="p-6 bg-primary/5 rounded-3xl border border-primary/10">
                     <i class="bi {{ $type->getIcon() }} text-primary/30" style="font-size: 4.5rem; line-height: 1;"></i>
                 </div>
@@ -31,7 +27,7 @@
         <div class="alert bg-base-200 border-base-300 rounded-2xl mb-8 flex items-start gap-3 shadow-xs animate-fade-in-up">
             <i class="bi bi-info-circle text-primary text-lg mt-0.5 shrink-0"></i>
             <div class="text-xs sm:text-sm leading-relaxed text-base-content/80">
-                <strong>Nota de Acceso:</strong> En cumplimiento de nuestras políticas de transparencia, listamos la totalidad de los registros organizacionales en esta categoría. No obstante, el acceso y descarga directa de los archivos adjuntos queda estrictamente limitado a aquellos registros que hayan sido formalmente autorizados y declarados como <strong>Publicados</strong>.
+               En cumplimiento de nuestras políticas de transparencia, listamos la totalidad de los registros organizacionales en esta categoría. No obstante, el acceso y descarga directa de los archivos adjuntos queda estrictamente limitado a aquellos registros que hayan sido formalmente autorizados y declarados como <strong>Publicados</strong>.
             </div>
         </div>
 

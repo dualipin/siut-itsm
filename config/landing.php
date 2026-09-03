@@ -62,7 +62,7 @@ return [
                     'href' => '/sindicato/simulador-prestamos',
                 ],
                 [
-                    'label' => 'Transparencia',
+                    'label' => 'Repositorios',
                     'items' => [
                         [
                             'label' => 'Financiero',
@@ -100,19 +100,20 @@ return [
                             'label' => 'Otros',
                             'href' => '/transparencia/otro',
                         ],
-                        [
-                            'label' => 'Portales Oficiales',
-                            'href' => '/transparencia/normativos',
-                        ],
-                        [
-                            'label' => '¿Tienes dudas?',
-                            'href' => '/dudas',
-                        ],
-                        [
-                            'label' => 'Preguntas frecuentes',
-                            'href' => '/sindicato/transparencia/preguntas-frecuentes',
-                        ],
                     ],
+                ],
+                [
+                    'label' => '¿Tienes dudas?',
+                    'href' => '/dudas',
+                ],
+                [
+                    'label' => 'Preguntas frecuentes',
+                    'href' => '/sindicato/transparencia/preguntas-frecuentes',
+                ],
+
+                [
+                    'label' => 'Normativos',
+                    'href' => '/transparencia/normativos',
                 ],
             ],
         ],
