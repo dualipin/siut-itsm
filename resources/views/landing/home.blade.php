@@ -1,5 +1,9 @@
 @extends('landing.layout')
+
+
 @section('content')
+  <x-landing-home-birthday />
+
   <section class="py-12 md:py-24">
     <div class="container mx-auto px-4 max-w-7xl pt-10">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -25,8 +29,7 @@
               <a class="btn btn-outline btn-primary" href="{{ route('transparency.normatives') }}">
                 Transparencia
               </a>
-              <a class="btn btn-outline btn-primary"
-                href="{{ route('financial-reports.index') }}">
+              <a class="btn btn-outline btn-primary" href="{{ route('financial-reports.index') }}">
                 Informes Financieros
               </a>
               <a class="btn btn-outline" href="">

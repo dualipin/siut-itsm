@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
@@ -185,10 +186,19 @@ class Profile extends BaseEditProfile
         return SpatieMediaLibraryFileUpload::make($type->value)
             ->label($label)
             ->collection($type->value)
+            ->visibility('private')
             ->acceptedFileTypes(['application/pdf'])
             ->maxSize(10240)
             ->downloadable()
             ->openable()
+            ->hintAction(
+                Action::make('open_'.$type->value)
+                    ->label('Abrir PDF')
+                    ->icon(Heroicon::ArrowTopRightOnSquare)
+                    ->visible(fn (?Model $record): bool => $record instanceof User && $record->getDocumentMedia($type) !== null)
+                    ->url(fn (?Model $record): ?string => $record instanceof User ? route('portal.users.documents.show', ['user' => $record, 'type' => $type->value]) : null)
+                    ->openUrlInNewTab()
+            )
             ->disabled(fn (?Model $record): bool => $record instanceof User && $record->getDocumentStatus($type) === DocumentStatus::Valid)
             ->hint(function (?Model $record) use ($type): ?string {
                 if (! $record instanceof User) {

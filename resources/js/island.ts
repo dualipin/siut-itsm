@@ -207,4 +207,5 @@ if (typeof document !== "undefined") {
 
     // Exponer hook para navegaciones dinámicas (Livewire, Turbo, AJAX)
     window.addEventListener("vue-islands:mount", () => mountIslands());
+    document.addEventListener("livewire:navigated", () => mountIslands());
 }

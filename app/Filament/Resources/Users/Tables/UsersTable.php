@@ -127,13 +127,23 @@ class UsersTable
                         $components = [];
                         foreach (UserDocumentType::cases() as $type) {
                             $media = $record->getDocumentMedia($type);
+                            $documentUrl = route('portal.users.documents.show', [
+                                'user' => $record,
+                                'type' => $type->value,
+                            ]);
                             $fileInfo = $media
                                 ? new HtmlString(
-                                    '<div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-200">'.
-                                    '<div><span class="font-medium text-gray-900">'.e($media->file_name).'</span> <span class="text-xs text-gray-500">('.number_format($media->size / 1024, 1).' KB)</span></div>'.
-                                    '<a href="'.e($media->getUrl()).'" target="_blank" class="inline-flex items-center gap-1 text-sm font-semibold text-primary-600 hover:text-primary-700 underline">'.
+                                    '<div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">'.
+                                    '<div><span class="font-medium text-gray-900 dark:text-white">'.e($media->file_name).'</span> <span class="text-xs text-gray-500">('.number_format($media->size / 1024, 1).' KB)</span></div>'.
+                                    '<div class="flex items-center gap-3">'.
+                                    '<a href="'.e($documentUrl).'" target="_blank" class="inline-flex items-center gap-1 text-sm font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400 underline">'.
                                     '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg> Abrir PDF'.
-                                    '</a></div>'
+                                    '</a>'.
+                                    '<a href="'.e($documentUrl).'?download=1" class="inline-flex items-center gap-1 text-sm font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">'.
+                                    '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Descargar'.
+                                    '</a>'.
+                                    '</div>'.
+                                    '</div>'
                                 )
                                 : new HtmlString('<p class="text-sm italic text-gray-500">El usuario aún no ha subido este documento.</p>');
 

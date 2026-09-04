@@ -232,6 +232,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
     {
         foreach (UserDocumentType::cases() as $documentType) {
             $this->addMediaCollection($documentType->value)
+                ->useDisk('local')
                 ->singleFile()
                 ->acceptsMimeTypes(['application/pdf', 'application/x-empty']);
         }

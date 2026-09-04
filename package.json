@@ -8,6 +8,7 @@
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.3.3",
+        "@types/canvas-confetti": "^1.9.0",
         "concurrently": "^10.0.3",
         "daisyui": "^5.7.22",
         "laravel-vite-plugin": "^3.1",
@@ -23,7 +24,11 @@
         "@inertiajs/vue3": "^3.7.0",
         "@lucide/vue": "^1.35.0",
         "@vitejs/plugin-vue": "^6.0.8",
+        "canvas-confetti": "^1.9.4",
         "gsap": "^3.15.0",
+        "lucide": "^1.41.0",
+        "morphicons": "^1.7.1",
+        "qr-code-styling": "^1.9.2",
         "tailwind-animations": "^1.0.2",
         "vue": "^3.5.42"
     }

@@ -285,3 +285,59 @@ test('valid document field is disabled for agremiado in profile', function () {
 
     expect($field->isDisabled())->toBeTrue();
 });
+
+test('admin can view agremiado document via portal.users.documents.show', function () {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $agremiado->addMedia(createFakePdf('ine.pdf'))
+        ->toMediaCollection('ine');
+
+    $response = $this->actingAs($admin)
+        ->get(route('portal.users.documents.show', ['user' => $agremiado, 'type' => 'ine']));
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toBe('application/pdf');
+});
+
+test('leader can view agremiado document via portal.users.documents.show', function () {
+    $lider = User::factory()->create(['role' => UserRole::Lider]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $agremiado->addMedia(createFakePdf('curp.pdf'))
+        ->toMediaCollection('curp');
+
+    $response = $this->actingAs($lider)
+        ->get(route('portal.users.documents.show', ['user' => $agremiado, 'type' => 'curp']));
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toBe('application/pdf');
+});
+
+test('agremiado can view their own document but not another agremiado document', function () {
+    $agremiado1 = User::factory()->create(['role' => UserRole::Agremiado]);
+    $agremiado2 = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $agremiado1->addMedia(createFakePdf('afiliacion.pdf'))
+        ->toMediaCollection('afiliacion');
+
+    // Own document -> 200 OK
+    $response = $this->actingAs($agremiado1)
+        ->get(route('portal.users.documents.show', ['user' => $agremiado1, 'type' => 'afiliacion']));
+    $response->assertOk();
+
+    // Another user's document -> 403 Forbidden
+    $forbiddenResponse = $this->actingAs($agremiado2)
+        ->get(route('portal.users.documents.show', ['user' => $agremiado1, 'type' => 'afiliacion']));
+    $forbiddenResponse->assertForbidden();
+});
+
+test('guest cannot access document route and is redirected to login', function () {
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $agremiado->addMedia(createFakePdf('afiliacion.pdf'))
+        ->toMediaCollection('afiliacion');
+
+    $response = $this->get(route('portal.users.documents.show', ['user' => $agremiado, 'type' => 'afiliacion']));
+    $response->assertRedirect('/portal/login');
+});

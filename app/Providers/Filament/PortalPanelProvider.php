@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Register;
 use App\Filament\Pages\Profile;
+use App\Filament\Widgets\QrGeneratorWidget;
 use App\Models\Theme;
 use DiogoGPinto\AuthUIEnhancer\AuthUIEnhancerPlugin;
 use Filament\Http\Middleware\Authenticate;
@@ -78,7 +79,7 @@ class PortalPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,
-                FilamentInfoWidget::class,
+                QrGeneratorWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

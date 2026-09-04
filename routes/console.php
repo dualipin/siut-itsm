@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('queue:work --stop-when-empty --max-time=50')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('birthday:send-greetings')
+    ->dailyAt('08:00')
+    ->withoutOverlapping();
