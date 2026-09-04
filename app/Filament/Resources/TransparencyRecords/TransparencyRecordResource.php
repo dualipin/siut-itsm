@@ -18,6 +18,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class TransparencyRecordResource extends Resource
 {
@@ -25,13 +26,15 @@ class TransparencyRecordResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::DocumentText;
 
+    protected static UnitEnum|string|null $navigationGroup = 'Transparencia y Finanzas';
+
     protected static ?string $breadcrumb = 'Transparencia';
 
     protected static ?string $navigationLabel = 'Transparencia';
 
-    protected static ?string $pluralLabel = 'Transparencia';
+    protected static ?string $pluralModelLabel = 'registros de transparencia';
 
-    protected static ?string $modelLabel = 'Transparencia';
+    protected static ?string $modelLabel = 'Registro de Transparencia';
 
     public static function form(Schema $schema): Schema
     {

@@ -10,6 +10,8 @@ class ListFinancialReports extends ListRecords
 {
     protected static string $resource = FinancialReportResource::class;
 
+    protected static ?string $title = 'Reportes Financieros';
+
     protected function getHeaderActions(): array
     {
         return [

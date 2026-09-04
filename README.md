@@ -159,6 +159,25 @@ La plataforma gestiona el acceso mediante tres roles definidos en el enum [`App\
 > [!NOTE]
 > **Equivalencia de Privilegios**: Tanto `admin` como `lider` tienen el mismo nivel de privilegios en el sistema. Para verificar permisos compartidos a nivel de modelo, políticas y controladores, se utiliza el método de conveniencia [`User::isLeaderOrAdmin()`](app/Models/User.php).
 
+## Panel Administrativo Filament (Localización y Convenciones en Español)
+
+Todo el panel administrativo (`/portal`) está estandarizado en español para campos, tablas, formularios, títulos, navegación y mensajes de validación.
+
+### Grupos de Navegación en la Barra Lateral
+
+En [`PortalPanelProvider.php`](app/Providers/Filament/PortalPanelProvider.php), la navegación se organiza en tres grupos:
+- **Comunicación**: Mensajería (`Messages`), Buzón de Contacto (`ContactSubmissionResource`), Dudas y Consultas (`InquiryResource`), Publicaciones (`PostResource`).
+- **Transparencia y Finanzas**: Transparencia (`TransparencyRecordResource`), Reportes Financieros (`FinancialReportResource`).
+- **Administración**: Padrón de Usuarios (`UserResource`), Apariencia (`ThemeResource`).
+
+### Convenciones Obligatorias para Nuevos Recursos y Campos
+- **Recursos (`Resource`)**: Definir siempre `$modelLabel` (singular), `$pluralModelLabel` (plural en minúsculas), `$navigationLabel` y `$breadcrumb` en español.
+- **Páginas (`Pages`)**: Definir la propiedad estática `$title` en clases `ListRecords`, `CreateRecord`, `EditRecord` y `ViewRecord`.
+- **Columnas y Campos**: Especificar siempre `->label('...')` en español, incluyendo columnas de auditoría (`created_at`, `updated_at`, `deleted_at`).
+- **Validaciones**: Mantener actualizados los nombres de atributos en [`lang/es/validation.php`](lang/es/validation.php) para asegurar mensajes de error en español.
+
+> Para la guía completa y ejemplos de código, consulta [`docs/filament-localization.md`](docs/filament-localization.md).
+
 ## Contributing
 
 Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).

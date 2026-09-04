@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class PostResource extends Resource
 {
@@ -20,11 +21,13 @@ class PostResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Newspaper;
 
+    protected static UnitEnum|string|null $navigationGroup = 'Comunicación';
+
     protected static ?string $breadcrumb = 'Publicaciones';
 
     protected static ?string $navigationLabel = 'Publicaciones';
 
-    protected static ?string $pluralLabel = 'Publicaciones';
+    protected static ?string $pluralModelLabel = 'publicaciones';
 
     protected static ?string $modelLabel = 'Publicación';
 

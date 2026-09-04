@@ -13,6 +13,8 @@ class EditTransparencyRecord extends EditRecord
 {
     protected static string $resource = TransparencyRecordResource::class;
 
+    protected static ?string $title = 'Editar Registro de Transparencia';
+
     protected function getHeaderActions(): array
     {
         return [

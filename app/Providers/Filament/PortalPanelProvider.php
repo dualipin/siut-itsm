@@ -57,6 +57,11 @@ class PortalPanelProvider extends PanelProvider
                     ->isActiveWhen(fn (): bool => request()->routeIs('filament.portal.auth.profile'))
                     ->sort(100),
             ])
+            ->navigationGroups([
+                'Comunicación',
+                'Transparencia y Finanzas',
+                'Administración',
+            ])
             ->colors([
                 'primary' => $theme?->getVariants($theme?->color_primary) ?? Color::Red,
                 'success' => $theme?->color_success ?? Color::Emerald,

@@ -10,6 +10,8 @@ class ListPosts extends ListRecords
 {
     protected static string $resource = PostResource::class;
 
+    protected static ?string $title = 'Publicaciones';
+
     protected function getHeaderActions(): array
     {
         return [

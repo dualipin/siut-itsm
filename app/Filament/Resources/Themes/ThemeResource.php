@@ -12,6 +12,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class ThemeResource extends Resource
 {
@@ -19,13 +20,17 @@ class ThemeResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Swatch;
 
+    protected static UnitEnum|string|null $navigationGroup = 'Administración';
+
+    protected static ?string $breadcrumb = 'Apariencia';
+
     protected static ?string $navigationLabel = 'Apariencia';
 
-    protected static ?string $pluralModelLabel = 'temas';
+    protected static ?string $pluralModelLabel = 'configuraciones de apariencia';
 
-    protected static ?string $modelLabel = 'Apariencia';
+    protected static ?string $modelLabel = 'Configuración de Apariencia';
 
-    protected static ?int $navigationSort = -1;
+    protected static ?int $navigationSort = 10;
 
     public static function form(Schema $schema): Schema
     {

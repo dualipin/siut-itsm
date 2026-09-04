@@ -39,7 +39,7 @@ Route::redirect('/sindicato/transparencia/informes-financieros', '/transparencia
 
 Route::get('/transparencia/normativos', function () {
     return view('landing.transparency.normatives');
-});
+})->name('transparency.normatives');
 Route::redirect('sindicato/transparencia/normativos', '/transparencia/normativos');
 
 // Registros de Transparencia por Tipo

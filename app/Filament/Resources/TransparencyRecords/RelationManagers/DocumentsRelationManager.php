@@ -35,6 +35,10 @@ class DocumentsRelationManager extends RelationManager
 
     protected static ?string $title = 'Documentos';
 
+    protected static ?string $modelLabel = 'Documento';
+
+    protected static ?string $pluralModelLabel = 'Documentos';
+
     public function form(Schema $schema): Schema
     {
         return $schema

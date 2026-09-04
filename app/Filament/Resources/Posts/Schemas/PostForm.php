@@ -32,9 +32,11 @@ class PostForm
                     ->live(onBlur: true)
                     ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
                 TextInput::make('slug')
+                    ->label('Identificador URL (Slug)')
                     ->disabled()
                     ->required(),
                 RichEditor::make('content')
+                    ->label('Contenido de la Publicación')
                     ->required()
                     ->columnSpanFull(),
                 SpatieMediaLibraryFileUpload::make('thumbnail')

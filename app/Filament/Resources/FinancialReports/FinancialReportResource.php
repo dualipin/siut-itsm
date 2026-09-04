@@ -19,12 +19,17 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Route;
+use UnitEnum;
 
 class FinancialReportResource extends Resource
 {
     protected static ?string $model = FinancialReport::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::DocumentChartBar;
+
+    protected static UnitEnum|string|null $navigationGroup = 'Transparencia y Finanzas';
+
+    protected static ?string $breadcrumb = 'Reportes Financieros';
 
     protected static ?string $navigationLabel = 'Reportes Financieros';
 

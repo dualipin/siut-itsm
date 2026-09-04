@@ -13,15 +13,57 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 
 class Profile extends BaseEditProfile
 {
     protected static ?string $title = 'Mi Perfil';
+
+    public function getHeading(): string|Htmlable
+    {
+        return 'Mi Perfil';
+    }
+
+    public function getSubheading(): string|Htmlable|null
+    {
+        return 'Administra tus datos personales, credenciales y expediente digital de agremiado.';
+    }
+
+    protected function getNameFormComponent(): Component
+    {
+        return parent::getNameFormComponent()
+            ->label('Nombre(s)');
+    }
+
+    protected function getEmailFormComponent(): Component
+    {
+        return parent::getEmailFormComponent()
+            ->label('Correo Electrónico');
+    }
+
+    protected function getCurrentPasswordFormComponent(): Component
+    {
+        return parent::getCurrentPasswordFormComponent()
+            ->label('Contraseña Actual');
+    }
+
+    protected function getPasswordFormComponent(): Component
+    {
+        return parent::getPasswordFormComponent()
+            ->label('Nueva Contraseña');
+    }
+
+    protected function getPasswordConfirmationFormComponent(): Component
+    {
+        return parent::getPasswordConfirmationFormComponent()
+            ->label('Confirmar Nueva Contraseña');
+    }
 
     public function form(Schema $schema): Schema
     {

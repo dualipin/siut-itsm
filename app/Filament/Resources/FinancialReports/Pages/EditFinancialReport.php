@@ -11,6 +11,8 @@ class EditFinancialReport extends EditRecord
 {
     protected static string $resource = FinancialReportResource::class;
 
+    protected static ?string $title = 'Editar Reporte Financiero';
+
     protected function getHeaderActions(): array
     {
         return [

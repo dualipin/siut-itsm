@@ -27,7 +27,7 @@ class InquiryResource extends Resource
 
     protected static ?string $navigationLabel = 'Dudas y Consultas';
 
-    protected static ?string $pluralLabel = 'Dudas y Consultas';
+    protected static ?string $pluralModelLabel = 'dudas y consultas';
 
     protected static ?string $modelLabel = 'Duda / Consulta';
 

@@ -10,6 +10,8 @@ class ListTransparencyRecords extends ListRecords
 {
     protected static string $resource = TransparencyRecordResource::class;
 
+    protected static ?string $title = 'Registros de Transparencia';
+
     protected function getHeaderActions(): array
     {
         return [

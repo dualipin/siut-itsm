@@ -207,5 +207,27 @@ Public landing pages (`resources/views/landing/**`) are rendered as server-side 
 - `useIslandForm` handles CSRF token extraction, Laravel 422 error mapping to `form.errors`, and reactive submission state (`form.processing`, `form.statusMessage`).
 - When creating a new island, mount it in Blade using: `<div data-vue="component-name" data-props="{{ json_encode([...]) }}"></div>`.
 
+=== filament-localization rules ===
+
+# Filament Localization (Español)
+
+Todos los campos, formularios, tablas, filtros, acciones, títulos y nombres en `app/Filament/**` y `app/Providers/Filament/**` deben estar obligatoriamente en español.
+
+- **Recursos (`Resource`)**:
+  - Definir siempre `protected static ?string $modelLabel = 'Nombre Singular';`
+  - Definir siempre `protected static ?string $pluralModelLabel = 'nombres plurales';` (en minúsculas)
+  - Definir siempre `protected static ?string $navigationLabel = 'Nombre en Navegación';`
+  - Definir siempre `protected static ?string $breadcrumb = 'Nombre en Breadcrumb';`
+  - Asignar un grupo de navegación en español (`'Comunicación'`, `'Transparencia y Finanzas'`, o `'Administración'`).
+- **Páginas de Recursos (`Pages`)**:
+  - Definir siempre la propiedad estática `protected static ?string $title = '...';` en español en clases `ListRecords`, `CreateRecord`, `EditRecord` y `ViewRecord`.
+- **Campos de Formulario y Entradas de Infolist**:
+  - Nunca omitir `->label('...')` en campos (`TextInput`, `Select`, `Textarea`, `RichEditor`, `DatePicker`, `FileUpload`, `Toggle`, etc.) a menos que sea un campo oculto (`Hidden`).
+  - Al registrar nuevos atributos en modelos, agregar su traducción al arreglo `'attributes'` en `lang/es/validation.php`.
+- **Columnas y Filtros de Tablas**:
+  - Asignar siempre `->label('...')` explícito en español en todas las columnas, incluidas las de auditoría (`created_at` -> `'Fecha de Creación'`, `updated_at` -> `'Fecha de Actualización'`, `deleted_at` -> `'Fecha de Eliminación'`).
+- **Navegación del Panel**:
+  - Mantener los grupos de navegación organizados en español en `PortalPanelProvider::navigationGroups([...])`.
+
 </laravel-boost-guidelines>
 

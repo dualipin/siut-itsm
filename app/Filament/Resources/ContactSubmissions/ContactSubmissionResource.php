@@ -26,7 +26,7 @@ class ContactSubmissionResource extends Resource
 
     protected static ?string $navigationLabel = 'Buzón de Contacto';
 
-    protected static ?string $pluralLabel = 'Mensajes de Contacto';
+    protected static ?string $pluralModelLabel = 'mensajes de contacto';
 
     protected static ?string $modelLabel = 'Mensaje de Contacto';
 

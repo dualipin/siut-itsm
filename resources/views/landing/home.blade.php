@@ -19,17 +19,17 @@
 
 
             <div class="flex flex-wrap gap-3 mb-8 lg:mb-12 animate-fade-in-up animate-delay-300">
-              <a class="btn btn-primary" href="/cuentas/login.php">
+              <a class="btn btn-primary" href="{{ route('filament.portal.auth.login') }}">
                 Acceder al Portal
               </a>
-              <a class="btn btn-outline btn-primary" href="/transparencia.php">
+              <a class="btn btn-outline btn-primary" href="{{ route('transparency.normatives') }}">
                 Transparencia
               </a>
               <a class="btn btn-outline btn-primary"
                 href="{{ route('financial-reports.index') }}">
                 Informes Financieros
               </a>
-              <a class="btn btn-outline" href="/simulador.php">
+              <a class="btn btn-outline" href="">
                 Simulador de prestamo
               </a>
             </div>
