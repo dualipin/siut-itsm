@@ -19,13 +19,10 @@ class RequestType extends Model
         'name',
         'slug',
         'description',
-        'icon',
         'requires_attachment',
-        'attachment_instructions',
         'custom_fields',
         'max_per_user_per_year',
         'is_active',
-        'sort_order',
     ];
 
     /**
@@ -61,7 +58,6 @@ class RequestType extends Model
             'custom_fields' => 'array',
             'max_per_user_per_year' => 'integer',
             'is_active' => 'boolean',
-            'sort_order' => 'integer',
         ];
     }
 
@@ -83,6 +79,6 @@ class RequestType extends Model
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('is_active', true)->orderBy('sort_order');
+        return $query->where('is_active', true);
     }
 }

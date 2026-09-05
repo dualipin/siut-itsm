@@ -5,7 +5,16 @@ use App\Enums\TransparencyRecordType;
 use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+
+function createFakeTransparencyPdf(string $name = 'document.pdf'): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent(
+        $name,
+        "%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    );
+}
 
 beforeEach(function () {
     Storage::fake('public');
@@ -69,9 +78,8 @@ test('guest can download public document of public record', function () {
         'uploaded_by' => $author->id,
     ]);
 
-    $document->addMediaFromString('Contenido de prueba')
+    $document->addMedia(createFakeTransparencyPdf('documento_publico.pdf'))
         ->setName('Documento Publico')
-        ->setFileName('documento_publico.pdf')
         ->toMediaCollection('file');
 
     $response = $this->get(route('transparency.documents.download', $document));
@@ -99,9 +107,8 @@ test('guest cannot download private document of public record', function () {
         'uploaded_by' => $author->id,
     ]);
 
-    $document->addMediaFromString('Contenido de prueba')
+    $document->addMedia(createFakeTransparencyPdf('documento_privado.pdf'))
         ->setName('Documento Privado')
-        ->setFileName('documento_privado.pdf')
         ->toMediaCollection('file');
 
     $response = $this->get(route('transparency.documents.download', $document));
@@ -128,9 +135,8 @@ test('guest cannot download document of non-published record', function () {
         'uploaded_by' => $author->id,
     ]);
 
-    $document->addMediaFromString('Contenido de prueba')
+    $document->addMedia(createFakeTransparencyPdf('documento_borrador.pdf'))
         ->setName('Documento en Borrador')
-        ->setFileName('documento_borrador.pdf')
         ->toMediaCollection('file');
 
     $response = $this->get(route('transparency.documents.download', $document));
@@ -158,9 +164,8 @@ test('public page does not render download link for private documents or non-pub
         'is_public' => true,
         'uploaded_by' => $author->id,
     ]);
-    $publicDoc->addMediaFromString('Contenido de prueba')
+    $publicDoc->addMedia(createFakeTransparencyPdf('doc_publico.pdf'))
         ->setName('Doc Publico')
-        ->setFileName('doc_publico.pdf')
         ->toMediaCollection('file');
 
     $privateDoc = TransparencyDocument::create([
@@ -170,9 +175,8 @@ test('public page does not render download link for private documents or non-pub
         'is_public' => false,
         'uploaded_by' => $author->id,
     ]);
-    $privateDoc->addMediaFromString('Contenido de prueba')
+    $privateDoc->addMedia(createFakeTransparencyPdf('doc_privado.pdf'))
         ->setName('Doc Privado')
-        ->setFileName('doc_privado.pdf')
         ->toMediaCollection('file');
 
     // 2. Draft record with a public document
@@ -192,9 +196,8 @@ test('public page does not render download link for private documents or non-pub
         'is_public' => true,
         'uploaded_by' => $author->id,
     ]);
-    $draftDoc->addMediaFromString('Contenido de prueba')
+    $draftDoc->addMedia(createFakeTransparencyPdf('doc_borrador.pdf'))
         ->setName('Doc Borrador')
-        ->setFileName('doc_borrador.pdf')
         ->toMediaCollection('file');
 
     $response = $this->get(route('transparency.type', ['type' => 'financiero']));

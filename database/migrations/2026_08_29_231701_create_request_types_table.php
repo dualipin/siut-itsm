@@ -16,13 +16,10 @@ return new class extends Migration
             $table->string('name', 150);
             $table->string('slug', 150)->unique();
             $table->text('description')->nullable();
-            $table->string('icon', 100)->nullable();
             $table->boolean('requires_attachment')->default(false);
-            $table->text('attachment_instructions')->nullable();
             $table->json('custom_fields')->nullable();
             $table->unsignedTinyInteger('max_per_user_per_year')->nullable();
             $table->boolean('is_active')->default(true);
-            $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
             $table->softDeletes();
         });

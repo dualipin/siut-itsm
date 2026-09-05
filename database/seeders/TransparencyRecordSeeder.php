@@ -8,6 +8,7 @@ use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Http\UploadedFile;
 
 class TransparencyRecordSeeder extends Seeder
 {
@@ -121,6 +122,8 @@ class TransparencyRecordSeeder extends Seeder
             for ($i = 0; $i < $count; $i++) {
                 $extension = fake()->randomElement(['pdf', 'xlsx', 'docx']);
                 $docName = fake()->words(3, true);
+                $fileName = fake()->word().'.'.$extension;
+                $file = UploadedFile::fake()->createWithContent($fileName, 'Contenido de prueba');
 
                 $document = TransparencyDocument::query()->create([
                     'transparency_record_id' => $record->id,
@@ -130,9 +133,9 @@ class TransparencyRecordSeeder extends Seeder
                     'uploaded_by' => $admin->id,
                 ]);
 
-                $document->addMediaFromString('Contenido de prueba')
+                $document->addMedia($file)
                     ->setName($docName)
-                    ->setFileName(fake()->word().'.'.$extension)
+                    ->setFileName($fileName)
                     ->toMediaCollection('file');
             }
         }

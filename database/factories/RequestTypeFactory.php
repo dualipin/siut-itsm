@@ -24,13 +24,10 @@ class RequestTypeFactory extends Factory
             'name' => ucfirst($name),
             'slug' => Str::slug($name),
             'description' => fake()->paragraph(),
-            'icon' => 'heroicon-o-document-text',
             'requires_attachment' => fake()->boolean(40),
-            'attachment_instructions' => 'Por favor adjunte comprobante o cotización en formato PDF o imagen.',
             'custom_fields' => null,
             'max_per_user_per_year' => fake()->optional()->numberBetween(1, 3),
             'is_active' => true,
-            'sort_order' => fake()->numberBetween(0, 10),
         ];
     }
 }

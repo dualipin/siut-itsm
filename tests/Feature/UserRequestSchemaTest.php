@@ -29,8 +29,8 @@ test('request type can be created and auto-generates slug', function () {
 });
 
 test('active scope returns only active request types', function () {
-    RequestType::factory()->create(['is_active' => true, 'sort_order' => 1]);
-    RequestType::factory()->create(['is_active' => false, 'sort_order' => 2]);
+    RequestType::factory()->create(['is_active' => true]);
+    RequestType::factory()->create(['is_active' => false]);
 
     $activeTypes = RequestType::active()->get();
 

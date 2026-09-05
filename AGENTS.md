@@ -229,5 +229,61 @@ Todos los campos, formularios, tablas, filtros, acciones, títulos y nombres en 
 - **Navegación del Panel**:
   - Mantener los grupos de navegación organizados en español en `PortalPanelProvider::navigationGroups([...])`.
 
+=== senior-engineering-rules ===
+
+# Senior Engineering Rules (Consistencia, Escalabilidad y Robustez)
+
+Estas reglas son de estricto cumplimiento para cualquier agente de IA o desarrollador en este proyecto para garantizar cero regresiones, alta escalabilidad y código robusto. Consulta `.ai/rules/index.md` para las reglas detalladas por dominio.
+
+## 1. Cero Regresiones y Protección de Datos ("Evitar Romper Cosas")
+- **Transacciones e Integridad**:
+  - Toda mutación que involucre más de un registro debe estar envuelta en `DB::transaction(fn () => ...)`.
+  - **Prohibido** disparar correos, notificaciones o llamadas a servicios externos dentro de la transacción activa: usar siempre `DB::afterCommit(fn () => ...)` o eventos encolados.
+  - Usar bloqueos pesimistas (`lockForUpdate()`) o métodos atómicos (`increment()`, `decrement()`) en operaciones concurrentes críticas (folios, estados, contadores).
+- **Migraciones No Destructivas**:
+  - Prohibido eliminar o renombrar columnas directamente en una sola migración. Usar el patrón *Expand & Contract*.
+  - Toda nueva columna en tablas existentes con datos debe ser `nullable()` o definir un `default()` seguro.
+  - Implementar siempre el método `down()` reversible y simétrico (descartar foreign keys antes de columnas).
+
+## 2. Escalabilidad y Rendimiento de Consultas
+- **Prevención Estricta de Consultas N+1**:
+  - Prohibido ejecutar consultas dentro de ciclos (`foreach`, `map`). Usar siempre carga ansiosa con `with(['relacion'])`.
+  - En tablas de Filament, optimizar consultas usando `getEloquentQuery()->with([...])` o en las columnas de relación.
+- **Manejo Seguro de Memoria en Grandes Volúmenes**:
+  - Prohibido el uso de `->get()` o `->all()` en colecciones ilimitadas: usar paginación (`paginate(15)` o `cursorPaginate(15)`).
+  - En comandos CLI o tareas en segundo plano, procesar registros en lotes usando exclusivamente `chunkById()` o `lazyById()`.
+- **Desacoplamiento y Tareas en Cola**:
+  - Cualquier operación lenta (emails, PDFs, procesamiento de medios, llamadas HTTP externas) debe implementar `ShouldQueue` con configuración explícita de `$tries`, `$timeout` y `$backoff`.
+
+## 3. Arquitectura Limpia y Tipado Estricto (PHP 8.4)
+- **Separación de Responsabilidades**:
+  - Controladores y recursos Filament delgados (*thin controllers*): solo validan, autorizan, delegan la lógica a clases en `app/Services/` y retornan respuestas.
+  - La validación de mutaciones debe realizarse en clases `FormRequest` dedicadas en `app/Http/Requests/`.
+- **Tipado Fuerte y Enums**:
+  - Tipos explícitos obligatorios en parámetros y valores de retorno de todos los métodos.
+  - Prohibido el uso de strings mágicos para estados, tipos o roles: usar `BackedEnum` en `app/Enums/` con claves en `TitleCase`.
+  - Casts de modelos definidos mediante el método `casts(): array`.
+- **Manejo de Errores**:
+  - Prohibido silenciar excepciones con bloques `catch` vacíos. Registrar errores con contexto descriptivo sin exponer datos sensibles ni credenciales.
+
+## 4. Frontend: Frontera Inertia v3 vs Islas Vue en Blade
+- **Páginas Inertia SPA (`resources/js/pages/**`)**:
+  - Usar contexto de Inertia (`useForm` de `@inertiajs/vue3`, `router.visit`, `page.props`).
+- **Islas Vue en Blade (`resources/views/landing/**` y `resources/js/components/**`)**:
+  - **CRÍTICO**: NUNCA usar `useForm()` de Inertia ni `router` en islas Vue montadas sobre Blade. Causa error fatal de ejecución.
+  - **OBLIGATORIO**: Usar siempre `useIslandForm` de `@/composables/useIslandForm`.
+- **UI**:
+  - Un único elemento raíz por componente Vue.
+  - Emplear componentes y temas de DaisyUI 5 con utilidades de Tailwind CSS v4.
+  - Deshabilitar botones de envío durante `form.processing`.
+
+## 5. Disciplina de Pruebas y Calidad de Código
+- **Pruebas Obligatorias con Pest**:
+  - Todo cambio, nueva característica o corrección de bug debe acompañarse de su prueba en `tests/Feature/`.
+  - Probar siempre los 4 escenarios esenciales: ruta feliz (*happy path*), fallos de validación, control de acceso/autorización (401/403) y transaccionalidad.
+  - Utilizar Model Factories con estados en lugar de datos estáticos o seeders en pruebas.
+- **Formateo Automático con Pint**:
+  - Todo archivo PHP modificado o creado debe pasar por `vendor/bin/pint --dirty --format agent`.
+
 </laravel-boost-guidelines>
 

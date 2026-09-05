@@ -7,6 +7,7 @@ use App\Enums\TransparencyRecordType;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Http\UploadedFile;
 
 /**
  * @extends Factory<TransparencyRecord>
@@ -70,9 +71,12 @@ class TransparencyRecordFactory extends Factory
     {
         return $this->afterCreating(function (TransparencyRecord $record) use ($count) {
             for ($i = 0; $i < $count; $i++) {
-                $record->addMediaFromString('Contenido de prueba')
+                $fileName = fake()->word().'.pdf';
+                $file = UploadedFile::fake()->createWithContent($fileName, 'Contenido de prueba');
+
+                $record->addMedia($file)
                     ->setName(fake()->word())
-                    ->setFileName(fake()->word().'.pdf')
+                    ->setFileName($fileName)
                     ->toMediaCollection('documents');
             }
         });

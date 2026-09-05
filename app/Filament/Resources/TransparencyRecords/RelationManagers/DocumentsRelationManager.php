@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\TransparencyRecords\RelationManagers;
 
+use App\Models\TransparencyDocument;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
@@ -22,6 +23,7 @@ use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\TrashedFilter;
@@ -61,7 +63,34 @@ class DocumentsRelationManager extends RelationManager
                     ->downloadable()
                     ->openable()
                     ->required()
-                    ->columnSpanFull(),
+                    ->columnSpanFull()
+                    ->hintAction(
+                        Action::make('open_file')
+                            ->label('Abrir Archivo')
+                            ->icon(Heroicon::ArrowTopRightOnSquare)
+                            ->visible(fn (?TransparencyDocument $record): bool => $record !== null && $record->hasMedia('file'))
+                            ->url(fn (?TransparencyDocument $record): ?string => $record !== null && $record->hasMedia('file') ? route('portal.transparency.documents.show', $record) : null)
+                            ->openUrlInNewTab()
+                    )
+                    ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
+                        $record = $component->getRecord();
+                        if (! $record instanceof TransparencyDocument) {
+                            return null;
+                        }
+
+                        $media = $record->getRelationValue('media')?->firstWhere('uuid', $file);
+
+                        if (! $media) {
+                            return null;
+                        }
+
+                        return [
+                            'name' => $media->getAttributeValue('name') ?? $media->getAttributeValue('file_name'),
+                            'size' => $media->getAttributeValue('size'),
+                            'type' => $media->getAttributeValue('mime_type'),
+                            'url' => route('portal.transparency.documents.show', ['document' => $record]),
+                        ];
+                    }),
                 Hidden::make('uploaded_by')
                     ->default(fn () => auth()->id()),
             ]);
@@ -83,9 +112,9 @@ class DocumentsRelationManager extends RelationManager
                 TextEntry::make('file')
                     ->label('Archivo')
                     ->state(fn ($record): string => $record->getFirstMedia('file')?->file_name ?? 'Ninguno')
-                    ->url(fn ($record): ?string => $record->getFirstMediaUrl('file') ?: null)
+                    ->url(fn ($record): ?string => $record->hasMedia('file') ? route('portal.transparency.documents.show', $record) : null)
                     ->openUrlInNewTab()
-                    ->icon('heroicon-o-arrow-down-tray')
+                    ->icon(Heroicon::ArrowTopRightOnSquare)
                     ->color(fn ($record): ?string => $record->hasMedia('file') ? 'primary' : 'gray'),
                 TextEntry::make('uploader.name')
                     ->label('Subido por')
@@ -131,12 +160,18 @@ class DocumentsRelationManager extends RelationManager
                     ->label('Nuevo Documento'),
             ])
             ->recordActions([
+                Action::make('open')
+                    ->label('Abrir')
+                    ->icon(Heroicon::ArrowTopRightOnSquare)
+                    ->url(fn (TransparencyDocument $record): string => route('portal.transparency.documents.show', $record))
+                    ->openUrlInNewTab()
+                    ->visible(fn (TransparencyDocument $record): bool => $record->hasMedia('file')),
                 Action::make('download')
                     ->label('Descargar')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->url(fn ($record) => $record->getFirstMediaUrl('file'))
+                    ->icon(Heroicon::ArrowDownTray)
+                    ->url(fn (TransparencyDocument $record): string => route('portal.transparency.documents.show', ['document' => $record, 'download' => 1]))
                     ->openUrlInNewTab()
-                    ->visible(fn ($record) => $record->hasMedia('file')),
+                    ->visible(fn (TransparencyDocument $record): bool => $record->hasMedia('file')),
                 ViewAction::make(),
                 EditAction::make(),
                 DeleteAction::make(),

@@ -23,6 +23,10 @@ class PostsTable
                     ->label('Título')
                     ->searchable()
                     ->limit(35),
+                TextColumn::make('type')
+                    ->label('Tipo')
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('author.name')
                     ->label('Autor')
                     ->searchable(),
