@@ -94,7 +94,7 @@ test('user request can record status changes in history', function () {
         ->and($history->to_status)->toBe(RequestStatus::UnderReview)
         ->and($history->notes)->toBe('Iniciando revisión de documentación adjunta')
         ->and($history->user_id)->toBe($reviewer->id)
-        ->and($request->histories)->toHaveCount(1);
+        ->and($request->histories()->count())->toBe(2);
 });
 
 test('user request status enum provides labels, colors, and icons for filament', function () {

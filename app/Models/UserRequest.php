@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\RequestStatus;
+use App\Observers\UserRequestObserver;
 use Database\Factories\UserRequestFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
+#[ObservedBy([UserRequestObserver::class])]
 class UserRequest extends Model implements HasMedia
 {
     /** @use HasFactory<UserRequestFactory> */
@@ -36,21 +39,7 @@ class UserRequest extends Model implements HasMedia
      */
     protected static function booted(): void
     {
-        static::creating(function (UserRequest $request) {
-            if (empty($request->folio)) {
-                $year = now()->format('Y');
-                $lastId = (int) (static::withTrashed()->whereYear('created_at', $year)->max('id') ?? 0) + 1;
-                $candidate = sprintf('SOL-%s-%05d', $year, $lastId);
-                $count = 1;
-
-                while (static::withTrashed()->where('folio', $candidate)->exists()) {
-                    $candidate = sprintf('SOL-%s-%05d', $year, $lastId + $count);
-                    $count++;
-                }
-
-                $request->folio = $candidate;
-            }
-        });
+        // Handled by UserRequestObserver
     }
 
     /**
