@@ -12,6 +12,10 @@ use Illuminate\Http\Request;
  * does not conflict and unqualified calls inside namespaces still resolve to it.
  * Livewire requires it for every file upload (see TemporaryUploadedFile).
  *
+ * The file must stay on disk: Livewire hands the URI to Symfony's UploadedFile,
+ * whose constructor rejects a path that fails `is_file()`. Real `tmpfile()` is
+ * unlinked by the engine at request shutdown, so the cleanup is done here.
+ *
  * @return resource|false
  */
 if (! function_exists('tmpfile')) {
@@ -31,7 +35,10 @@ if (! function_exists('tmpfile')) {
             return false;
         }
 
-        @unlink($path);
+        register_shutdown_function(static function () use ($handle, $path): void {
+            @fclose($handle);
+            @unlink($path);
+        });
 
         return $handle;
     }
