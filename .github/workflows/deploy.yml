@@ -2,104 +2,111 @@ name: Deploy Laravel Application
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-    build-and-deploy:
-        name: Build and Deploy
-        runs-on: ubuntu-latest
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout Repository
-              uses: actions/checkout@v6
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
 
-            - name: Set up PHP
-              uses: shivammathur/setup-php@v2
-              with:
-                php-version: '8.4'
-                extensions: mbstring, xml, ctype, iconv, pdo_mysql # Extensiones comunes
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, ctype, iconv, pdo_mysql, bcmath, fileinfo
+          tools: composer:v2
 
-            - name: Composer Cache Directory
-              id: composer-cache-dir
-              run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      - name: Composer Cache Directory
+        id: composer-cache-dir
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
-            - name: Cache Composer packages
-              uses: actions/cache@v5
-              with:
-                path: ${{ steps.composer-cache-dir.outputs.dir }}
-                key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-                restore-keys: |
-                    ${{ runner.os }}-composer-
+      - name: Cache Composer packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
 
-            - name: Install Dependencies
-              run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+      - name: Install Dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                node-version: "24"
-                cache: "npm"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
 
-            - name: Install Node.js dependencies
-              run: | 
-                npm ci
-                npm run build
+      - name: Build assets
+        run: |
+          npm ci
+          npm run build
 
-            - name: Sync files via FTP
-              uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-              with:
-                server: ${{ secrets.FTP_SERVER }}
-                username: ${{ secrets.FTP_USERNAME }}
-                password: ${{ secrets.FTP_PASSWORD }}
-                server-dir: ./${{ secrets.SERVER_DIR }}/
-                exclude: |
-                    **/.git*
-                    **/.git*/**
-                    .github/**
-                    **/node_modules/**
-                    package.json
-                    package-lock.json
-                    yarn.lock
-                    pnpm-lock.yaml
-                    vite.config.js
-                    vite.config.ts
-                    tailwind.config.js
-                    postcss.config.js
-                    tsconfig.json
-                    **/tests/**
-                    phpunit.xml
-                    phpunit.xml.dist
-                    Pest.php
-                    .prettier*
-                    .eslintrc*
-                    phpstan.neon
-                    README.md
-                    CHANGELOG.md
-                    LICENSE
-                    docs/**
-                    .env
-                    .env.example
-                    *.sql
-                    *.sqlite
-                    docker/**
-                    docker-compose.yml
-                    Makefile
-                    .vscode/**
-                    .idea/**
-                    .editorconfig
-                    .phpstorm.meta.php
-                    _ide_helper.php
-                    _ide_helper_models.php
-                    .claude/**
-                    .agent/**
-                    .agents/**
-                    AGENTS.md
-                    CLAUDE.md
-                    skill-lock.json
-                    storage/logs/*.log
-                    storage/framework/cache/data/**
-                    storage/framework/sessions/*
-                    storage/framework/views/*
-                    storage/framework/testing/**
-                    data/**
+      - name: Sync files via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ./${{ secrets.SERVER_DIR }}/
+          exclude: |
+                **/.git*
+                **/.git*/**
+                .github/**
+                **/node_modules/**
+                package.json
+                package-lock.json
+                yarn.lock
+                pnpm-lock.yaml
+                vite.config.js
+                vite.config.ts
+                tailwind.config.js
+                postcss.config.js
+                tsconfig.json
+                **/tests/**
+                phpunit.xml
+                phpunit.xml.dist
+                Pest.php
+                .prettier*
+                .eslintrc*
+                phpstan.neon
+                README.md
+                CHANGELOG.md
+                LICENSE
+                docs/**
+                .env
+                .env.example
+                *.sql
+                *.sqlite
+                docker/**
+                docker-compose.yml
+                Makefile
+                .vscode/**
+                .idea/**
+                .editorconfig
+                .phpstorm.meta.php
+                _ide_helper.php
+                _ide_helper_models.php
+                .claude/**
+                .agent/**
+                .agents/**
+                AGENTS.md
+                CLAUDE.md
+                skill-lock.json
+                storage/logs/*.log
+                storage/framework/cache/data/**
+                storage/framework/sessions/*
+                storage/framework/views/*
+                storage/framework/testing/**
+                data/**
