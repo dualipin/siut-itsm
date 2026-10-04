@@ -3,10 +3,14 @@
 namespace App\Filament\Resources\UserRequests\Schemas;
 
 use App\Enums\RequestStatus;
-use Filament\Forms\Components\KeyValue;
+use App\Models\RequestType;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
 class UserRequestForm
@@ -25,14 +29,14 @@ class UserRequestForm
                     ->required()
                     ->maxLength(65535)
                     ->columnSpanFull(),
-                \Filament\Schemas\Components\Section::make('Información Requerida')
-                    ->schema(function (\Filament\Schemas\Components\Utilities\Get $get) {
+                Section::make('Información Requerida')
+                    ->schema(function (Get $get) {
                         $requestTypeId = $get('request_type_id');
                         if (! $requestTypeId) {
                             return [];
                         }
 
-                        $type = \App\Models\RequestType::find($requestTypeId);
+                        $type = RequestType::find($requestTypeId);
                         if (! $type || empty($type->custom_fields)) {
                             return [];
                         }
@@ -44,9 +48,9 @@ class UserRequestForm
                             $inputType = $customField['type'] ?? 'text';
 
                             $component = match ($inputType) {
-                                'number' => \Filament\Forms\Components\TextInput::make("additional_data.{$name}")->numeric(),
-                                'date' => \Filament\Forms\Components\DatePicker::make("additional_data.{$name}"),
-                                default => \Filament\Forms\Components\TextInput::make("additional_data.{$name}"),
+                                'number' => TextInput::make("additional_data.{$name}")->numeric(),
+                                'date' => DatePicker::make("additional_data.{$name}"),
+                                default => TextInput::make("additional_data.{$name}"),
                             };
 
                             $fields[] = $component
@@ -57,12 +61,13 @@ class UserRequestForm
                         return $fields;
                     })
                     ->columns(2)
-                    ->hidden(function (\Filament\Schemas\Components\Utilities\Get $get) {
+                    ->hidden(function (Get $get) {
                         $requestTypeId = $get('request_type_id');
                         if (! $requestTypeId) {
                             return true;
                         }
-                        $type = \App\Models\RequestType::find($requestTypeId);
+                        $type = RequestType::find($requestTypeId);
+
                         return ! $type || empty($type->custom_fields);
                     }),
                 SpatieMediaLibraryFileUpload::make('attachments')

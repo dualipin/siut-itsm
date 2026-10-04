@@ -4,6 +4,13 @@ namespace App\Filament\Resources\UserRequests\Tables;
 
 use App\Actions\GenerateUserRequestReceipt;
 use App\Models\UserRequest;
+use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
@@ -39,7 +46,7 @@ class UserRequestsTable
                 TrashedFilter::make(),
             ])
             ->recordActions([
-                \Filament\Actions\Action::make('download_receipt')
+                Action::make('download_receipt')
                     ->label('Descargar Comprobante')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('gray')
@@ -48,15 +55,15 @@ class UserRequestsTable
 
                         return response()->streamDownload(fn () => print ($pdf->output()), "Comprobante-{$record->folio}.pdf");
                     }),
-                \Filament\Actions\ViewAction::make(),
-                \Filament\Actions\EditAction::make()
+                ViewAction::make(),
+                EditAction::make()
                     ->hidden(fn () => auth()->user()?->isAgremiado()),
             ])
             ->bulkActions([
-                \Filament\Actions\BulkActionGroup::make([
-                    \Filament\Actions\DeleteBulkAction::make(),
-                    \Filament\Actions\ForceDeleteBulkAction::make(),
-                    \Filament\Actions\RestoreBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
                 ]),
             ]);
     }
