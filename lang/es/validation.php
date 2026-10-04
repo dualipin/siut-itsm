@@ -210,6 +210,8 @@ return [
         'newSubject' => 'asunto',
         'newInitialMessage' => 'mensaje inicial',
         'newAttachment' => 'archivo adjunto',
+        'agremiado_name' => 'nombre completo',
+        'proposals' => 'propuestas',
     ],
 
 ];

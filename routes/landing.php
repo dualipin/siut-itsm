@@ -6,6 +6,7 @@ use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\PublicationController;
 use App\Http\Controllers\PublicTransparencyController;
+use App\Models\AnnualPetition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -76,3 +77,12 @@ Route::redirect('/sindicato/repositorios/gestoria', '/transparencia/gestoria');
 Route::redirect('/sindicato/repositorios/gremiales', '/transparencia/gremiales');
 Route::redirect('/sindicato/repositorios/tramites', '/transparencia/tramites');
 Route::redirect('/sindicato/repositorios/minutas', '/transparencia/minutas');
+
+// Pliego Anual (Peticiones de agremiados)
+Route::get('/pliegos-anuales/{annualPetition}', function (AnnualPetition $annualPetition) {
+    $annualPetition->load(['convocations.media']);
+
+    return view('landing.petitions', [
+        'annualPetition' => $annualPetition,
+    ]);
+})->where('annualPetition', '[0-9]{4}')->name('petitions.index');
