@@ -1,6 +1,6 @@
-<div class="navbar bg-primary text-primary-content shadow-sm sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto w-full flex items-center">
-        <div class="navbar-start">
+<div class="navbar min-w-0 overflow-x-hidden bg-primary text-primary-content shadow-sm sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto w-full min-w-0 flex items-center">
+        <div class="navbar-start min-w-0">
             <a href="{{ url('/') }}" title="Inicio">
                 <img src="{{ asset('assets/img/logo.webp') }}" alt="Logo" class="size-16 rounded-full" />
             </a>

@@ -138,11 +138,11 @@ const submit = async () => {
 </script>
 
 <template>
-    <div class="min-h-screen flex flex-col bg-base-200">
+    <div class="min-h-screen min-w-0 w-full flex flex-col overflow-x-hidden bg-base-200">
 
         <!-- ===== Franja institucional superior (tokens del tema) ===== -->
         <header class="bg-base-300 border-b border-base-300">
-            <div class="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+            <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-6 sm:py-10">
                 <div class="flex items-center gap-2 mb-2 sm:mb-4">
                     <span class="text-[10px] sm:text-[11px] uppercase tracking-[.18em] opacity-60 font-semibold">
                         Pliego anual de propuestas
@@ -169,14 +169,14 @@ const submit = async () => {
 
         <!-- ===== Barra meta ===== -->
         <div class="bg-base-100 border-b border-base-300">
-            <div class="max-w-3xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between text-xs opacity-60">
+            <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between text-xs opacity-60">
                 <span>Propuestas: <strong class="text-base-content">{{ proposals.length }} de {{ maxProposals
                         }}</strong></span>
             </div>
         </div>
 
         <main class="flex-1">
-            <div class="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-10">
+            <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-10">
 
                 <div v-if="isClosed" class="alert alert-error rounded-box border-2 flex flex-col sm:flex-row items-start sm:items-center gap-3">
                     <svg class="w-5 h-5 shrink-0 mt-0.5 sm:mt-0" fill="none" stroke="currentColor" stroke-width="2"
@@ -331,7 +331,7 @@ const submit = async () => {
                     <div class="border-t border-base-300 pt-4 sm:pt-6 space-y-4 sm:space-y-6">
 
                         <fieldset v-for="(item, index) in proposals" :key="index"
-                            class="bg-base-100 border border-base-300 rounded-box overflow-hidden shadow-xs">
+                            class="min-w-0 bg-base-100 border border-base-300 rounded-box overflow-hidden shadow-xs">
                             <div
                                 class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 border-b border-base-300 bg-base-200/60">
                                 <legend class="text-xs font-semibold uppercase tracking-widest opacity-70">
@@ -407,7 +407,7 @@ const submit = async () => {
         </main>
 
         <footer class="border-t border-base-300 mt-8 bg-base-100">
-            <div class="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-6 text-xs opacity-50 flex justify-between items-center">
+            <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-4 sm:py-6 text-xs opacity-50 flex justify-between items-center">
                 <span>OST SIUT ITSM</span>
                 <span>{{ annualPetition.year }}</span>
             </div>
