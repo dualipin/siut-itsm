@@ -18,6 +18,14 @@ case Admin = 'admin';
 
 ---
 
+## Convenciones importantes
+
+- Las prestaciones deben tener una fecha tentativa, es decir, se toma en cuenta el mes y el dia, ya que es cíclica anualmente.
+- El método de pago periódico (nomina) es siempre quincenal. Naturalmente se toma el dia 15 y ultimo de cada mes. Ej febrero tiene 28 días por lo que la primer quincena es el dia 15 y la segunda quincena de ese mes es propiamente el dia 28.
+- Para el método de pago por nomina la ultima fecha valida es **30 de noviembre** del año en curso, no debe ser posible seleccionar una fecha posterior para cuando el método de pago sea nomina.
+- El **30 de noviembre** del año en curso es la fecha limite para solicitar prestamos, después de esa fecha no debe ser posible solicitar un préstamo bajo ninguna prestación o mediante nomina.
+- Respetar la tolerancia de 20 días entre la fecha de solicitud del préstamo y la primer quincena disponible. Nota. Esta tolerancia en días no aplica para las prestaciones no periódicas.
+
 ## Flujos de usuario paso a paso
 
 ### Flujo 1 — Solicitud
@@ -25,10 +33,10 @@ case Admin = 'admin';
 1. El empleado abre el formulario de nueva solicitud.
 2. Completa:
    - Monto solicitado.
-   - **Forma de pago** (puede ser mixta — nómina + una o varias prestaciones):
-     - `Nómina` -> número de quincenas; el plazo debe cerrar **antes del 30 de noviembre** del año en curso.
-     - `Prestaciones` -> selecciona una o varias entradas de las prestaciones disponibles; la fecha de cobro es la fecha de cada prestación.
-     - Sube un documento PDF con su último recibo de nómina por cada forma de pago (validación: solo PDF, máximo 5MB).
+   - **Forma de pago**: Puede ser solo nomina, solo una prestación, varias prestaciones o mixta (nómina + una o varias prestaciones):
+     - `Nómina` -> Opciones desplegable en donde se pueda seleccionar las quincenas disponibles. Es importante mencionar que debe existir una tolerancia al mostrar las quincenas disponibles, la tolerancia debe ser entre la fecha actual y 20 días entre la primer quincena disponible. Ej. La fecha actual es 10/10/2026 + 20 días = 30/10/26 es decir que la primer quincena disponible sera la del 31/10/2026; pero si por ejemplo la fecha actual es 11/10/2026 + 20 días = 31/10/2026 por lo que la primer quincena disponible sera 15/11/2026.
+     - `Prestaciones` -> selecciona una o varias entradas de las prestaciones disponibles; la fecha de cobro es la fecha de cada prestación. Nota. No se deben mostrar prestaciones cuya fecha de cobro ya haya pasado, en cambio muestra las prestaciones que
+     - Sube un documento PDF con su último recibo de nómina por cada forma de pago (validación: solo PDF e imagen, máximo 5MB).
 3. El simulador se recalcula en tiempo real (AJAX o recarga parcial) y muestra la corrida financiera estimada **antes** de enviar (ver § Simulador).
 4. Al enviar: `loans.status` → `'solicitado'`.
 
