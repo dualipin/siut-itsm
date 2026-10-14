@@ -41,7 +41,7 @@ class UserFactory extends Factory
             'salary' => fake()->randomFloat(2, 5000, 50000),
             'hiring_date' => fake()->dateTimeBetween('-10 years', 'now')->format('Y-m-d'),
             'email_verified_at' => now(),
-            'password' => static::$password ??= Hash::make('password'),
+            'password' => static::$password ??= Hash::make('admin123'), // password
             'remember_token' => Str::random(10),
         ];
     }
