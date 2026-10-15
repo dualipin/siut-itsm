@@ -1,4 +1,4 @@
-<div class="navbar min-w-0 overflow-x-hidden bg-primary text-primary-content shadow-sm sticky top-0 z-50">
+<div class="navbar min-w-0 bg-primary text-primary-content shadow-sm sticky top-0 z-50">
     <div class="max-w-7xl mx-auto w-full min-w-0 flex items-center">
         <div class="navbar-start min-w-0">
             <a href="{{ url('/') }}" title="Inicio">
