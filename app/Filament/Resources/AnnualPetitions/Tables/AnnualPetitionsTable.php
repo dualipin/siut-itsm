@@ -9,8 +9,10 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Livewire\Component;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AnnualPetitionsTable
@@ -49,6 +51,21 @@ class AnnualPetitionsTable
                     ->color('gray')
                     ->url(fn (AnnualPetition $record): string => route('petitions.index', $record))
                     ->openUrlInNewTab(),
+
+                Action::make('copy_link')
+                    ->label('Copiar')
+                    ->icon('heroicon-o-clipboard-document')
+                    ->color('gray')
+                    ->action(function (AnnualPetition $record, Component $livewire): void {
+                        $link = route('petitions.index', $record);
+
+                        $livewire->js("window.navigator.clipboard.writeText('{$link}');");
+
+                        Notification::make()
+                            ->title('Enlace copiado al portapapeles')
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('download_report')
                     ->label('Reporte')
                     ->icon('heroicon-o-document-arrow-down')
