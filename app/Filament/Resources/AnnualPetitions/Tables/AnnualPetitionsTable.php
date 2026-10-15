@@ -43,8 +43,14 @@ class AnnualPetitionsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->recordActions([
+                Action::make('link')
+                    ->label('Enlace')
+                    ->icon('heroicon-o-link')
+                    ->color('gray')
+                    ->url(fn (AnnualPetition $record): string => route('petitions.index', $record))
+                    ->openUrlInNewTab(),
                 Action::make('download_report')
-                    ->label('Descargar Reporte')
+                    ->label('Reporte')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('gray')
                     ->action(function (AnnualPetition $record, GeneratePetitionConsolidatedReport $generateReport): StreamedResponse {
