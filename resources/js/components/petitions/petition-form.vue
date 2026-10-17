@@ -245,7 +245,7 @@ const submit = async () => {
                         </div>
 
                         <!-- Vista en tarjetas para pantallas pequeñas/móviles (< sm) -->
-                        <div class="sm:hidden space-y-3">
+                        <div class="sm:hidden gap-3 grid grid-cols-1">
                             <div v-for="convocation in convocations" :key="convocation.id"
                                 class="bg-base-100 border border-base-300 rounded-lg p-3 space-y-2">
                                 <div class="font-medium text-xs text-base-content">{{ convocation.name }}</div>
