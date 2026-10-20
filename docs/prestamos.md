@@ -2,8 +2,8 @@
 
 ## Contexto del sistema existente
 
-Estás añadiendo un **módulo nuevo** a un sistema Laravel 13 en desarrollo.
-Respeta **todas** las convenciones del proyecto sin excepción.
+Se esta añadiendo un **módulo nuevo** a un sistema Laravel 13 en desarrollo.
+Respetar **todas** las convenciones del proyecto sin excepción.
 
 
 ### Roles existentes (de `UserRole.php` — NO modificar ese archivo)
@@ -16,17 +16,44 @@ case Admin = 'admin';
 - **Solicitan** préstamos: `Agremiado`, `Lider`, `Admin`
 - **Revisan / aprueban / validan**: `Admin`, `Lider`
 
----
 
 ## Convenciones importantes
 
-- Las prestaciones deben tener una fecha tentativa, es decir, se toma en cuenta el mes y el dia, ya que es cíclica anualmente.
-- El método de pago periódico (nomina) es siempre quincenal. Naturalmente se toma el dia 15 y ultimo de cada mes. Ej febrero tiene 28 días por lo que la primer quincena es el dia 15 y la segunda quincena de ese mes es propiamente el dia 28.
+- Cada prestación tiene asignada una fecha tentativa (día y mes) que se aplica de manera recurrente todos los años.
+- El método de pago periódico (nomina) es siempre quincenal. Naturalmente se toma el d ia 15 y ultimo de cada mes. Ej. febrero tiene 28 días por lo que la primer quincena es el dia 15 y la segunda quincena de ese mes es propiamente el dia 28.
 - Para el método de pago por nomina la ultima fecha valida es **30 de noviembre** del año en curso, no debe ser posible seleccionar una fecha posterior para cuando el método de pago sea nomina.
 - El **30 de noviembre** del año en curso es la fecha limite para solicitar prestamos, después de esa fecha no debe ser posible solicitar un préstamo bajo ninguna prestación o mediante nomina.
-- Respetar la tolerancia de 20 días entre la fecha de solicitud del préstamo y la primer quincena disponible. Nota. Esta tolerancia en días no aplica para las prestaciones no periódicas.
+- Respetar la tolerancia de 20 días entre la fecha de solicitud del préstamo y la primer quincena disponible, esta tolerancia tiene como objetivo garantizar que los empleados tengan tiempo suficiente para planificar sus pagos y que se pueda hacer el desembolso. Nota. Esta tolerancia en días no aplica para las prestaciones no periódicas.
 
-## Flujos de usuario paso a paso
+### Cálculo: Interés simple — Método alemán
+
+Lo siguiente es un ejemplo de cómo se calcula la tabla de amortización quincenal para un préstamo con interés simple alemán, el interés simple alemán solo aplica para préstamos con forma de pago por nomina
+
+**Período inicial (días adicionales)**: Desde el dia de desembolso  hasta la primera fecha de quincena (día 15 o último día del mes):
+
+```
+interés días adicionales = saldo insoluto × (tasa anual / 365) × días adicionales
+```
+
+**Quincenas regulares**: Desde la primera quincena hasta la última quincena del período de pago.
+
+```
+pago capital       = monto aprobado / total quincenas
+interés quincenal  = 
+pago quincenal     = pago capital + interés quincenal
+saldo final        = saldo insoluto − pago capital
+```
+
+
+### Cálculo: Interés compuesto
+
+El monto se cobra de una sola vez en la fecha de la prestación y después de que se termine de pagar los plazos del prestamo por nomina, si no hay pago por nomina la fecha inicia desde la fecha de desembolso hasta la fecha de la prestación.
+
+---
+
+
+
+## Fase 1 — Solicitud, aprobación y desembolso
 
 ### Flujo 1 — Solicitud
 
@@ -36,215 +63,82 @@ case Admin = 'admin';
    - **Forma de pago**: Puede ser solo nomina, solo una prestación, varias prestaciones o mixta (nómina + una o varias prestaciones):
      - `Nómina` -> Opciones desplegable en donde se pueda seleccionar las quincenas disponibles. Es importante mencionar que debe existir una tolerancia al mostrar las quincenas disponibles, la tolerancia debe ser entre la fecha actual y 20 días entre la primer quincena disponible. Ej. La fecha actual es 10/10/2026 + 20 días = 30/10/26 es decir que la primer quincena disponible sera la del 31/10/2026; pero si por ejemplo la fecha actual es 11/10/2026 + 20 días = 31/10/2026 por lo que la primer quincena disponible sera 15/11/2026.
      - `Prestaciones` -> selecciona una o varias entradas de las prestaciones disponibles; la fecha de cobro es la fecha de cada prestación. Nota. No se deben mostrar prestaciones cuya fecha de cobro ya haya pasado, en cambio muestra las prestaciones que
-     - Sube un documento PDF con su último recibo de nómina por cada forma de pago (validación: solo PDF e imagen, máximo 5MB).
-3. El simulador se recalcula en tiempo real (AJAX o recarga parcial) y muestra la corrida financiera estimada **antes** de enviar (ver § Simulador).
-4. Al enviar: `loans.status` → `'solicitado'`.
+     - Sube un documento (pdf o imagen) con su último recibo de nómina por cada forma de pago (validación: solo PDF e imagen, máximo 5MB).
+     - Indica cuanto de su salario desea destinar al pago del préstamo (solo aplica para nómina).
+   - Firma la solicitud. El firmado de la solicitud podrá ser de 2 formas (el usuario solo debe elegir una forma): mediante la captura del trazo de la firma (el solicitante dibuja su firma) o usando la e.firma (crear el mecanismo para poder adoptar esta forma de identificación)
 
 ---
 
-### Flujo 2 — Revisión documental (roles: Admin, Finanzas, Lider)
+### Flujo 2 — Revisión documental (roles: Admin, Líder)
 
-1. Lista filtrable de solicitudes con `status = 'solicitado'`.
+1. Lista filtrable de solicitudes.
 2. El revisor puede:
-   - **Aprobar** → define `approved_amount`, plazo y `applied_interest_rate` (puede diferir de la tasa estándar). `status = 'aprobado'`. El sistema:
-     - Rellena `loans.finance_signatory` y `loans.lender_signatory` desde la BD.
-     - Genera y almacena en `loan_legal_documents`: **Pagaré PDF** + **Anuencia de descuento PDF** + **Formato solicitud PDF**.
-     - Registra `loans.document_generation_date`.
-   - **Rechazar** → `status = 'rechazado'`, guarda `rejection_reason`.
-   - **Lista de espera** → `status = 'en_espera'`.
-3. El solicitante puede ver el estado y, si fue aprobado, descargar los documentos.
+   - **Aprobar**: define el monto aprobado (y monto aprobado por cada prestación), plazo (en caso de nomina) y la tasa de interés. El sistema:
+     - Genera: **Pagaré PDF** + **Anuencia de descuento PDF** + **Formato solicitud PDF**.
+   - **Rechazar**: guarda e informa el motivo del rechazo.
+   - **Lista de espera**.
+3. El revisor puede ver el estado de la solicitud.
+4. El sistema envía notificación al solicitante con el resultado de la revisión.
+5. El revisor puede descargar los documentos.
 
 ---
 
-### Flujo 3 — Firma y validación de documentos (Empleado → Admin/Finanzas)
+### Flujo 3 — Desembolso (roles: Admin, Lider)
 
-1. El empleado descarga Pagaré, Anuencia y Formato de solicitud, los firma físicamente y los sube al sistema.
-   - Se actualiza `loan_legal_documents.user_signature_url` y `user_signature_date`.
-2. El revisor valida cada documento:
-   - **Validado** → `validated_by_finance = TRUE`, `validation_date = NOW()`. Cuando todos los documentos requeridos estén validados: `loans.status = 'activo'`, `loans.disbursement_date = NOW()` (fecha desde la que devengan intereses).
-   - **Rechazado** → `document_status = 'rechazado'`, `document_observations` con el motivo. El empleado corrige y vuelve a subir.
+1. El revisor registra la fecha de desembolso por el monto aprobado.
+2. El sistema genera automáticamente la tabla de amortización quincenal y la corrida financiera (PDF).
+
 
 ---
 
-### Flujo 4 — Seguimiento (todos los roles con acceso al préstamo)
+## Fase 2 — Seguimiento, pagos y casos especiales
 
-1. El empleado ve su corrida financiera activa (`loan_amortization` donde `active = TRUE` y `table_version` = la más reciente).
-2. Ve próxima quincena y saldo en `loans.outstanding_balance`.
+### Seguimiento (todos los roles con acceso al préstamo)
+
+1. El empleado ve su corrida financiera activa en sus prestamos.
+2. Ve próxima quincena y saldo restante.
 3. Puede solicitar liquidación anticipada (activa Flujo 6c).
-4. Puede ver su **estado de cuenta** (todos sus préstamos: activos, liquidados, reestructurados).
+4. Puede ver su **estado de cuenta** (todos sus préstamos: activos, liquidados, etc).
 
----
 
-### Flujo 5 — Registro de pagos regulares (roles: Admin, Finanzas)
+### Registro de pagos regulares (roles: Admin, Lider)
 
-1. Selecciona la quincena en `loan_amortization`.
-2. Registra `actual_payment_date`, `actual_paid_amount`, `paid_by`.
-3. `payment_status = 'pagado'`. Actualiza `loans.outstanding_balance`.
-4. Genera comprobante en `loan_receipts` (`receipt_type = 'pago_regular'`).
+Crear un mecanismo para registrar pagos de quincenas, ya sea de forma manual o mediante un archivo CSV.
 
----
 
-### Flujo 6 — Casos especiales
+### Casos especiales
 
-#### 6a. Pico (quincena no pagada)
-- La quincena pasa a `payment_status = 'pico'`.
-- Se calculan `days_overdue` y `generated_default_interest` con `loans.daily_default_rate`.
-- `AmortizationCalculator` regenera la tabla desde esa quincena: suma el interés moratorio al saldo insoluto y recalcula las cuotas restantes.
-- Incrementa `table_version`; filas anteriores quedan `active = FALSE`.
-- Genera comprobante `receipt_type = 'cargo_moratorio'`.
+#### a. Pico (quincena no pagada)
+- La quincena pasa a no pagada.
+- Se calculan los días de atraso y el interés moratorio correspondiente.
+- Se regenera la tabla desde esa quincena: suma el interés moratorio al saldo insoluto y recalcula las cuotas restantes.
+- Genera un comprobante de cargo moratorio.
 
-#### 6b. Pago anticipado / abono a capital
-- Se registra en `loan_extraordinary_payments` (`payment_type = 'anticipo'` o `'abono_capital'`).
+#### b. Pago anticipado / abono a capital
+- Se registra.
 - Aplicación: primero a intereses moratorios pendientes, luego a capital.
-- `AmortizationCalculator` regenera la tabla e incrementa `table_version`.
-- Genera comprobante `receipt_type = 'pago_extraordinario'`.
+- Genera comprobante.
 
-#### 6c. Liquidación total
-- `payment_type = 'liquidacion_total'` en `loan_extraordinary_payments`.
+#### c. Liquidación total
 - Calcula el saldo exacto al día (interés devengado hasta hoy).
-- `loans.status = 'liquidado'`, `loans.total_liquidation_date = NOW()`.
-- Genera comprobante `receipt_type = 'pago_extraordinario'`.
+- Genera comprobante.
 
-#### 6d. Reestructuración
-- Cierra el préstamo original (`loans.requires_restructuring = TRUE`, `status = 'reestructurado'`).
-- Crea nuevo registro en `loans` con `original_loan_id` apuntando al original.
-- Registra en `loan_restructurings` (saldo insoluto, interés pendiente, interés moratorio, nuevo monto, nueva tasa, nuevo plazo).
+#### d. Reestructuración
+- Cierra el préstamo original.
+- Crea nuevo registro.
+- Registra la reestructuración (saldo insoluto, interés pendiente, interés moratorio, nuevo monto, nueva tasa, nuevo plazo).
 - El nuevo préstamo entra al **Flujo 2** para aprobación.
-- Genera comprobante `receipt_type = 'ajuste'`.
+- Genera comprobante.
 
----
 
-## Reglas de negocio y cálculos
+## Tasas de interés
 
-### Tasas de interés estándar
 
-El tipo de socio se determina por `RoleEnum` + campo `is_saver` (ahorrador) en `users`:
-
-| Tipo | Tasa anual |
+| Tipo | Tasa mensual |
 |---|---|
 | `Agremiado` + ahorrador | 6 % |
 | `Agremiado` + no ahorrador | 7.5 % |
 | `NoAgremiado` + ahorrador | 8 % |
 | `NoAgremiado` + no ahorrador | 9.5 % |
 
-> El revisor puede sobreescribir `applied_interest_rate` libremente al aprobar. El sistema guarda siempre la tasa pactada; no se recalcula automáticamente.
-
----
-
-### Cálculo: Interés simple — Método alemán (`interest_method = 'simple_aleman'`)
-
-Los intereses devengan desde `loans.disbursement_date`.
-
-**Período inicial (días adicionales)**
-
-Desde `disbursement_date` hasta la primera fecha de quincena (día 15 o último día del mes):
-
-```
-interés_días_adicionales = saldo_insoluto × (tasa_anual / 365) × días_adicionales
-```
-
-**Quincenas regulares**
-
-```
-pago_capital       = monto_aprobado / total_quincenas
-interés_quincenal  = saldo_insoluto × (tasa_anual / 24)
-pago_quincenal     = pago_capital + interés_quincenal
-saldo_final        = saldo_insoluto − pago_capital
-```
-
-**Fechas de pago:** siempre **día 15** o **último día del mes**.
-
----
-
-### Cálculo: Interés compuesto (`interest_method = 'compuesto'`)
-
-El monto se cobra de una sola vez en la fecha de la prestación (`cat_income_types.tentative_payment_month` / `tentative_payment_day`).
-
-```
-monto_total = capital × (1 + tasa_anual / 365) ^ días_transcurridos
-```
-
-`días_transcurridos` = desde `disbursement_date` hasta la fecha de la prestación.
-
----
-
-### Interés moratorio (picos)
-
-```
-interés_moratorio = saldo_pendiente × daily_default_rate × days_overdue
-```
-
-`daily_default_rate` se define al aprobar y se guarda en `loans.daily_default_rate`.
-
----
-
-## Simulador de préstamos
-
-Mostrar antes de enviar la solicitud (modal o sección expandible). También disponible como PDF descargable.
-
-| # | Campo obligatorio |
-|---|---|
-| a | Nombre completo del prestamista (`lender_signatory`) |
-| b | Monto solicitado / aprobado |
-| c | Tasa de interés aplicable |
-| d | Quincenas + días adicionales (ej. "Quincenas: 11 — Días adicionales: 5") |
-| e | Forma de pago y fuente de descuento (ej. _"Se descontará con Bono Día del Padre"_ / _"Se pagará con Aguinaldo — total al cierre del año: $X"_) |
-| f | Tabla de corrida financiera quincenal (ver abajo) |
-| g | **Sumatoria final:** total capital, total intereses, total pagado |
-| h | Firmantes dinámicos leídos de BD: **Secretario de Finanzas** + **Prestamista** |
-
----
-
-## Tabla de corrida financiera (quincenal)
-
-```
-| # Quincena | Pago Capital | Interés Quincenal | Pago Quincenal | Saldo Final | Fecha de Pago |
-|------------|-------------|-------------------|----------------|-------------|---------------|
-| 1          | $XXX.XX     | $XXX.XX           | $XXX.XX        | $XXX.XX     | 15/Ene/2025   |
-| ...        |             |                   |                |             |               |
-| TOTALES    | $XXX.XX     | $XXX.XX           | $XXX.XX        | —           | —             |
-```
-
-- Fechas: **día 15** o **último día del mes**.
-- Se regenera ante cualquier evento (pico, pago anticipado, reestructura), incrementando `table_version`; filas anteriores quedan `active = FALSE`.
-
----
-
-## Documentos PDF
-
-Todos generados server-side con **domPDF**.
-Firmantes leídos dinámicamente de `loans.finance_signatory` y `loans.lender_signatory`.
-
-| Documento | Cuándo se genera | `document_type` | Firmantes |
-|---|---|---|---|
-| Pagaré | Al aprobar | `pagare` | Prestamista |
-| Anuencia de descuento | Al aprobar | `anuencia` | Prestamista |
-| Corrida financiera | Al validar docs / bajo demanda | `corrida_financiera` | Sec. Finanzas + Prestamista |
-| Estado de cuenta | Bajo demanda | generado al vuelo | — |
-| Comprobante de movimiento | Por cada pago, pico o ajuste | `receipt_type` en `loan_receipts` | — |
-
----
-
-## Convenciones de código obligatorias
-
-1. Misma estructura que `app/Modules/Auth`: `Domain → Application → Infrastructure`.
-2. Los repositorios extienden `PdoBaseRepository`; las interfaces van en `Domain/Repository/`.
-3. Cero lógica de negocio en plantillas Latte; solo presentación.
-4. Todos los montos como `DECIMAL(10,2)`; fechas con `DateTimeImmutable`.
-5. Cada acción que cambie `loans.status` o modifique saldos genera un registro en `loan_receipts`.
-6. Los casos de uso son `final readonly class` con constructor DI, igual que en `Auth`.
-7. `LoansModule.php` registra sus propios `REPOSITORIES`, `SERVICES` y `USE_CASES` como constantes de array, igual que `AuthModule.php`.
-8. Excepciones de dominio propias: `LoanNotFoundException`, `InvalidLoanStatusException`.
-
----
-
-## Entregables esperados
-
-1. `app/Modules/Loans/` — árbol completo de clases con la estructura definida arriba
-2. Todos los casos de uso implementados (Flujos 1–6)
-3. `AmortizationCalculator` — interés simple alemán, compuesto, regeneración de tabla y cálculo de picos
-4. `PdfGenerator` — pagaré, anuencia, corrida financiera, estado de cuenta, comprobantes
-5. Repositorios PDO para las 8 tablas existentes
-6. Plantillas Latte — listado de solicitudes, detalle del préstamo, simulador, estado de cuenta
-7. Validaciones server-side en PHP para todos los formularios
-8. `LoansModule.php` con registro completo de dependencias
+> El revisor puede sobreescribir la tasa de interés libremente al aprobar. El sistema guarda siempre la tasa pactada; no se recalcula automáticamente. Los valores aqui descritos son solo de referencia para el revisor.

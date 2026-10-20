@@ -4,14 +4,14 @@
 
 @section('content')
 <div style="margin-top: 30px; text-align: center;">
-    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $primaryColor }};">Acuse de Recepci&oacute;n de Peticiones</h2>
-    <p style="font-size: 1.2em; color: #555;">Pliego Anual {{ $annualPetition->year }}</p>
+    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $documentColors['primary'] }};">Acuse de Recepci&oacute;n de Peticiones</h2>
+    <p style="font-size: 1.2em; color: {{ $documentColors['base_content'] }};">Pliego Anual {{ $annualPetition->year }}</p>
 </div>
 
-<hr style="border: 0; border-top: 2px solid {{ $primaryColor }}; margin: 20px 0;">
+<hr style="border: 0; border-top: 2px solid {{ $documentColors['primary'] }}; margin: 20px 0;">
 
 <div style="margin-bottom: 20px;">
-    <h3 style="font-size: 1.4em; color: {{ $primaryColor }}; margin-bottom: 10px;">Datos de la Convocatoria</h3>
+    <h3 style="font-size: 1.4em; color: {{ $documentColors['primary'] }}; margin-bottom: 10px;">Datos de la Convocatoria</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 1.1em;">
         <tr>
             <td style="padding: 5px 0; width: 30%;"><strong>A&ntilde;o:</strong></td>
@@ -39,10 +39,10 @@
 </div>
 
 <div style="margin-bottom: 20px;">
-    <h3 style="font-size: 1.4em; color: {{ $primaryColor }}; margin-bottom: 10px;">Peticiones Registradas ({{ $petitionRequests->count() }})</h3>
+    <h3 style="font-size: 1.4em; color: {{ $documentColors['primary'] }}; margin-bottom: 10px;">Peticiones Registradas ({{ $petitionRequests->count() }})</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 1.05em;">
         <thead>
-            <tr style="border-bottom: 2px solid {{ $primaryColor }}; text-align: left;">
+            <tr style="border-bottom: 2px solid {{ $documentColors['primary'] }}; text-align: left;">
                 <th style="padding: 6px 0; width: 8%;">#</th>
                 <th style="padding: 6px 0;">Propuesta</th>
                 <th style="padding: 6px 0; width: 22%;">Adjunto</th>
@@ -67,6 +67,6 @@
 </div>
 
 <div style="margin-top: 50px; text-align: center;">
-    <p style="font-size: 1.1em; color: #555;">Este documento es un comprobante oficial del registro de sus peticiones ante el Sindicato.</p>
+    <p style="font-size: 1.1em; color: {{ $documentColors['base_content'] }};">Este documento es un comprobante oficial del registro de sus peticiones ante el Sindicato.</p>
 </div>
 @endsection
