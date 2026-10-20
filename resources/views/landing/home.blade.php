@@ -32,8 +32,8 @@
               <a class="btn btn-outline btn-primary" href="{{ route('financial-reports.index') }}">
                 Informes Financieros
               </a>
-              <a class="btn btn-outline" href="">
-                Simulador de prestamo
+              <a class="btn btn-outline" href="{{ route('simulator.show') }}">
+                Simulador de prestamos
               </a>
             </div>
 
