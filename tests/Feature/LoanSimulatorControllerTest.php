@@ -2,6 +2,41 @@
 
 use Illuminate\Support\Carbon;
 
+it('renders the combined simulation PDF view with its financial sections', function () {
+    $html = view('pdf.loan-simulation-combined', [
+        'primaryColor' => '#611232',
+        'summary' => [
+            'amount' => 10000,
+            'monthly_rate_percent' => '6%',
+            'disbursement_date' => '2026-01-01',
+            'fortnights' => 4,
+            'first_fortnight' => '2026-01-15',
+            'last_fortnight' => '2026-02-28',
+            'total_principal' => 10000,
+            'total_interest' => 250,
+            'total_payment' => 10250,
+        ],
+        'amortizationTable' => [[
+            'type' => 'regular',
+            'period' => 1,
+            'label' => 'Quincena 1',
+            'date' => '2026-01-15',
+            'opening_balance' => 10000,
+            'principal' => 2500,
+            'interest' => 100,
+            'payment' => 2600,
+            'closing_balance' => 7500,
+        ]],
+    ])->render();
+
+    expect($html)
+        ->toContain('Corrida Financiera')
+        ->toContain('Tabla de Amortización')
+        ->toContain('Documento informativo sin validez legal')
+        ->toContain('Quincena 1')
+        ->toContain('$ 10,250.00');
+});
+
 it('GET /simulador-prestamo returns 200', function () {
     $response = $this->get('/simulador-prestamo');
 

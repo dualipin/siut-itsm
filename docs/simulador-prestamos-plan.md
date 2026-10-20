@@ -115,15 +115,15 @@ This feature also introduces the **`Benefit` model** (catálogo de prestaciones)
 **Intent**: Create the two PDF Blade views that the simulator renders and the future real loan module will also use.
 
 **Expected Outcomes**
-- `resources/views/pdf/loan-amortization-table.blade.php` — tabular view of all fortnights.
-- `resources/views/pdf/loan-financial-run.blade.php` — summary corrida financiera (totals: monto, total interés, total a pagar, tasa, plazo, etc.).
+- `resources/views/pdf/loan-simulation-combined.blade.php` — PDF único con la corrida financiera y la tabla de amortización.
+- `resources/views/pdf/partials/loan-financial-summary.blade.php` — resumen reutilizable de la corrida financiera.
+- `resources/views/pdf/partials/loan-amortization-table.blade.php` — tabla reutilizable de todas las quincenas.
 - Both extend `resources/views/document/layout.blade.php`.
 - Clearly marked "SIMULACIÓN — Documento sin valor legal" banner.
 
 **Todo List**
 - [ ] Study existing `resources/views/document/layout.blade.php` and a PDF view (e.g. `petition-voucher.blade.php`) for structure and variables pattern.
-- [ ] Create `resources/views/pdf/loan-amortization-table.blade.php`.
-- [ ] Create `resources/views/pdf/loan-financial-run.blade.php`.
+- [x] Create the combined PDF view and its reusable Blade partials.
 - [ ] Include prominent simulation disclaimer banner.
 
 **Relevant Context**

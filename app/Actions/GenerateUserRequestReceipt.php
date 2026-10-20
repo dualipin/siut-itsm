@@ -2,12 +2,16 @@
 
 namespace App\Actions;
 
-use App\Models\Theme;
 use App\Models\UserRequest;
+use App\Support\DocumentThemePalette;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class GenerateUserRequestReceipt
 {
+    public function __construct(
+        protected readonly DocumentThemePalette $documentThemePalette,
+    ) {}
+
     /**
      * Generate the PDF receipt for a user request.
      *
@@ -15,12 +19,9 @@ class GenerateUserRequestReceipt
      */
     public function execute(UserRequest $userRequest)
     {
-        $theme = Theme::find(1);
-        $primaryColor = $theme ? $theme->color_primary : '#611232';
-
         return Pdf::loadView('pdf.request-receipt', [
             'userRequest' => $userRequest,
-            'primaryColor' => $primaryColor,
+            'documentColors' => $this->documentThemePalette->resolve(),
             'logoSrc' => public_path('assets/images/logo.webp'),
         ]);
     }

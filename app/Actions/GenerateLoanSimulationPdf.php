@@ -2,11 +2,16 @@
 
 namespace App\Actions;
 
+use App\Support\DocumentThemePalette;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Illuminate\Http\Response;
 
 class GenerateLoanSimulationPdf
 {
+    public function __construct(
+        protected readonly DocumentThemePalette $documentThemePalette,
+    ) {}
+
     /**
      * Generate a combined simulation PDF (financial run + amortization table).
      *
@@ -21,7 +26,7 @@ class GenerateLoanSimulationPdf
         return DomPdf::loadView('pdf.loan-simulation-combined', [
             'summary' => $simulationData['summary'],
             'amortizationTable' => $simulationData['amortizationTable'],
-            'primaryColor' => '#611232',
+            'documentColors' => $this->documentThemePalette->resolve(),
             'logoSrc' => public_path('assets/images/logo.webp'),
         ])->download('simulacion-prestamo.pdf');
     }

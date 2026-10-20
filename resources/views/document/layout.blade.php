@@ -5,7 +5,24 @@
   <meta charset="UTF-8">
   <title>@yield('title', 'OST-SIUT-ITSM')</title>
   @php
-      $primaryColor = isset($primaryColor) && is_string($primaryColor) && $primaryColor !== '' ? $primaryColor : '#611232';
+      $documentColors = array_merge([
+          'primary' => '#611232',
+          'primary_content' => '#ffffff',
+          'secondary' => '#a57f2c',
+          'secondary_content' => '#ffffff',
+          'accent' => '#a57f2c',
+          'accent_content' => '#ffffff',
+          'base_100' => '#f9fafb',
+          'base_200' => '#f2f2f2',
+          'base_300' => '#dddddd',
+          'base_content' => '#000000',
+          'warning' => '#f59e0b',
+          'warning_content' => '#92400e',
+          'info' => '#eff6ff',
+      ], is_array($documentColors ?? null) ? $documentColors : []);
+      if (isset($primaryColor) && is_string($primaryColor) && $primaryColor !== '') {
+          $documentColors['primary'] = $primaryColor;
+      }
       $documentLogo = isset($logoSrc) && is_string($logoSrc) && $logoSrc !== '' ? $logoSrc : asset('assets/images/logo.webp');
   @endphp
 
@@ -30,11 +47,11 @@
       left: 0;
       right: 0;
       position: fixed;
-      color: {{ $primaryColor }};
+      color: {{ $documentColors['primary'] }};
       padding-top: .27in;
       padding-bottom: 5px;
       margin: .2in .5in .2in;
-      border-bottom: 3px solid {{ $primaryColor }};
+      border-bottom: 3px solid {{ $documentColors['primary'] }};
     }
 
     header .logo {
@@ -72,11 +89,11 @@
       /* Alineado con el padding */
       left: .5in;
       right: .5in;
-      border-top: 5px solid {{ $primaryColor }};
+      border-top: 5px solid {{ $documentColors['primary'] }};
       padding-top: 5px;
       font-size: 0.75em;
       text-align: center;
-      color: {{ $primaryColor }};
+      color: {{ $documentColors['primary'] }};
     }
 
     .page_number:before {

@@ -4,6 +4,8 @@ use App\Actions\GeneratePetitionConsolidatedReport;
 use App\Actions\GeneratePetitionVoucher;
 use App\Models\AnnualPetition;
 use App\Models\PetitionRequest;
+use App\Models\Theme;
+use App\Support\DocumentThemePalette;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -282,14 +284,14 @@ test('the voucher pdf renders the member name', function () {
         'annualPetition' => $annualPetition,
         'petitionRequests' => collect([$petitionRequest]),
         'curp' => validCurp(),
-        'primaryColor' => '#611232',
+        'documentColors' => app(DocumentThemePalette::class)->resolve(),
         'logoSrc' => public_path('assets/images/logo.webp'),
     ])->render();
 
     expect($html)->toContain('María Gómez López')
         ->and($html)->toContain('Nombre del Agremiado');
 
-    expect((new GeneratePetitionVoucher)->execute($annualPetition, validCurp(), collect([$petitionRequest]))->output())
+    expect(app(GeneratePetitionVoucher::class)->execute($annualPetition, validCurp(), collect([$petitionRequest]))->output())
         ->toStartWith('%PDF');
 });
 
@@ -305,14 +307,56 @@ test('the consolidated report pdf renders every member name', function () {
     $html = view('pdf.consolidated-report', [
         'annualPetition' => $annualPetition,
         'petitionRequests' => collect([$petitionRequest]),
-        'primaryColor' => '#611232',
+        'documentColors' => app(DocumentThemePalette::class)->resolve(),
         'logoSrc' => public_path('assets/images/logo.webp'),
     ])->render();
 
     expect($html)->toContain('María Gómez López');
 
-    expect((new GeneratePetitionConsolidatedReport)->execute($annualPetition)->output())
+    expect(app(GeneratePetitionConsolidatedReport::class)->execute($annualPetition)->output())
         ->toStartWith('%PDF');
+});
+
+test('pdf views use the configured document theme palette', function () {
+    $theme = new Theme([
+        'color_base_100' => '#101010',
+        'color_base_200' => '#202020',
+        'color_base_300' => '#303030',
+        'color_base_content' => '#404040',
+        'color_primary' => '#123456',
+        'color_primary_content' => '#eeeeee',
+        'color_secondary' => '#506070',
+        'color_secondary_content' => '#ffffff',
+        'color_accent' => '#607080',
+        'color_accent_content' => '#ffffff',
+        'color_warning' => '#abcdef',
+        'color_warning_content' => '#fedcba',
+    ]);
+
+    $colors = app(DocumentThemePalette::class)->resolve($theme);
+    $html = view('pdf.loan-simulation-combined', [
+        'summary' => [
+            'amount' => 1000,
+            'monthly_rate_percent' => '6.00 %',
+            'disbursement_date' => '2026-01-01',
+            'fortnights' => 0,
+            'first_fortnight' => null,
+            'last_fortnight' => null,
+            'total_principal' => 1000,
+            'total_interest' => 100,
+            'total_payment' => 1100,
+        ],
+        'amortizationTable' => [],
+        'documentColors' => $colors,
+        'logoSrc' => public_path('assets/images/logo.webp'),
+    ])->render();
+
+    expect($html)
+        ->toContain('#123456')
+        ->toContain('#eeeeee')
+        ->toContain('#101010')
+        ->toContain('#abcdef')
+        ->not->toContain('#611232');
 });
 
 test('deleting an annual petition cascades to its petition requests', function () {

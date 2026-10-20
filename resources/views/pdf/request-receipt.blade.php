@@ -4,14 +4,14 @@
 
 @section('content')
 <div style="margin-top: 30px; text-align: center;">
-    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $primaryColor }};">Comprobante de Solicitud</h2>
-    <p style="font-size: 1.2em; color: #555;">Folio: <strong>{{ $userRequest->folio }}</strong></p>
+    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $documentColors['primary'] }};">Comprobante de Solicitud</h2>
+    <p style="font-size: 1.2em; color: {{ $documentColors['base_content'] }};">Folio: <strong>{{ $userRequest->folio }}</strong></p>
 </div>
 
-<hr style="border: 0; border-top: 2px solid {{ $primaryColor }}; margin: 20px 0;">
+<hr style="border: 0; border-top: 2px solid {{ $documentColors['primary'] }}; margin: 20px 0;">
 
 <div style="margin-bottom: 20px;">
-    <h3 style="font-size: 1.4em; color: {{ $primaryColor }}; margin-bottom: 10px;">Datos del Agremiado</h3>
+    <h3 style="font-size: 1.4em; color: {{ $documentColors['primary'] }}; margin-bottom: 10px;">Datos del Agremiado</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 1.1em;">
         <tr>
             <td style="padding: 5px 0; width: 30%;"><strong>Nombre:</strong></td>
@@ -29,7 +29,7 @@
 </div>
 
 <div style="margin-bottom: 20px;">
-    <h3 style="font-size: 1.4em; color: {{ $primaryColor }}; margin-bottom: 10px;">Detalles de la Solicitud</h3>
+    <h3 style="font-size: 1.4em; color: {{ $documentColors['primary'] }}; margin-bottom: 10px;">Detalles de la Solicitud</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 1.1em;">
         <tr>
             <td style="padding: 5px 0; width: 30%;"><strong>Tipo de Solicitud:</strong></td>
@@ -52,7 +52,7 @@
 
 @if(!empty($userRequest->additional_data))
 <div style="margin-bottom: 20px;">
-    <h3 style="font-size: 1.4em; color: {{ $primaryColor }}; margin-bottom: 10px;">Información Adicional</h3>
+    <h3 style="font-size: 1.4em; color: {{ $documentColors['primary'] }}; margin-bottom: 10px;">Información Adicional</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 1.1em;">
         @foreach($userRequest->additional_data as $key => $value)
         @php
@@ -80,6 +80,6 @@
 @endif
 
 <div style="margin-top: 50px; text-align: center;">
-    <p style="font-size: 1.1em; color: #555;">Este documento es un comprobante oficial de su solicitud ante el Sindicato.</p>
+    <p style="font-size: 1.1em; color: {{ $documentColors['base_content'] }};">Este documento es un comprobante oficial de su solicitud ante el Sindicato.</p>
 </div>
 @endsection

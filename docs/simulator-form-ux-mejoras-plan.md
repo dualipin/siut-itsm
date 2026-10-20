@@ -42,7 +42,7 @@ El servicio usa `tasa_anual / 365 × días` para calcular interés. El método c
 - El parámetro `annual_rate` se renombra a `monthly_rate` en el contrato interno del servicio.
 - El resumen (`buildFinancialRunSummary`) refleja el campo renombrado.
 - Los tests unitarios pasan con los nuevos parámetros y valores esperados verificados con días reales.
-- El template PDF `loan-amortization-table.blade.php` muestra "Tasa mensual" en lugar de "Tasa anual", y usa `monthly_rate_percent`.
+- El parcial PDF `pdf/partials/loan-amortization-table.blade.php` muestra "Tasa mensual" y usa `monthly_rate_percent`.
 
 ### Todo List
 1. En `LoanSimulationService::buildAmortizationTable`: reemplazar `$amount = $params['amount']` por `$amount = (float) ($params['payment_methods']['nomina']['amount'] ?? 0)`.
@@ -51,12 +51,12 @@ El servicio usa `tasa_anual / 365 × días` para calcular interés. El método c
 4. En el PHPDoc del servicio: actualizar el shape de `$params` — eliminar `amount` de nivel raíz, añadir `amount` dentro de `nomina`, cambiar `annual_rate` → `monthly_rate`.
 5. En `buildFinancialRunSummary`: actualizar referencias a `$params['annual_rate']` → `$params['monthly_rate']`; en el array de retorno cambiar `annual_rate` → `monthly_rate` y `annual_rate_percent` → `monthly_rate_percent`.
 6. Actualizar `tests/Unit/LoanSimulationServiceTest.php`: todos los casos pasan `nomina.amount` en lugar de `amount` en raíz; actualizar tasa a `monthly_rate` (ej. `0.06` mensual); añadir un test específico que verifica que la segunda quincena de febrero usa 13 días de interés; recalcular valores esperados con la nueva fórmula de días reales.
-7. En `resources/views/pdf/loan-amortization-table.blade.php` línea 18: cambiar la etiqueta "Tasa anual" → "Tasa mensual" y la clave `$summary['annual_rate_percent']` → `$summary['monthly_rate_percent']`.
+7. En `resources/views/pdf/partials/loan-amortization-table.blade.php`: mantener la etiqueta "Tasa mensual" y la clave `$summary['monthly_rate_percent']`.
 
 ### Relevant Context
 - `app/Services/LoanSimulationService.php` líneas 33–147 (`buildAmortizationTable`), 174–207 (`buildFinancialRunSummary`).
 - `tests/Unit/LoanSimulationServiceTest.php` — todos los tests referencian `amount` en raíz y `annual_rate`.
-- `resources/views/pdf/loan-amortization-table.blade.php` línea 18 — etiqueta y clave de tasa.
+- `resources/views/pdf/partials/loan-amortization-table.blade.php` — tabla de amortización y totales.
 - El literal `15` en la línea 75 del servicio es el único punto a reemplazar por `$days` calculado con `diffInDays`.
 
 ---

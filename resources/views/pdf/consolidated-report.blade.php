@@ -4,11 +4,11 @@
 
 @section('content')
 <div style="margin-top: 30px; text-align: center;">
-    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $primaryColor }};">Reporte Consolidado de Peticiones</h2>
-    <p style="font-size: 1.2em; color: #555;">Pliego Anual {{ $annualPetition->year }}</p>
+    <h2 style="font-size: 1.8em; margin-bottom: 10px; color: {{ $documentColors['primary'] }};">Reporte Consolidado de Peticiones</h2>
+    <p style="font-size: 1.2em; color: {{ $documentColors['base_content'] }};">Pliego Anual {{ $annualPetition->year }}</p>
 </div>
 
-<hr style="border: 0; border-top: 2px solid {{ $primaryColor }}; margin: 20px 0;">
+<hr style="border: 0; border-top: 2px solid {{ $documentColors['primary'] }}; margin: 20px 0;">
 
 <div style="margin-bottom: 20px;">
     <table style="width: 100%; border-collapse: collapse; font-size: 1.1em;">
@@ -33,7 +33,7 @@
 
 <table style="width: 100%; border-collapse: collapse; font-size: 0.95em;">
     <thead>
-        <tr style="background-color: #f2f2f2; border-bottom: 2px solid {{ $primaryColor }};">
+        <tr style="background-color: {{ $documentColors['base_200'] }}; border-bottom: 2px solid {{ $documentColors['primary'] }};">
             <th style="padding: 6px 4px; width: 5%; text-align: center;">#</th>
             <th style="padding: 6px 4px; width: 16%; text-align: left;">CURP</th>
             <th style="padding: 6px 4px; width: 16%; text-align: left;">Nombre</th>
@@ -44,7 +44,7 @@
     </thead>
     <tbody>
         @foreach ($petitionRequests as $index => $petitionRequest)
-            <tr style="border-bottom: 1px solid #ddd;">
+            <tr style="border-bottom: 1px solid {{ $documentColors['base_300'] }};">
                 <td style="padding: 5px 4px; text-align: center; vertical-align: top;">{{ $index + 1 }}</td>
                 <td style="padding: 5px 4px; vertical-align: top;">{{ $petitionRequest->curp }}</td>
                 <td style="padding: 5px 4px; vertical-align: top;">{{ $petitionRequest->agremiado_name ?? '—' }}</td>
@@ -59,6 +59,6 @@
 </table>
 
 <div style="margin-top: 40px; text-align: center;">
-    <p style="font-size: 1.05em; color: #555;">Documento generado por el Sistema de Pliegos Anuales.</p>
+    <p style="font-size: 1.05em; color: {{ $documentColors['base_content'] }};">Documento generado por el Sistema de Pliegos Anuales.</p>
 </div>
 @endsection

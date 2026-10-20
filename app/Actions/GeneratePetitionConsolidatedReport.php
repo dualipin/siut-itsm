@@ -4,12 +4,17 @@ namespace App\Actions;
 
 use App\Models\AnnualPetition;
 use App\Models\PetitionRequest;
+use App\Support\DocumentThemePalette;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Barryvdh\DomPDF\PDF;
 use Illuminate\Support\Collection;
 
 class GeneratePetitionConsolidatedReport
 {
+    public function __construct(
+        protected readonly DocumentThemePalette $documentThemePalette,
+    ) {}
+
     /**
      * Generate the admin-facing consolidated report for a whole annual petition.
      *
@@ -31,7 +36,7 @@ class GeneratePetitionConsolidatedReport
         return DomPdf::loadView('pdf.consolidated-report', [
             'annualPetition' => $annualPetition,
             'petitionRequests' => $petitionRequests,
-            'primaryColor' => '#611232',
+            'documentColors' => $this->documentThemePalette->resolve(),
             'logoSrc' => public_path('assets/images/logo.webp'),
         ]);
     }
