@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             ThemeSeeder::class,
             PostSeeder::class,
             TransparencyRecordSeeder::class,
+            BenefitSeeder::class,
         ]);
     }
 }
