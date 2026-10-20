@@ -4,6 +4,7 @@ use App\Enums\TransparencyRecordType;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\InquiryController;
+use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\PublicationController;
 use App\Http\Controllers\PublicTransparencyController;
 use App\Models\AnnualPetition;
@@ -86,3 +87,6 @@ Route::get('/pliegos-anuales/{annualPetition}', function (AnnualPetition $annual
         'annualPetition' => $annualPetition,
     ]);
 })->where('annualPetition', '[0-9]{4}')->name('petitions.index');
+
+// Simulador de Préstamos (público)
+Route::get('/simulador-prestamo', [LoanSimulatorController::class, 'show'])->name('simulator.show');

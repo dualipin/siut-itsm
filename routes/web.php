@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\MessageAttachmentController;
 use App\Http\Controllers\PublicPetitionController;
 use App\Http\Controllers\TransparencyDocumentController;
@@ -29,6 +30,12 @@ Route::get('/petitions/voucher/{annual_petition}/{curp}', [PublicPetitionControl
 
 Route::get('/pliegos-anuales/convocatorias/{media}', [PublicPetitionController::class, 'downloadConvocationAttachment'])
     ->name('public.petitions.convocation.download');
+
+Route::post('/api/simulador-prestamo/simulate', [LoanSimulatorController::class, 'simulate'])
+    ->name('public.simulator.simulate');
+
+Route::get('/api/simulador-prestamo/download/{token}', [LoanSimulatorController::class, 'download'])
+    ->name('public.simulator.download');
 
 Route::fallback(function () {
     return response()->view('errors.404-landing', [], 404);
