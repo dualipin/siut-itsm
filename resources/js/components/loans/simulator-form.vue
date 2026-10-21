@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useIslandForm } from '@/composables/useIslandForm'
+import { MONTHLY_RATE_OPTIONS, type MonthlyRateValue } from '@/constants/loans'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 const props = defineProps<{
@@ -17,7 +18,7 @@ const props = defineProps<{
 type BenefitEntry = { benefit_id: number; amount: string; collection_date: string }
 
 const form = useIslandForm({
-    monthly_rate: '' as '' | '6' | '7.5' | '8' | '9.5',
+    monthly_rate: '' as '' | MonthlyRateValue,
     payment_type: 'nomina' as 'nomina' | 'benefit' | 'mixed',
     nomina: {
         amount: '',
@@ -202,6 +203,14 @@ const submit = async () => {
     })
 }
 
+// ── Integer-only input helper ──────────────────────────────────────────────────
+function setIntegerField(e: Event, setter: (value: string) => void) {
+    const input = e.target as HTMLInputElement
+    const digits = input.value.replace(/\D/g, '')
+    input.value = digits
+    setter(digits)
+}
+
 // ── Field error helper ─────────────────────────────────────────────────────────
 function fieldError(key: string): string | undefined {
     const errors = form.errors as Record<string, string[] | undefined>
@@ -235,7 +244,7 @@ function fieldError(key: string): string | undefined {
                 <svg class="w-4 h-4 shrink-0 text-warning" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                 </svg>
-                <span>Esta simulación es únicamente informativa y no constituye un compromiso del sindicato.</span>
+                <span>Esta simulación es únicamente informativa.</span>
             </div>
         </div>
 
@@ -312,19 +321,20 @@ function fieldError(key: string): string | undefined {
                                     </label>
                                     <input
                                         id="nomina-amount"
-                                        v-model="form.data.nomina.amount"
+                                        :value="form.data.nomina.amount"
                                         type="number"
-                                        inputmode="decimal"
+                                        inputmode="numeric"
                                         min="1"
-                                        step="0.01"
-                                        placeholder="Ej. 10,000.00"
-                                        class="input input-bordered w-full text-base min-h-[48px]"
+                                        step="1"
+                                        placeholder="Ej. 10,000"
+                                        @input="(e: Event) => setIntegerField(e, v => form.data.nomina.amount = v)"
+                                        class="input input-bordered w-full text-base min-h-12"
                                         :class="{ 'input-error': fieldError('nomina.amount') }"
                                         :aria-invalid="Boolean(fieldError('nomina.amount'))"
                                         :aria-describedby="fieldError('nomina.amount') ? 'nomina-amount-error' : 'nomina-amount-hint'"
                                     />
                                     <p id="nomina-amount-hint" class="label-text-alt text-base-content/60 mt-1 text-sm">
-                                        Solo el tramo que se descontará quincenalmente.
+
                                     </p>
                                     <p v-if="fieldError('nomina.amount')" id="nomina-amount-error" class="label-text-alt text-error mt-1 text-sm">
                                         {{ fieldError('nomina.amount') }}
@@ -434,16 +444,16 @@ function fieldError(key: string): string | undefined {
                                         >
                                             <input
                                                 type="number"
-                                                inputmode="decimal"
+                                                inputmode="numeric"
                                                 min="1"
-                                                step="0.01"
+                                                step="1"
                                                 placeholder="Monto ($)"
                                                 class="input input-bordered input-sm w-full max-w-xs text-base min-h-[48px]"
                                                 :class="{ 'input-error': fieldError(`benefits.${form.data.benefits.findIndex(b => b.benefit_id === benefit.id)}.amount`) }"
                                                 :value="form.data.benefits.find(b => b.benefit_id === benefit.id)?.amount ?? ''"
                                                 @input="(e: Event) => {
                                                     const idx = form.data.benefits.findIndex(b => b.benefit_id === benefit.id)
-                                                    if (idx !== -1) form.data.benefits[idx].amount = (e.target as HTMLInputElement).value
+                                                    if (idx !== -1) setIntegerField(e, v => form.data.benefits[idx].amount = v)
                                                 }"
                                             />
                                         </div>
@@ -464,30 +474,19 @@ function fieldError(key: string): string | undefined {
                         <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185zM9.75 9h.008v.008H9.75V9zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zm4.125 4.5h.008v.008h-.008V13.5zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0z"/>
                         </svg>
-                        02 — Tasa de interés
+                        02 — Tipo de trabajador solicitante
                     </h2>
                     <div class="border-t border-base-300 pt-4 sm:pt-6">
                         <fieldset
-                            class="mt-4 p-4 rounded-xl bg-base-200/50 border"
+                            class="py-4 px-2 rounded-xl bg-base-200/50 border"
                             :class="fieldError('monthly_rate') ? 'border-error' : 'border-base-200'"
                             :aria-describedby="fieldError('monthly_rate') ? 'monthly-rate-error' : undefined"
                         >
-                            <legend class="sr-only">Tasas de interés mensuales</legend>
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">
-                                    Tasas de interés (% mensual)
-                                </h3>
-                                <span class="badge badge-sm badge-ghost">Referencia</span>
-                            </div>
+                            <legend class="sr-only">Tipo de trabajador solicitante</legend>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Tasa de interés mensual">
                                 <label
-                                    v-for="rate in [
-                                        { value: '6', label: 'Agremiado / Ahorrador' },
-                                        { value: '7.5', label: 'Agremiado / No ahorrador' },
-                                        { value: '8', label: 'No agremiado / Ahorrador' },
-                                        { value: '9.5', label: 'No agremiado / No ahorrador' },
-                                    ]"
+                                    v-for="rate in MONTHLY_RATE_OPTIONS"
                                     :key="rate.value"
                                     class="flex items-center justify-between btn py-6 px-4 border border-base-300"
                                     :class="form.data.monthly_rate === rate.value
@@ -535,7 +534,7 @@ function fieldError(key: string): string | undefined {
 
                     <p class="text-sm text-base-content/60 leading-relaxed">
                         Al simular, se generará un PDF con la corrida financiera y la tabla de amortización.
-                        <strong>Este documento es únicamente informativo y no tiene validez legal.</strong>
+                        <strong>Este documento es únicamente informativo.</strong>
                     </p>
                     <button
                         type="submit"
