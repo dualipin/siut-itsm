@@ -20,14 +20,22 @@ class GenerateLoanSimulationPdf
      *     summary: array<string, mixed>
      * }  $simulationData
      */
-    public function execute(array $simulationData): Response
+    public function execute(array $simulationData, string $token = ''): Response
     {
+        $suffix = $token !== '' ? '-'.substr($token, 0, 8) : '';
+        $filename = "simulacion-prestamo{$suffix}.pdf";
+
         /** @var Response */
-        return DomPdf::loadView('pdf.loan-simulation-combined', [
+        $response = DomPdf::loadView('pdf.loan-simulation-combined', [
             'summary' => $simulationData['summary'],
             'amortizationTable' => $simulationData['amortizationTable'],
             'documentColors' => $this->documentThemePalette->resolve(),
             'logoSrc' => public_path('assets/images/logo.webp'),
-        ])->download('simulacion-prestamo.pdf');
+        ])->download($filename);
+
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        $response->headers->set('Pragma', 'no-cache');
+
+        return $response;
     }
 }

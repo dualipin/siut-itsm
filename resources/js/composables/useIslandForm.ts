@@ -24,6 +24,8 @@ export interface IslandForm<T extends Record<string, any>> {
 }
 
 export function useIslandForm<T extends Record<string, any>>(initialValues: T): IslandForm<T> {
+    const defaultValues: T = JSON.parse(JSON.stringify(initialValues))
+
     function getCsrfToken(): string {
         if (typeof document === 'undefined') {
             return ''
@@ -57,7 +59,7 @@ export function useIslandForm<T extends Record<string, any>>(initialValues: T): 
         },
 
         reset() {
-            Object.assign(form.data, initialValues)
+            Object.assign(form.data, JSON.parse(JSON.stringify(defaultValues)))
             form.errors = {}
         },
 

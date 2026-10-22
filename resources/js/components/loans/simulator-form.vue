@@ -122,6 +122,22 @@ watch(
     () => { form.data.nomina.fortnights = '' }
 )
 
+// Clear data for sections that are no longer visible when payment_type changes
+watch(
+    () => form.data.payment_type,
+    (type) => {
+        if (type === 'benefit') {
+            form.data.nomina.amount = ''
+            form.data.nomina.first_fortnight = ''
+            form.data.nomina.fortnights = ''
+        } else if (type === 'nomina') {
+            form.data.benefits = []
+            selectedBenefitIds.value = new Set()
+        }
+        // 'mixed' keeps both sections — no cleanup needed
+    }
+)
+
 /**
  * The date of the last fortnight calculated from first_fortnight + fortnights count.
  */

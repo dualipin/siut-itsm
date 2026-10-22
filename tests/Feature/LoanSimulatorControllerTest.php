@@ -133,6 +133,16 @@ it('GET download with valid token returns pdf response', function () {
 
     $downloadResponse->assertOk();
     $downloadResponse->assertHeader('Content-Type', 'application/pdf');
+
+    // Filename must include the first 8 chars of the token
+    $tokenPrefix = substr($token, 0, 8);
+    $downloadResponse->assertHeader('Content-Disposition', "attachment; filename=simulacion-prestamo-{$tokenPrefix}.pdf");
+
+    // No-cache directives must be present (DomPDF merges its own Cache-Control values)
+    expect($downloadResponse->headers->get('Cache-Control'))
+        ->toContain('no-store')
+        ->toContain('no-cache');
+    $downloadResponse->assertHeader('Pragma', 'no-cache');
 });
 
 it('GET download with invalid token returns 404', function () {

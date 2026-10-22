@@ -52,6 +52,6 @@
 
 <div style="margin-top: 18px; font-size: 0.8em; color: {{ $documentColors['base_content'] }};">
     <p>* El interés simple (método alemán) se aplica a los pagos por nómina quincenal.</p>
-    <p>* Las prestaciones crecen quincena a quincena con la tasa diaria equivalente <em>(1 + r<sub>m</sub>)<sup>1/30</sup> − 1</em>; las filas en cursiva muestran el crecimiento intermedio y la fila final concentra el pago total.</p>
+    <p>* Las prestaciones crecen quincena a quincena con la tasa diaria equivalente usando interés compuesto; las filas en cursiva muestran el crecimiento intermedio y la fila final concentra el pago total.</p>
     <p style="margin-top: 6px; text-align: center; color: {{ $documentColors['base_content'] }};">Generado el {{ now()->format('d/m/Y H:i') }}. Documento informativo sin validez legal.</p>
 </div>

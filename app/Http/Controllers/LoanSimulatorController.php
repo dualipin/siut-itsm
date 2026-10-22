@@ -107,6 +107,6 @@ class LoanSimulatorController extends Controller
 
         Cache::forget('loan_simulation_'.$token);
 
-        return $this->generateLoanSimulationPdf->execute($data);
+        return $this->generateLoanSimulationPdf->execute($data, $token);
     }
 }
