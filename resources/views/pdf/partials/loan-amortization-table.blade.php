@@ -19,14 +19,22 @@
     </thead>
     <tbody>
         @foreach ($amortizationTable as $row)
-            <tr style="border-bottom: 1px solid {{ $documentColors['base_300'] }}; {{ $row['type'] === 'extra_days' ? 'background: '.$documentColors['base_200'].';' : ($row['type'] === 'benefit' ? 'background: '.$documentColors['info'].';' : '') }}">
+            @php
+                $rowStyle = match($row['type']) {
+                    'extra_days'     => 'background: '.$documentColors['base_200'].';',
+                    'benefit_growth' => 'background: '.$documentColors['base_100'].'; color: '.$documentColors['base_content'].'; font-style: italic;',
+                    'benefit'        => 'background: '.$documentColors['info'].';',
+                    default          => '',
+                };
+            @endphp
+            <tr style="border-bottom: 1px solid {{ $documentColors['base_300'] }}; {{ $rowStyle }}">
                 <td style="padding: 5px 8px; text-align: center;">{{ $row['period'] }}</td>
                 <td style="padding: 5px 8px;">{{ $row['label'] }}</td>
                 <td style="padding: 5px 8px; text-align: center;">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('d/m/Y') }}</td>
                 <td style="padding: 5px 8px; text-align: right;">$ {{ number_format($row['opening_balance'], 2) }}</td>
-                <td style="padding: 5px 8px; text-align: right;">$ {{ number_format($row['principal'], 2) }}</td>
+                <td style="padding: 5px 8px; text-align: right;">{{ $row['type'] === 'benefit_growth' ? '—' : '$ '.number_format($row['principal'], 2) }}</td>
                 <td style="padding: 5px 8px; text-align: right;">$ {{ number_format($row['interest'], 2) }}</td>
-                <td style="padding: 5px 8px; text-align: right; font-weight: bold;">$ {{ number_format($row['payment'], 2) }}</td>
+                <td style="padding: 5px 8px; text-align: right; font-weight: bold;">{{ $row['type'] === 'benefit_growth' ? '—' : '$ '.number_format($row['payment'], 2) }}</td>
                 <td style="padding: 5px 8px; text-align: right;">$ {{ number_format($row['closing_balance'], 2) }}</td>
             </tr>
         @endforeach
@@ -44,6 +52,6 @@
 
 <div style="margin-top: 18px; font-size: 0.8em; color: {{ $documentColors['base_content'] }};">
     <p>* El interés simple (método alemán) se aplica a los pagos por nómina quincenal.</p>
-    <p>* El interés compuesto se aplica a los pagos por prestación, cargado en la fecha de cobro de la prestación.</p>
+    <p>* Las prestaciones crecen quincena a quincena con la tasa diaria equivalente <em>(1 + r<sub>m</sub>)<sup>1/30</sup> − 1</em>; las filas en cursiva muestran el crecimiento intermedio y la fila final concentra el pago total.</p>
     <p style="margin-top: 6px; text-align: center; color: {{ $documentColors['base_content'] }};">Generado el {{ now()->format('d/m/Y H:i') }}. Documento informativo sin validez legal.</p>
 </div>

@@ -13,7 +13,7 @@ class LoanSimulationService
      *     monthly_rate: float,
      *     payment_methods: array{
      *         nomina?: array{fortnights: int, first_fortnight: string, amount: float},
-     *         benefits?: array<int, array{benefit_id: int, amount: float, collection_date: string}>
+     *         benefits?: array<int, array{benefit_id: int, name: string, amount: float, collection_date: string}>
      *     },
      *     disbursement_date: string
      * }  $params
@@ -33,7 +33,8 @@ class LoanSimulationService
     {
         $disbursement = Carbon::parse($params['disbursement_date']);
         $monthlyRate = (float) $params['monthly_rate'];
-        $dailyRate = $monthlyRate / 30;
+        $nominaDailyRate = $monthlyRate / 30;          // simple (método alemán) for nómina
+        $benefitDailyRate = $this->dailyRate($monthlyRate); // equivalent for benefits
 
         $nomina = $params['payment_methods']['nomina'] ?? null;
         $benefitsPayments = $params['payment_methods']['benefits'] ?? [];
@@ -52,7 +53,7 @@ class LoanSimulationService
             // Period 0: extra days (disbursement → first fortnight)
             $extraDays = $disbursement->diffInDays($firstFortnight);
             if ($extraDays > 0) {
-                $extraInterest = round($balance * $dailyRate * $extraDays, 2);
+                $extraInterest = round($balance * $nominaDailyRate * $extraDays, 2);
                 $period++;
                 $rows[] = [
                     'period' => $period,
@@ -69,14 +70,14 @@ class LoanSimulationService
 
             // Regular fortnights — days are real calendar days between consecutive quincenas
             $previousDate = $firstFortnight->copy();
-            $currentDate = $firstFortnight->copy();
+            $currentDate = $this->nextFortnight($firstFortnight);
             for ($i = 0; $i < $fortnights; $i++) {
                 $isLastFortnight = ($i === $fortnights - 1);
 
-                // Days between previous quincena and this one (15 for the first iteration)
-                $days = ($i === 0) ? 15 : $previousDate->diffInDays($currentDate);
+                // Real calendar days between the previous quincena and this one
+                $days = $previousDate->diffInDays($currentDate);
 
-                $interest = round($balance * $dailyRate * $days, 2);
+                $interest = round($balance * $nominaDailyRate * $days, 2);
 
                 // Last row absorbs any rounding remainder
                 $principal = $isLastFortnight
@@ -106,47 +107,98 @@ class LoanSimulationService
         }
 
         // ── Benefit rows ──────────────────────────────────────────────────────────
-        // Interest is charged once at the benefit collection date.
-        // If there were nómina fortnights the base date is the last nómina date;
-        // otherwise it is the disbursement date.
+        // Growth is tracked fortnight-by-fortnight using the equivalent daily rate.
+        // Each intermediate fortnight produces a 'benefit_growth' row (payment = 0);
+        // the last fortnight produces the final 'benefit' row.
         foreach ($benefitsPayments as $benefitPayment) {
             $collectionDate = Carbon::parse($benefitPayment['collection_date']);
             $benefitAmount = (float) $benefitPayment['amount'];
+            $benefitName = $benefitPayment['name'] ?? 'Prestación';
 
-            // Base date for compound period
+            // Resolve last nómina date (if any) to apply D5
+            $lastNominaDate = null;
             if ($nomina !== null) {
                 $lastNominaDate = Carbon::parse($nomina['first_fortnight'])->copy();
                 for ($i = 1; $i < (int) $nomina['fortnights']; $i++) {
                     $lastNominaDate = $this->nextFortnight($lastNominaDate);
                 }
-                $baseDate = $lastNominaDate;
-            } else {
-                $baseDate = $disbursement->copy();
             }
 
-            $days = $baseDate->diffInDays($collectionDate);
+            $baseDate = $this->benefitBaseDate($disbursement, $lastNominaDate, $collectionDate);
 
-            // Compound interest: A = P(1 + r/30)^n − P  (r = monthly, n = days)
-            $compoundInterest = round(
-                $benefitAmount * (pow(1 + $monthlyRate / 30, $days) - 1),
-                2
-            );
+            // Iterate fortnight-by-fortnight from baseDate to collectionDate
+            $balance = $benefitAmount;
+            $current = $baseDate->copy();
+            $quincenal = 1;
 
-            $period++;
-            $rows[] = [
-                'period' => $period,
-                'label' => 'Prestación',
-                'date' => $collectionDate->format('Y-m-d'),
-                'opening_balance' => round($benefitAmount, 2),
-                'principal' => round($benefitAmount, 2),
-                'interest' => $compoundInterest,
-                'payment' => round($benefitAmount + $compoundInterest, 2),
-                'closing_balance' => 0.0,
-                'type' => 'benefit',
-            ];
+            while (true) {
+                $next = $this->nextFortnight($current);
+                $isLast = $next->greaterThanOrEqualTo($collectionDate);
+                $rowEnd = $isLast ? $collectionDate->copy() : $next->copy();
+
+                $days = $current->diffInDays($rowEnd);
+                $interest = round($balance * (pow(1 + $benefitDailyRate, $days) - 1), 2);
+                $newBalance = round($balance + $interest, 2);
+
+                $period++;
+
+                if ($isLast) {
+                    $rows[] = [
+                        'period' => $period,
+                        'label' => $benefitName,
+                        'date' => $rowEnd->format('Y-m-d'),
+                        'opening_balance' => round($balance, 2),
+                        'principal' => round($benefitAmount, 2),
+                        'interest' => round($newBalance - $benefitAmount, 2),
+                        'payment' => $newBalance,
+                        'closing_balance' => 0.0,
+                        'type' => 'benefit',
+                    ];
+                    break;
+                }
+
+                $rows[] = [
+                    'period' => $period,
+                    'label' => $benefitName.' — Q'.$quincenal,
+                    'date' => $rowEnd->format('Y-m-d'),
+                    'opening_balance' => round($balance, 2),
+                    'principal' => 0.0,
+                    'interest' => $interest,
+                    'payment' => 0.0,
+                    'closing_balance' => $newBalance,
+                    'type' => 'benefit_growth',
+                ];
+
+                $balance = $newBalance;
+                $current = $next->copy();
+                $quincenal++;
+            }
         }
 
         return $rows;
+    }
+
+    /**
+     * Equivalent daily rate from a monthly rate: (1 + r_m)^(1/30) − 1.
+     */
+    private function dailyRate(float $monthlyRate): float
+    {
+        return pow(1 + $monthlyRate, 1 / 30) - 1;
+    }
+
+    /**
+     * Determine the base date for a benefit's compound period (decision D5).
+     *
+     * If the last nómina date is within 15 days of the collection date, use
+     * the disbursement date instead (the nómina barely overlaps the benefit).
+     */
+    private function benefitBaseDate(Carbon $disbursement, ?Carbon $lastNomina, Carbon $collectionDate): Carbon
+    {
+        if ($lastNomina !== null && $lastNomina->diffInDays($collectionDate) > 15) {
+            return $lastNomina->copy();
+        }
+
+        return $disbursement->copy();
     }
 
     /**

@@ -66,9 +66,13 @@ class LoanSimulatorController extends Controller
         }
 
         if (! empty($validated['benefits'])) {
+            $ids = array_column($validated['benefits'], 'benefit_id');
+            $names = Benefit::whereIn('id', $ids)->pluck('name', 'id');
+
             $params['payment_methods']['benefits'] = array_map(
                 fn (array $b) => [
                     'benefit_id' => (int) $b['benefit_id'],
+                    'name' => $names[(int) $b['benefit_id']] ?? 'Prestación',
                     'amount' => (float) $b['amount'],
                     'collection_date' => $b['collection_date'],
                 ],
