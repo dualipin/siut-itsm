@@ -132,7 +132,7 @@
                 class="w-full h-auto rounded-xl object-cover shadow-sm hover:scale-[1.02] transition-transform duration-300"
                 src="{{ asset('assets/images/about_2-min.jpg') }}" alt="Imagen Sindicato OSTITSM">
 
-              <div class="mt-4 text-center">
+              <div class="my-4 text-center">
                 <div class="font-bold text-lg text-base-content">MIDS. Luiz Sosa Castro</div>
                 <div class="text-sm text-base-content/70 font-medium">Secretario General SIUT ITSM</div>
               </div>

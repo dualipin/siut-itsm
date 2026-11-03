@@ -1,0 +1,106 @@
+<?php
+
+use App\Enums\DocumentStatus;
+use App\Enums\UserDocumentType;
+use App\Enums\UserRole;
+use App\Filament\Resources\Users\Pages\ReviewDocuments;
+use App\Models\User;
+use Filament\Facades\Filament;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
+
+beforeEach(function () {
+    Filament::setCurrentPanel(Filament::getPanel('portal'));
+
+    $this->admin = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $this->actingAs($this->admin);
+});
+
+test('admin can access review documents page', function () {
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $this->get(route('filament.portal.resources.users.review-documents', ['record' => $user]))
+        ->assertSuccessful()
+        ->assertSee('Revisión de Documentos')
+        ->assertSee('Expediente de Afiliación')
+        ->assertSee('Datos del Perfil');
+});
+
+test('review documents page mounts with active document type', function () {
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->assertSet('activeDocumentType', 'afiliacion')
+        ->assertActionExists('approveDocument')
+        ->assertActionExists('rejectDocument')
+        ->assertActionExists('replaceDocument')
+        ->assertActionExists('setDocumentValues');
+});
+
+test('admin can approve an uploaded document', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $file = UploadedFile::fake()->create('afiliacion.pdf', 100, 'application/pdf');
+    $user->addMedia($file)->toMediaCollection(UserDocumentType::Afiliacion->value);
+
+    expect($user->getDocumentStatus(UserDocumentType::Afiliacion))->toBe(DocumentStatus::Pending);
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->callAction('approveDocument', arguments: ['type' => UserDocumentType::Afiliacion->value]);
+
+    $user->refresh();
+    expect($user->getDocumentStatus(UserDocumentType::Afiliacion))->toBe(DocumentStatus::Valid);
+});
+
+test('admin can reject an uploaded document with reason', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $file = UploadedFile::fake()->create('curp.pdf', 100, 'application/pdf');
+    $user->addMedia($file)->toMediaCollection(UserDocumentType::Curp->value);
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->callAction('rejectDocument', data: [
+            'rejection_reason' => 'El CURP es ilegible en la esquina inferior.',
+        ], arguments: ['type' => UserDocumentType::Curp->value]);
+
+    $user->refresh();
+    expect($user->getDocumentStatus(UserDocumentType::Curp))->toBe(DocumentStatus::Invalid);
+    expect($user->getDocumentRejectionReason(UserDocumentType::Curp))->toBe('El CURP es ilegible en la esquina inferior.');
+});
+
+test('admin can approve all documents at once', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    foreach (UserDocumentType::cases() as $type) {
+        $file = UploadedFile::fake()->create("{$type->value}.pdf", 100, 'application/pdf');
+        $user->addMedia($file)->toMediaCollection($type->value);
+    }
+
+    expect($user->areAllDocumentsValid())->toBeFalse();
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->callAction('approveAllDocuments');
+
+    $user->refresh();
+    expect($user->areAllDocumentsValid())->toBeTrue();
+});

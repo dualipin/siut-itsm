@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Users\Tables;
 
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
+use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -23,6 +24,7 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
 
 class UsersTable
@@ -38,10 +40,12 @@ class UsersTable
                     ->defaultImageUrl(fn (User $record): ?string => filament()->getUserAvatarUrl($record)),
                 TextColumn::make('name')
                     ->label('Nombre')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('surnames')
                     ->label('Apellidos')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('email')
                     ->label('Correo Electrónico')
                     ->searchable(),
@@ -103,6 +107,12 @@ class UsersTable
                 TrashedFilter::make(),
             ])
             ->recordActions([
+                Action::make('reviewDocuments')
+                    ->label('Revisar')
+                    ->icon(Heroicon::DocumentMagnifyingGlass)
+                    ->color('info')
+                    ->url(fn (User $record): string => UserResource::getUrl('review-documents', ['record' => $record])),
+
                 Action::make('validateDocuments')
                     ->label('Documentos')
                     ->icon(Heroicon::DocumentCheck)
@@ -341,6 +351,7 @@ class UsersTable
                     }),
                 EditAction::make(),
             ])
+            ->defaultSort(fn (Builder $query): Builder => $query->orderBy('surnames')->orderBy('name'))
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),

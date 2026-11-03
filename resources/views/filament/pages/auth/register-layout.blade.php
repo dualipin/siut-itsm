@@ -7,7 +7,7 @@
                 class="absolute inset-0 bg-cover bg-center z-0 scale-105 transition-transform duration-1000"
                 style="background-image: url('{{ asset('assets/images/login-background.jpg') }}');"
             ></div>
-            <div class="absolute inset-0 bg-gradient-to-br from-slate-950/95 via-red-950/85 to-zinc-950/95 z-10 backdrop-blur-[2px]"></div>
+            <div class="absolute inset-0 bg-linear-to-br from-slate-950/95 via-primary-500/30 to-zinc-950/95 z-10 backdrop-blur-[2px]"></div>
 
             <!-- Top Header in Left Panel -->
             <div class="relative z-20 flex items-center gap-3.5">
@@ -28,14 +28,10 @@
 
             <!-- Middle Narrative -->
             <div class="relative z-20 my-auto py-10 space-y-6">
-                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 backdrop-blur-md text-xs font-semibold text-red-100">
-                    <span class="size-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Padrón de Agremiados Digital
-                </div>
 
                 <div class="space-y-3">
                     <h1 class="text-3xl xl:text-4xl font-extrabold tracking-tight text-white leading-tight">
-                        Construyendo un sindicato <span class="text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-white to-red-200">fuerte y transparente</span>.
+                        Construyendo un sindicato <span class="text-transparent bg-clip-text bg-linear-to-r from-red-300 via-white to-red-200">fuerte y transparente</span>.
                     </h1>
                     <p class="text-sm xl:text-base text-slate-200 leading-relaxed font-normal">
                         Al incorporarte a SIUT, cuentas con representación laboral, seguimiento digital de trámites y acceso a todos tus beneficios sindicales.

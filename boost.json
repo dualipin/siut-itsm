@@ -2,18 +2,24 @@
     "agents": [
         "antigravity",
         "opencode",
-        "copilot"
+        "copilot",
+        "zed"
     ],
     "cloud": false,
     "guidelines": true,
     "mcp": true,
     "nightwatch": false,
+    "packages": [
+        "filament/filament",
+        "spatie/laravel-medialibrary"
+    ],
     "sail": false,
     "skills": [
         "infer-conventions",
         "laravel-best-practices",
         "testing-best-practices",
         "inertia-vue-development",
-        "tailwindcss-development"
+        "tailwindcss-development",
+        "medialibrary-development"
     ]
 }
