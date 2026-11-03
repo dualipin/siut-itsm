@@ -229,9 +229,9 @@ class ReviewDocuments extends ViewRecord
             ->color('gray')
             ->modalHeading(fn (array $arguments): string => 'Subir o reemplazar archivo: '.(UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? ''))
             ->modalDescription('Sube el archivo PDF correspondiente. Se guardará en el expediente y el estado se establecerá a Pendiente.')
-            ->form([
+            ->form(fn (array $arguments): array => [
                 FileUpload::make('document_file')
-                    ->label(fn (array $arguments): string => UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? 'Archivo PDF')
+                    ->label(UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? 'Archivo PDF')
                     ->disk('local')
                     ->directory('temp-uploads')
                     ->visibility('private')
@@ -251,6 +251,8 @@ class ReviewDocuments extends ViewRecord
                         'replaced_at' => now()->toIso8601String(),
                     ])
                     ->toMediaCollection($type->value);
+
+                $user->unsetRelation('media');
 
                 Notification::make()
                     ->title('Archivo guardado')

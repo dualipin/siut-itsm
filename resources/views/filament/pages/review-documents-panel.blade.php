@@ -234,6 +234,7 @@
                 <div class="relative w-full rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm bg-gray-100 dark:bg-gray-950 flex-1">
                     @if ($doc['documentUrl'])
                         <iframe
+                            wire:key="document-viewer-{{ $key }}-{{ $doc['media']->getKey() }}"
                             src="{{ $doc['documentUrl'] }}"
                             class="w-full rounded-xl border-0 bg-white dark:bg-gray-900"
                             style="height: calc(100vh - 17.5rem); min-height: 560px;"

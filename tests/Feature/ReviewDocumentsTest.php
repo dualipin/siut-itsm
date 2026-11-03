@@ -84,6 +84,32 @@ test('admin can reject an uploaded document with reason', function () {
     expect($user->getDocumentRejectionReason(UserDocumentType::Curp))->toBe('El CURP es ilegible en la esquina inferior.');
 });
 
+test('replacing a document refreshes the preview url and file name', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $user->addMedia(UploadedFile::fake()->create('viejo.pdf', 100, 'application/pdf'))
+        ->toMediaCollection(UserDocumentType::Curp->value);
+    $oldMediaId = $user->fresh()->getDocumentMedia(UserDocumentType::Curp)->getKey();
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->assertSeeHtml('v='.$oldMediaId)
+        ->callAction(
+            'replaceDocument',
+            data: ['document_file' => UploadedFile::fake()->create('nuevo.pdf', 100, 'application/pdf')],
+            arguments: ['type' => UserDocumentType::Curp->value],
+        )
+        ->assertHasNoActionErrors()
+        ->assertDontSeeHtml('v='.$oldMediaId.'"');
+
+    $newMedia = $user->fresh()->getDocumentMedia(UserDocumentType::Curp);
+
+    expect($newMedia->getKey())->not->toBe($oldMediaId);
+});
+
 test('admin can approve all documents at once', function () {
     Storage::fake('local');
 

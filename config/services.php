@@ -28,6 +28,34 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Document AI (OpenAI-compatible chat completions endpoint)
+    |--------------------------------------------------------------------------
+    |
+    | Works with Gemini's OpenAI-compatible endpoint, OpenRouter or OpenAI.
+    | Switching provider only requires changing the DOCUMENT_AI_* variables.
+    |
+    */
+
+    'document_ai' => [
+        'enabled' => (bool) env('DOCUMENT_AI_ENABLED', false),
+        'base_url' => env('DOCUMENT_AI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai'),
+        'api_key' => env('DOCUMENT_AI_API_KEY'),
+        'model' => env('DOCUMENT_AI_MODEL', 'gemini-3.8-flash'),
+        'timeout' => (int) env('DOCUMENT_AI_TIMEOUT', 60),
+        'max_tokens' => (int) env('DOCUMENT_AI_MAX_TOKENS', 2048),
+        'max_dimension' => (int) env('DOCUMENT_AI_MAX_DIMENSION', 1000),
+        'jpeg_quality' => (int) env('DOCUMENT_AI_JPEG_QUALITY', 70),
+        'json_mode' => (bool) env('DOCUMENT_AI_JSON_MODE', true),
+        'min_reject_confidence' => (float) env('DOCUMENT_AI_MIN_REJECT_CONFIDENCE', 0.7),
+        // Optional provider headers (OpenRouter attribution). Empty values are dropped.
+        'headers' => array_filter([
+            'HTTP-Referer' => env('DOCUMENT_AI_REFERER'),
+            'X-Title' => env('DOCUMENT_AI_APP_TITLE'),
+        ]),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -9,6 +9,7 @@ use Filament\Support\Contracts\HasLabel;
 enum DocumentStatus: string implements HasColor, HasIcon, HasLabel
 {
     case Pending = 'pendiente';
+    case Processing = 'procesando';
     case Valid = 'valido';
     case Invalid = 'invalido';
 
@@ -16,6 +17,7 @@ enum DocumentStatus: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Pending => 'Pendiente de Revisión',
+            self::Processing => 'Procesando',
             self::Valid => 'Válido',
             self::Invalid => 'Inválido / Observado',
         };
@@ -25,6 +27,7 @@ enum DocumentStatus: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Pending => 'warning',
+            self::Processing => 'info',
             self::Valid => 'success',
             self::Invalid => 'danger',
         };
@@ -34,6 +37,7 @@ enum DocumentStatus: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Pending => 'heroicon-m-clock',
+            self::Processing => 'heroicon-m-arrow-path',
             self::Valid => 'heroicon-m-check-circle',
             self::Invalid => 'heroicon-m-x-circle',
         };

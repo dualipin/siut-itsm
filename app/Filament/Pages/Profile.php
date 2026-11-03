@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
+use App\Jobs\ProcessDocumentAIJob;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
@@ -212,6 +213,9 @@ class Profile extends BaseEditProfile
                 if ($status === DocumentStatus::Invalid) {
                     return '⚠ Inválido - Requiere corrección';
                 }
+                if ($status === DocumentStatus::Processing) {
+                    return '🔍 Verificando documento...';
+                }
                 if ($status === DocumentStatus::Pending) {
                     return '⏳ Pendiente de revisión';
                 }
@@ -229,6 +233,9 @@ class Profile extends BaseEditProfile
                 }
                 if ($status === DocumentStatus::Invalid) {
                     return 'danger';
+                }
+                if ($status === DocumentStatus::Processing) {
+                    return 'info';
                 }
                 if ($status === DocumentStatus::Pending) {
                     return 'warning';
@@ -249,6 +256,9 @@ class Profile extends BaseEditProfile
                     $reason = $record->getDocumentRejectionReason($type);
 
                     return 'Observación de la administración: "'.($reason ?: 'Documento no válido').'". Por favor selecciona un nuevo archivo en PDF para reemplazarlo.';
+                }
+                if ($status === DocumentStatus::Processing) {
+                    return 'Estamos verificando tu documento automáticamente. Recibirás una notificación si es rechazado.';
                 }
                 if ($status === DocumentStatus::Pending) {
                     return 'Documento en proceso de revisión por parte de la administración.';
@@ -278,6 +288,10 @@ class Profile extends BaseEditProfile
                     $media->forgetCustomProperty('rejection_reason');
                     $media->save();
                     $updatedAny = true;
+
+                    if (config('services.document_ai.enabled')) {
+                        ProcessDocumentAIJob::dispatch($media)->afterCommit();
+                    }
                 }
             }
         }

@@ -106,6 +106,7 @@ class PortalPanelProvider extends PanelProvider
             ->brandLogo(fn () => view('components.icon-admin'))
             ->brandLogoHeight('3.5rem')
             ->brandName(config('app.name'))
+            ->spa()
             ->favicon(asset('favicon.ico'));
     }
 }

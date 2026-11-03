@@ -67,6 +67,7 @@ class DocumentReviewInfolist
                                 ? route('portal.users.documents.show', [
                                     'user' => $record,
                                     'type' => $type->value,
+                                    'v' => $media->getKey(),
                                 ])
                                 : null,
                             'status' => $status,
