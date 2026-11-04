@@ -44,11 +44,16 @@ return [
         'api_key' => env('DOCUMENT_AI_API_KEY'),
         'model' => env('DOCUMENT_AI_MODEL', 'gemini-3.8-flash'),
         'timeout' => (int) env('DOCUMENT_AI_TIMEOUT', 60),
+        'sync_timeout' => (int) env('DOCUMENT_AI_SYNC_TIMEOUT', 25),
         'max_tokens' => (int) env('DOCUMENT_AI_MAX_TOKENS', 2048),
         'max_dimension' => (int) env('DOCUMENT_AI_MAX_DIMENSION', 1000),
         'jpeg_quality' => (int) env('DOCUMENT_AI_JPEG_QUALITY', 70),
+        'store_max_dimension' => (int) env('DOCUMENT_AI_STORE_MAX_DIMENSION', 1600),
+        'store_jpeg_quality' => (int) env('DOCUMENT_AI_STORE_JPEG_QUALITY', 80),
         'json_mode' => (bool) env('DOCUMENT_AI_JSON_MODE', true),
         'min_reject_confidence' => (float) env('DOCUMENT_AI_MIN_REJECT_CONFIDENCE', 0.7),
+        'throttle_per_hour' => (int) env('DOCUMENT_AI_THROTTLE_PER_HOUR', 10),
+        'daily_cap' => (int) env('DOCUMENT_AI_DAILY_CAP', 300),
         // Optional provider headers (OpenRouter attribution). Empty values are dropped.
         'headers' => array_filter([
             'HTTP-Referer' => env('DOCUMENT_AI_REFERER'),

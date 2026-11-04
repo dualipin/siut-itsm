@@ -6,14 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>{{ config('app.name', 'Laravel') }}</title>
+    <title>@yield('title', config('app.name', 'Laravel'))</title>
+    @hasSection('description')
+        <meta name="description" content="@yield('description')">
+    @endif
 
     @fonts
 
     <!-- Styles / Scripts -->
     <x-theme-style />
 
-    @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
+    @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')) || app()->environment('testing'))
         @vite(['resources/css/app.css'])
         @yield('base-head')
     @endif

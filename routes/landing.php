@@ -7,6 +7,7 @@ use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\PublicationController;
 use App\Http\Controllers\PublicTransparencyController;
+use App\Http\Controllers\RegistrationController;
 use App\Models\AnnualPetition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,16 @@ Route::get('/contact', function () {
 })->name('contact');
 
 Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
+
+// Registro de Agremiados (Página pública Blade + Isla Vue)
+Route::get('/registro', [RegistrationController::class, 'index'])->name('register');
+Route::post('/api/registro/documentos', [RegistrationController::class, 'storeDocument'])
+    ->middleware('throttle:12,1')
+    ->name('registro.documentos.store');
+Route::post('/api/registro', [RegistrationController::class, 'store'])
+    ->middleware('throttle:5,1')
+    ->name('registro.store');
+Route::redirect('/portal/register', '/registro', 301);
 
 Route::get('/dudas', [InquiryController::class, 'index'])->name('inquiries.index');
 Route::post('/dudas', [InquiryController::class, 'store'])->name('inquiries.store');

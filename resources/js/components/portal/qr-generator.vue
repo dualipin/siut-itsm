@@ -149,8 +149,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
 import { QrCode, Download, ExternalLink, RefreshCw } from '@lucide/vue';
-import {MorphIcon} from 'morphicons/vue'
-import { Check, Copy } from 'lucide'
+import { MorphIcon } from 'morphicons/vue';
+import { Check, Copy } from 'lucide';
 import { buildQrCanvas, downloadQrCanvas } from '../../services/qr-share';
 
 interface PresetItem {
@@ -190,7 +190,7 @@ const availablePresets = computed<PresetItem[]>(() => {
         { label: 'Portal de Afiliados', url: `${origin}/portal` },
         { label: 'Sitio Web Oficial', url: `${origin}/` },
         { label: 'Transparencia', url: `${origin}/transparencia/normativos` },
-        { label: 'Registro Sindical', url: `${origin}/portal/register` },
+        { label: 'Registro Sindical', url: `${origin}/registro` },
     ];
 });
 

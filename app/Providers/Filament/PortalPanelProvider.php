@@ -3,7 +3,6 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Login;
-use App\Filament\Pages\Auth\Register;
 use App\Filament\Pages\Profile;
 use App\Filament\Widgets\QrGeneratorWidget;
 use App\Models\Theme;
@@ -48,7 +47,6 @@ class PortalPanelProvider extends PanelProvider
             ->darkMode(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->login(Login::class)
-            ->registration(Register::class)
             ->databaseNotifications()
             ->profile(Profile::class, isSimple: false)
             ->navigationItems([

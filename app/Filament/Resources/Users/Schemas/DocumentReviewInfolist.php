@@ -7,6 +7,7 @@ use App\Enums\UserDocumentType;
 use App\Models\User;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class DocumentReviewInfolist
 {
@@ -57,6 +58,18 @@ class DocumentReviewInfolist
                             ];
                         }
 
+                        // AI metadata
+                        $extractedData = $media?->getCustomProperty('extracted_data');
+                        $aiFlags = $media?->getCustomProperty('ai_flags', []);
+                        $aiError = $media?->getCustomProperty('ai_error');
+                        $aiProcessedAt = $media?->getCustomProperty('ai_processed_at');
+                        $aiFlagged = (bool) ($media?->getCustomProperty('ai_flagged', false));
+
+                        // Profile photo URL (from public disk)
+                        $profilePhotoUrl = $record->photo_path
+                            ? Storage::disk('public')->url($record->photo_path)
+                            : null;
+
                         $documentData[$type->value] = [
                             'type' => $type,
                             'label' => $type->getLabel(),
@@ -75,6 +88,12 @@ class DocumentReviewInfolist
                             'statusColor' => $status === 'sin_subir' ? 'gray' : $status->getColor(),
                             'rejectionReason' => $rejectionReason,
                             'checklist' => $checklist,
+                            'extractedData' => $extractedData,
+                            'aiFlags' => is_array($aiFlags) ? $aiFlags : [],
+                            'aiError' => $aiError,
+                            'aiProcessedAt' => $aiProcessedAt,
+                            'aiFlagged' => $aiFlagged,
+                            'profilePhotoUrl' => $profilePhotoUrl,
                         ];
                     }
 
