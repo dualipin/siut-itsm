@@ -1,5 +1,5 @@
 <x-filament-panels::layout.base :livewire="$livewire">
-    <div class="custom-auth-wrapper min-h-screen w-full flex flex-col lg:flex-row bg-slate-50 dark:bg-zinc-950">
+    <div class="custom-auth-wrapper max-h-screen w-full flex flex-col lg:flex-row bg-slate-50 dark:bg-zinc-950">
         <!-- Visual / Branding Side (Left on Desktop, Hidden on Mobile/Tablet) -->
         <div class="hidden lg:flex lg:w-5/12 xl:w-4/12 relative flex-col justify-between p-10 xl:p-14 text-white overflow-hidden bg-slate-900 select-none">
             <!-- Background Image with Overlay -->
@@ -31,54 +31,50 @@
 
                 <div class="space-y-3">
                     <h1 class="text-3xl xl:text-4xl font-extrabold tracking-tight text-white leading-tight">
-                        Construyendo un sindicato <span class="text-transparent bg-clip-text bg-linear-to-r from-red-300 via-white to-red-200">fuerte y transparente</span>.
+                        <span class="text-transparent bg-clip-text bg-linear-to-r from-primary-200 via-white to-success-200">
+                            Porque la razón está en la educación; luchemos unidos por ella
+                        </span>.
                     </h1>
-                    <p class="text-sm xl:text-base text-slate-200 leading-relaxed font-normal">
-                        Al incorporarte a SIUT, cuentas con representación laboral, seguimiento digital de trámites y acceso a todos tus beneficios sindicales.
-                    </p>
                 </div>
 
                 <!-- Feature Badges -->
                 <div class="space-y-3.5 pt-2">
                     <div class="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
                         <div class="p-2 rounded-lg bg-red-500/20 text-red-200 shrink-0">
-                            <x-filament::icon icon="heroicon-m-shield-check" class="w-5 h-5" />
+                            <x-filament::icon icon="heroicon-m-users" class="w-5 h-5" />
                         </div>
                         <div>
-                            <h4 class="text-sm font-semibold text-white">Respaldo y Asesoría Laboral</h4>
-                            <p class="text-xs text-slate-300">Acompañamiento legal y representación sindical permanente.</p>
+                            <h4 class="text-sm font-semibold text-white">Gestión de Afiliados</h4>
+                            <p class="text-xs text-slate-300">Registro y control de los datos de cada trabajador afiliado.</p>
                         </div>
                     </div>
 
                     <div class="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
                         <div class="p-2 rounded-lg bg-red-500/20 text-red-200 shrink-0">
-                            <x-filament::icon icon="heroicon-m-document-text" class="w-5 h-5" />
+                            <x-filament::icon icon="heroicon-m-currency-dollar" class="w-5 h-5" />
                         </div>
                         <div>
-                            <h4 class="text-sm font-semibold text-white">Expediente y Trámites Digitales</h4>
-                            <p class="text-xs text-slate-300">Solicitudes, prestaciones y consultas directamente en el portal.</p>
+                            <h4 class="text-sm font-semibold text-white">Prestamos</h4>
+                            <p class="text-xs text-slate-300">Seguimiento de prestaciones y corridas financieras.</p>
                         </div>
                     </div>
 
                     <div class="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
                         <div class="p-2 rounded-lg bg-red-500/20 text-red-200 shrink-0">
-                            <x-filament::icon icon="heroicon-m-eye" class="w-5 h-5" />
+                            <x-filament::icon icon="heroicon-m-megaphone" class="w-5 h-5" />
                         </div>
                         <div>
-                            <h4 class="text-sm font-semibold text-white">Transparencia Total</h4>
-                            <p class="text-xs text-slate-300">Rendición de cuentas e informes financieros al alcance de todos.</p>
+                            <h4 class="text-sm font-semibold text-white">Comunicados y Avisos</h4>
+                            <p class="text-xs text-slate-300">Publicación de noticias y avisos importantes para los afiliados.</p>
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <!-- Footer in Left Panel -->
-            <div class="relative z-20 pt-4 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+            <div class="relative z-20 pt-4 border-t border-white/10 flex items-center justify-between text-xs text-gray-200">
                 <span>© {{ date('Y') }} {{ config('app.name') }}</span>
-                <span class="flex items-center gap-1">
-                    <x-filament::icon icon="heroicon-m-lock-closed" class="w-3.5 h-3.5 text-slate-400" />
-                    Plataforma Segura
-                </span>
             </div>
         </div>
 
