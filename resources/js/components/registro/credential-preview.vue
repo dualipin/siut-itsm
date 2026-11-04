@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { User, ShieldCheck, Sparkles, ChevronDown, ChevronUp } from '@lucide/vue'
+import { User, Sparkles, ChevronDown, ChevronUp } from '@lucide/vue'
 
-const props = defineProps<{
+interface Props {
     name?: string
     surnames?: string
     curp?: string
@@ -10,7 +10,29 @@ const props = defineProps<{
     category?: string
     photoUrl?: string | null
     isScanning?: boolean
-}>()
+    backgroundImageUrl?: string
+    logoTecnmUrl?: string
+    logoItsmUrl?: string
+    logoSiutUrl?: string
+    organization?: string
+    website?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+    name: '',
+    surnames: '',
+    curp: '',
+    nss: '',
+    category: '',
+    photoUrl: null,
+    isScanning: false,
+    backgroundImageUrl: '/assets/images/background-id.png',
+    logoTecnmUrl: '/assets/img/logo/logo-tecnm.png',
+    logoItsmUrl: '/assets/img/logo/logo-itsm.jpg',
+    logoSiutUrl: '/assets/images/logo.webp',
+    organization: 'Sindicato Único de Trabajadores del ITSM',
+    website: 'www.siutitsm.com',
+})
 
 const isExpandedMobile = ref(false)
 
@@ -44,7 +66,7 @@ const displayCategory = computed(() => {
                 aria-controls="mobile-credential-body"
             >
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="relative size-10 rounded-full overflow-hidden bg-base-200 border border-primary/20 shrink-0">
+                    <div class="relative size-10 rounded-full overflow-hidden bg-base-200 border border-primary/30 shrink-0">
                         <img
                             v-if="photoUrl"
                             :src="photoUrl"
@@ -75,63 +97,80 @@ const displayCategory = computed(() => {
                 id="mobile-credential-body"
                 class="p-4 pt-0 border-t border-base-200"
             >
-                <!-- Render de la credencial completa en móvil -->
-                <div class="mt-4">
-                    <!-- Tarjeta de la credencial -->
-                    <div
-                        class="relative rounded-2xl bg-gradient-to-br from-base-100 via-base-100 to-base-200 border-2 border-primary/30 p-5 shadow-xl overflow-hidden"
-                    >
+                <div class="mt-4 flex justify-center">
+                    <!-- Tarjeta de la credencial en móvil -->
+                    <div class="relative w-full max-w-[280px] aspect-[54/85.6] bg-base-100 rounded-2xl shadow-xl overflow-hidden border border-base-300 text-center select-none flex flex-col justify-between">
+                        <!-- Arcos superior e inferior -->
+                        <div
+                            class="absolute inset-x-0 top-0 h-[38%] bg-cover bg-top bg-no-repeat pointer-events-none z-1"
+                            :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
+                        />
+                        <div
+                            class="absolute inset-x-0 bottom-0 h-[38%] bg-cover bg-bottom bg-no-repeat pointer-events-none z-2 scale-y-[-1] scale-x-[-1]"
+                            :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
+                        />
+
+                        <!-- Marca de agua central -->
+                        <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-3">
+                            <img :src="logoSiutUrl" alt="Marca de agua SIUT" class="size-24 rounded-full object-contain" />
+                        </div>
+
                         <!-- Efecto de escaneo IA -->
                         <div
                             v-if="isScanning"
                             class="absolute inset-0 pointer-events-none z-20 motion-safe:animate-pulse bg-gradient-to-b from-primary/10 via-primary/5 to-transparent"
                             aria-hidden="true"
                         >
-                            <div class="w-full h-1 bg-primary/60 shadow-[0_0_12px_var(--siut-color-primary)] animate-bounce" />
+                            <div class="w-full h-1 bg-primary/70 shadow-[0_0_12px_var(--siut-color-primary)] animate-bounce" />
                         </div>
 
-                        <!-- Encabezado de la credencial -->
-                        <div class="flex items-start justify-between gap-3 pb-3 border-b border-base-300">
-                            <div>
-                                <span class="text-[10px] font-black tracking-widest text-primary uppercase block">SIUT ITSM</span>
-                                <span class="text-[11px] font-bold text-base-content/80 leading-tight block">Sindicato Independiente de Trabajadores</span>
-                            </div>
-                            <span class="badge badge-primary badge-sm gap-1 font-mono text-[10px] uppercase font-bold shrink-0">
-                                <ShieldCheck class="size-3" />
-                                Aspirante
-                            </span>
-                        </div>
+                        <!-- Contenido Principal -->
+                        <div class="relative z-10 size-full flex flex-col justify-between p-3.5">
+                            <div class="pt-2 flex flex-col items-center">
+                                <!-- Foto circular -->
+                                <div class="size-20 rounded-full border-[3px] border-primary bg-base-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
+                                    <img
+                                        v-if="photoUrl"
+                                        :src="photoUrl"
+                                        alt="Foto"
+                                        class="size-full object-cover"
+                                    />
+                                    <div v-else class="flex flex-col items-center justify-center text-base-content/40 text-[9px] font-medium leading-none">
+                                        <User class="size-6 mb-1 text-base-content/30" />
+                                        <span>SIN FOTO</span>
+                                    </div>
+                                </div>
 
-                        <!-- Contenido central: Foto y datos -->
-                        <div class="mt-4 flex gap-4 items-center">
-                            <div class="relative size-20 rounded-xl overflow-hidden bg-base-200 border-2 border-primary/40 shrink-0 shadow-inner flex items-center justify-center">
-                                <img
-                                    v-if="photoUrl"
-                                    :src="photoUrl"
-                                    alt="Fotografía del agremiado"
-                                    class="size-full object-cover transition-transform duration-300"
-                                />
-                                <User v-else class="size-10 text-base-content/30" />
+                                <!-- Datos del agremiado -->
+                                <div class="mt-2 w-full px-1">
+                                    <div class="font-bold text-xs uppercase tracking-tight text-primary px-1.5 py-0.5 rounded bg-base-100/90 shadow-2xs inline-block max-w-full truncate leading-tight">
+                                        {{ displayName }}
+                                    </div>
+                                    <div class="text-[9px] text-base-content/60 uppercase font-semibold mt-0.5 truncate">
+                                        {{ displayCategory }}
+                                    </div>
+                                    <div class="text-[7.5px] font-bold uppercase text-base-content/80 leading-tight mt-1 line-clamp-1">
+                                        {{ organization }}
+                                    </div>
+                                    <div class="text-[7.5px] font-semibold text-base-content/60">
+                                        REG. RS-033/2019.
+                                    </div>
+                                    <div class="text-[8.5px] font-bold text-base-content/80 mt-1">
+                                        IMSS: <span class="font-mono">{{ displayNss }}</span>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div class="min-w-0 flex-1 space-y-1">
-                                <span class="text-[10px] font-medium text-base-content/60 uppercase tracking-wider block">Agremiado(a)</span>
-                                <h3 class="font-serif text-base font-bold text-base-content leading-snug line-clamp-2">
-                                    {{ displayName }}
-                                </h3>
-                                <p class="text-xs text-primary font-medium truncate">{{ displayCategory }}</p>
-                            </div>
-                        </div>
-
-                        <!-- Datos clave -->
-                        <div class="mt-4 pt-3 border-t border-base-200 grid grid-cols-2 gap-2 text-xs">
-                            <div class="bg-base-200/60 rounded-lg p-2">
-                                <span class="text-[10px] font-bold uppercase text-base-content/60 block">CURP</span>
-                                <span class="font-mono text-[11px] font-semibold text-base-content block truncate">{{ displayCurp }}</span>
-                            </div>
-                            <div class="bg-base-200/60 rounded-lg p-2">
-                                <span class="text-[10px] font-bold uppercase text-base-content/60 block">NSS</span>
-                                <span class="font-mono text-[11px] font-semibold text-base-content block truncate">{{ displayNss }}</span>
+                            <!-- Footer con logos y web -->
+                            <div class="pb-1 flex flex-col items-center">
+                                <div class="flex items-center justify-center gap-3 w-full">
+                                    <img :src="logoTecnmUrl" alt="TecNM" class="h-4 max-w-[28px] object-contain rounded-full" />
+                                    <img :src="logoItsmUrl" alt="ITSM" class="h-4 max-w-[28px] object-cover rounded-full" />
+                                    <img :src="logoSiutUrl" alt="SIUT" class="h-4 max-w-[28px] object-cover rounded-full" />
+                                </div>
+                                <div class="text-[8px] font-bold text-primary mt-1">
+                                    {{ website }}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -149,84 +188,80 @@ const displayCategory = computed(() => {
                 <p class="text-xs text-base-content/60 mt-0.5">Se actualiza automáticamente con tus documentos</p>
             </div>
 
-            <!-- Contenedor de la credencial con estilo PVC sindicato -->
-            <div
-                class="relative rounded-3xl bg-gradient-to-br from-base-100 via-base-100 to-base-200 border-2 border-primary/30 p-6 shadow-2xl overflow-hidden transition-all duration-300 hover:shadow-primary/5"
-            >
+            <!-- Contenedor PVC réplica fiel al anverso del PDF -->
+            <div class="relative w-full max-w-[280px] mx-auto aspect-[54/85.6] bg-base-100 rounded-2xl shadow-xl overflow-hidden border border-base-300 text-center select-none flex flex-col justify-between">
+                <!-- Arcos superior e inferior -->
+                <div
+                    class="absolute inset-x-0 top-0 h-[38%] bg-cover bg-top bg-no-repeat pointer-events-none z-1"
+                    :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
+                />
+                <div
+                    class="absolute inset-x-0 bottom-0 h-[38%] bg-cover bg-bottom bg-no-repeat pointer-events-none z-2 scale-y-[-1] scale-x-[-1]"
+                    :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
+                />
+
+                <!-- Marca de agua central -->
+                <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-3">
+                    <img :src="logoSiutUrl" alt="Marca de agua SIUT" class="size-24 rounded-full object-contain" />
+                </div>
+
                 <!-- Efecto de escaneo IA -->
                 <div
                     v-if="isScanning"
                     class="absolute inset-0 pointer-events-none z-20 motion-safe:animate-pulse bg-gradient-to-b from-primary/10 via-primary/5 to-transparent"
                     aria-hidden="true"
                 >
-                    <div class="w-full h-1 bg-primary/70 shadow-[0_0_16px_var(--siut-color-primary)] animate-bounce" />
+                    <div class="w-full h-1 bg-primary/70 shadow-[0_0_12px_var(--siut-color-primary)] animate-bounce" />
                 </div>
 
-                <!-- Patrón decorativo de fondo -->
-                <div class="absolute -right-12 -bottom-12 w-44 h-44 rounded-full bg-primary/5 blur-2xl pointer-events-none" />
-
-                <!-- Cabecera de la credencial -->
-                <div class="flex items-start justify-between gap-3 pb-4 border-b border-base-300">
-                    <div>
-                        <div class="flex items-center gap-1.5">
-                            <span class="font-black text-sm text-primary tracking-widest uppercase">SIUT ITSM</span>
-                            <span class="text-base-content/30 text-xs">|</span>
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/60">Padrón Oficial</span>
+                <!-- Contenido Principal -->
+                <div class="relative z-10 size-full flex flex-col justify-between p-3.5">
+                    <div class="pt-2 flex flex-col items-center">
+                        <!-- Foto circular -->
+                        <div class="size-20 rounded-full border-[3px] border-primary bg-base-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
+                            <img
+                                v-if="photoUrl"
+                                :src="photoUrl"
+                                alt="Foto"
+                                class="size-full object-cover"
+                            />
+                            <div v-else class="flex flex-col items-center justify-center text-base-content/40 text-[9px] font-medium leading-none">
+                                <User class="size-6 mb-1 text-base-content/30" />
+                                <span>SIN FOTO</span>
+                            </div>
                         </div>
-                        <h4 class="text-xs font-bold text-base-content/90 leading-tight mt-0.5">
-                            Sindicato Independiente de Trabajadores
-                        </h4>
-                    </div>
 
-                    <span class="badge badge-primary badge-sm gap-1 font-mono text-[10px] uppercase font-bold shrink-0">
-                        <ShieldCheck class="size-3.5" />
-                        Aspirante
-                    </span>
-                </div>
-
-                <!-- Foto y Nombre -->
-                <div class="mt-6 flex flex-col items-center text-center">
-                    <div class="relative size-28 rounded-2xl overflow-hidden bg-base-200 border-2 border-primary/40 shadow-inner flex items-center justify-center group">
-                        <img
-                            v-if="photoUrl"
-                            :src="photoUrl"
-                            alt="Fotografía oficial para credencial"
-                            class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <div v-else class="flex flex-col items-center justify-center text-base-content/30 p-2">
-                            <User class="size-12" />
-                            <span class="text-[10px] font-medium mt-1">Sin fotografía</span>
+                        <!-- Datos del agremiado -->
+                        <div class="mt-2 w-full px-1">
+                            <div class="font-bold text-xs uppercase tracking-tight text-primary px-1.5 py-0.5 rounded bg-base-100/90 shadow-2xs inline-block max-w-full truncate leading-tight">
+                                {{ displayName }}
+                            </div>
+                            <div class="text-[9px] text-base-content/60 uppercase font-semibold mt-0.5 truncate">
+                                {{ displayCategory }}
+                            </div>
+                            <div class="text-[7.5px] font-bold uppercase text-base-content/80 leading-tight mt-1 line-clamp-1">
+                                {{ organization }}
+                            </div>
+                            <div class="text-[7.5px] font-semibold text-base-content/60">
+                                REG. RS-033/2019.
+                            </div>
+                            <div class="text-[8.5px] font-bold text-base-content/80 mt-1">
+                                IMSS: <span class="font-mono">{{ displayNss }}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mt-4 w-full">
-                        <span class="text-[10px] font-bold text-base-content/50 uppercase tracking-wider block">Agremiado(a)</span>
-                        <h3 class="font-serif text-lg font-bold text-base-content leading-tight mt-1 line-clamp-2 px-2">
-                            {{ displayName }}
-                        </h3>
-                        <p class="text-xs text-primary font-semibold mt-1 truncate max-w-xs mx-auto">
-                            {{ displayCategory }}
-                        </p>
+                    <!-- Footer con logos y web -->
+                    <div class="pb-1 flex flex-col items-center">
+                        <div class="flex items-center justify-center gap-3 w-full">
+                            <img :src="logoTecnmUrl" alt="TecNM" class="h-4 max-w-[28px] object-contain rounded-full" />
+                            <img :src="logoItsmUrl" alt="ITSM" class="h-4 max-w-[28px] object-cover rounded-full" />
+                            <img :src="logoSiutUrl" alt="SIUT" class="h-4 max-w-[28px] object-cover rounded-full" />
+                        </div>
+                        <div class="text-[8px] font-bold text-primary mt-1">
+                            {{ website }}
+                        </div>
                     </div>
-                </div>
-
-                <!-- Franja de datos alfanuméricos -->
-                <div class="mt-6 space-y-2 pt-4 border-t border-base-200">
-                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/60">
-                        <span class="text-[11px] font-bold uppercase text-base-content/60">CURP:</span>
-                        <span class="font-mono text-xs font-bold text-base-content tracking-wider">{{ displayCurp }}</span>
-                    </div>
-
-                    <div class="flex items-center justify-between p-2 rounded-lg bg-base-200/60">
-                        <span class="text-[11px] font-bold uppercase text-base-content/60">NSS:</span>
-                        <span class="font-mono text-xs font-semibold text-base-content tracking-wide">{{ displayNss }}</span>
-                    </div>
-                </div>
-
-                <!-- Pie de credencial -->
-                <div class="mt-6 pt-3 border-t border-dashed border-base-300 flex items-center justify-between text-[10px] text-base-content/50 font-mono">
-                    <span>EXPEDIENTE DIGITAL</span>
-                    <span>SIUT-{{ new Date().getFullYear() }}</span>
                 </div>
             </div>
         </div>

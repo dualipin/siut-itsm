@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Pages;
 
+use App\Actions\GenerateUserCredentialPdf;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
 use App\Exceptions\DocumentAIException;
@@ -79,6 +80,12 @@ class ReviewDocuments extends ViewRecord
 
             EditAction::make()
                 ->label('Editar perfil'),
+
+            Action::make('downloadCredential')
+                ->label('Descargar Credencial')
+                ->icon(Heroicon::Identification)
+                ->color('primary')
+                ->action(fn () => app(GenerateUserCredentialPdf::class)->execute($this->getRecord())),
 
             Action::make('approveAllDocuments')
                 ->label('Aprobar todos')

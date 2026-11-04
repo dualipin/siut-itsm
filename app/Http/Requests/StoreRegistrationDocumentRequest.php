@@ -19,7 +19,7 @@ class StoreRegistrationDocumentRequest extends FormRequest
         $kind = $this->input('kind');
 
         $fileRules = match ($kind) {
-            'photo' => ['required', 'file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'],
+            'photo' => ['required', 'file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:10240'],
             'ine', 'nomina' => ['required', 'file', 'mimes:pdf,jpeg,jpg,png,webp', 'max:10240'],
             default => ['required', 'file', 'max:10240'],
         };
@@ -41,9 +41,7 @@ class StoreRegistrationDocumentRequest extends FormRequest
             'file.required' => 'Debes seleccionar un archivo.',
             'file.mimes' => 'El formato del archivo no es válido. Solo se aceptan PDF, JPG, PNG o WebP.',
             'file.image' => 'La fotografía debe ser una imagen válida (JPG, PNG o WebP).',
-            'file.max' => $this->input('kind') === 'photo'
-                ? 'La fotografía de perfil no debe exceder 2 MB.'
-                : 'El documento no debe exceder 10 MB.',
+            'file.max' => 'El archivo no debe exceder 10 MB.',
         ];
     }
 }

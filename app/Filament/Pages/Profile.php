@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Actions\GenerateUserCredentialPdf;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
 use App\Models\User;
@@ -40,6 +41,21 @@ class Profile extends BaseEditProfile
     public function getSubheading(): string|Htmlable|null
     {
         return 'Administra tus datos personales, credenciales y expediente digital de agremiado.';
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('downloadCredential')
+                ->label('Descargar Credencial')
+                ->icon(Heroicon::Identification)
+                ->color('primary')
+                ->visible(fn (): bool => $this->getUser()->areAllDocumentsValid())
+                ->action(fn () => app(GenerateUserCredentialPdf::class)->execute($this->getUser())),
+        ];
     }
 
     protected function getNameFormComponent(): Component

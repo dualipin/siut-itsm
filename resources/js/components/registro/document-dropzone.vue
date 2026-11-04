@@ -66,9 +66,8 @@ function handleFileChange(event: Event) {
     const target = event.target as HTMLInputElement
     const file = target.files?.[0]
     if (file) {
-        emit('file-selected', file)
+        validateAndEmit(file)
     }
-    // Reset so the same file could be selected again if replaced
     target.value = ''
 }
 
@@ -76,8 +75,19 @@ function handleDrop(event: DragEvent) {
     isDragging.value = false
     const file = event.dataTransfer?.files?.[0]
     if (file) {
-        emit('file-selected', file)
+        validateAndEmit(file)
     }
+}
+
+function validateAndEmit(file: File) {
+    if (file.size > props.maxSizeMb * 1024 * 1024) {
+        props.state.error = `El archivo pesa ${formatBytes(file.size)} y excede el límite máximo de ${props.maxSizeMb} MB.`
+        props.state.token = null
+        props.state.file = null
+        return
+    }
+    props.state.error = null
+    emit('file-selected', file)
 }
 
 function formatBytes(bytes: number): string {
@@ -107,44 +117,9 @@ function formatBytes(bytes: number): string {
             @change="handleFileChange"
         />
 
-        <!-- Empty / Upload State (No file uploaded yet) -->
-        <div
-            v-if="!state.file && !state.token"
-            class="relative border-2 border-dashed rounded-2xl p-6 transition-all duration-200 text-center flex flex-col items-center justify-center cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-            :class="[
-                isDragging
-                    ? 'border-primary bg-primary/10 scale-[1.01]'
-                    : errorMsg
-                        ? 'border-error/60 bg-error/5 hover:border-error'
-                        : 'border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40'
-            ]"
-            tabindex="0"
-            role="button"
-            :aria-label="`Subir ${label}`"
-            @click="openFileDialog"
-            @keydown.enter.prevent="openFileDialog"
-            @keydown.space.prevent="openFileDialog"
-            @dragover.prevent="isDragging = true"
-            @dragleave.prevent="isDragging = false"
-            @drop.prevent="handleDrop"
-        >
-            <div class="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
-                <ImageIcon v-if="kind === 'photo'" class="size-6" />
-                <UploadCloud v-else class="size-6" />
-            </div>
-
-            <p class="text-sm font-semibold text-base-content">
-                <span class="text-primary underline font-bold">Selecciona un archivo</span> o arrástralo aquí
-            </p>
-
-            <p class="text-xs text-base-content/60 mt-1 max-w-sm">
-                {{ helperText }}
-            </p>
-        </div>
-
         <!-- In-Progress Upload State -->
         <div
-            v-else-if="state.uploading"
+            v-if="state.uploading"
             class="border border-base-300 bg-base-100 rounded-2xl p-5 shadow-xs"
         >
             <div class="flex items-center justify-between gap-3 mb-2">
@@ -171,9 +146,9 @@ function formatBytes(bytes: number): string {
             </div>
         </div>
 
-        <!-- Uploaded / Processed State -->
+        <!-- Uploaded / Processed State (Requires valid token) -->
         <div
-            v-else
+            v-else-if="state.token"
             class="border border-base-300 bg-base-100 rounded-2xl p-4 sm:p-5 shadow-sm transition-all"
         >
             <div class="flex items-start justify-between gap-3">
@@ -241,7 +216,8 @@ function formatBytes(bytes: number): string {
 
                 <!-- Degradado / Falló IA -->
                 <div v-else-if="state.aiStatus === 'failed'" class="badge badge-info badge-sm gap-1 font-medium">
-                    Revisión manual
+                    <CheckCircle2 class="size-3.5" />
+                    Documento listo • Revisión manual
                 </div>
 
                 <!-- Photo (not applicable) -->
@@ -256,18 +232,68 @@ function formatBytes(bytes: number): string {
                 <div
                     v-for="(warning, idx) in state.warnings"
                     :key="idx"
-                    class="alert alert-warning text-xs py-2 px-3 rounded-xl flex items-start gap-2 shadow-xs"
+                    class="alert text-xs py-2 px-3 rounded-xl flex items-start gap-2 shadow-xs"
+                    :class="state.aiStatus === 'failed' ? 'alert-info bg-info/10 border-info/30 text-info-content' : 'alert-warning'"
                 >
-                    <AlertTriangle class="size-4 shrink-0 text-warning mt-0.5" />
-                    <span class="leading-relaxed">{{ warning }}</span>
+                    <AlertTriangle v-if="state.aiStatus !== 'failed'" class="size-4 shrink-0 text-warning mt-0.5" />
+                    <CheckCircle2 v-else class="size-4 shrink-0 text-info mt-0.5" />
+                    <div class="leading-relaxed">
+                        <span>{{ warning }}</span>
+                        <p v-if="state.aiStatus === 'failed'" class="mt-1 font-medium text-base-content/80">
+                            Tu archivo ya está guardado correctamente. Podrás ingresar tus datos manualmente en el siguiente paso.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
 
+        <!-- Empty / Error / Ready to Upload State -->
+        <div
+            v-else
+            class="relative border-2 border-dashed rounded-2xl p-6 transition-all duration-200 text-center flex flex-col items-center justify-center cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            :class="[
+                isDragging
+                    ? 'border-primary bg-primary/10 scale-[1.01]'
+                    : (state.error || errorMsg)
+                        ? 'border-error/60 bg-error/5 hover:border-error'
+                        : 'border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40'
+            ]"
+            tabindex="0"
+            role="button"
+            :aria-label="`Subir ${label}`"
+            @click="openFileDialog"
+            @keydown.enter.prevent="openFileDialog"
+            @keydown.space.prevent="openFileDialog"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="handleDrop"
+        >
+            <div
+                class="size-12 rounded-full flex items-center justify-center mb-3"
+                :class="(state.error || errorMsg) ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary'"
+            >
+                <AlertTriangle v-if="state.error || errorMsg" class="size-6" />
+                <ImageIcon v-else-if="kind === 'photo'" class="size-6" />
+                <UploadCloud v-else class="size-6" />
+            </div>
+
+            <p class="text-sm font-semibold text-base-content">
+                <span v-if="state.error || errorMsg" class="text-error font-bold">Error: Clic para elegir otro archivo</span>
+                <span v-else><span class="text-primary underline font-bold">Selecciona un archivo</span> o arrástralo aquí</span>
+            </p>
+
+            <p v-if="state.error || errorMsg" class="text-xs text-error font-medium mt-1 max-w-sm">
+                {{ state.error || errorMsg }}
+            </p>
+            <p v-else class="text-xs text-base-content/60 mt-1 max-w-sm">
+                {{ helperText }}
+            </p>
+        </div>
+
         <!-- Field Validation Error -->
-        <span v-if="errorMsg" class="fieldset-label text-error text-xs mt-1.5 font-semibold flex items-center gap-1" role="alert">
+        <span v-if="state.error || errorMsg" class="fieldset-label text-error text-xs mt-1.5 font-semibold flex items-center gap-1" role="alert">
             <AlertTriangle class="size-3.5 shrink-0" />
-            {{ errorMsg }}
+            {{ state.error || errorMsg }}
         </span>
     </div>
 </template>

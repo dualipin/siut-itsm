@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowRight, ShieldCheck, Sparkles } from '@lucide/vue'
+import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from '@lucide/vue'
 import DocumentDropzone from './document-dropzone.vue'
 import type { UploadedDocState } from './document-dropzone.vue'
 
@@ -18,6 +18,14 @@ const emit = defineEmits<{
     (e: 'cancel-upload', kind: 'ine' | 'nomina' | 'photo'): void
     (e: 'next'): void
 }>()
+
+const missingDocuments = computed(() => {
+    const list: string[] = []
+    if (!props.ineState.token) list.push('Credencial INE')
+    if (!props.nominaState.token) list.push('Comprobante de nómina')
+    if (!props.photoState.token) list.push('Fotografía de perfil')
+    return list
+})
 
 const canProceed = computed(() => {
     return (
@@ -75,10 +83,10 @@ const canProceed = computed(() => {
             <DocumentDropzone
                 kind="photo"
                 label="3. Fotografía de Perfil"
-                helperText="Obligatoria para tu credencial digital. Sube una foto de frente con fondo claro o tómala con tu cámara."
+                helperText="Obligatoria para tu credencial digital. Sube una foto de frente con fondo claro o tómala con tu cámara. Máx. 10 MB."
                 accept="image/jpeg,image/png,image/webp"
                 capture="user"
-                :max-size-mb="2"
+                :max-size-mb="10"
                 :state="photoState"
                 :error-msg="errors.photo_token?.[0]"
                 @file-selected="(file) => emit('upload-file', 'photo', file)"
@@ -96,10 +104,19 @@ const canProceed = computed(() => {
         </div>
 
         <!-- Botón continuar -->
-        <div class="pt-4 flex justify-end">
+        <div class="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+            <div v-if="missingDocuments.length > 0" class="text-xs text-base-content/80 bg-base-200/60 px-4 py-2.5 rounded-xl border border-base-300/60">
+                <span class="font-semibold text-warning">Falta subir para continuar:</span>
+                <span class="ml-1 font-medium">{{ missingDocuments.join(' • ') }}</span>
+            </div>
+            <div v-else class="text-xs text-success flex items-center gap-1.5 font-semibold">
+                <CheckCircle2 class="size-4" />
+                <span>3 de 3 documentos listos</span>
+            </div>
+
             <button
                 type="button"
-                class="btn btn-primary btn-md sm:btn-lg gap-2 font-semibold shadow-md cursor-pointer"
+                class="btn btn-primary btn-md sm:btn-lg gap-2 font-semibold shadow-md cursor-pointer shrink-0"
                 :disabled="!canProceed"
                 @click="emit('next')"
             >

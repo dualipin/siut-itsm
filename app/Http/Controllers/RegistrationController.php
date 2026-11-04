@@ -10,19 +10,18 @@ use App\Services\DocumentAIService;
 use App\Services\RegistrationStaging;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\View\View;
 
 class RegistrationController extends Controller
 {
     /**
-     * Show the public registration page.
-     * Redirects to portal dashboard if user is already logged in.
+     * Display the registration page.
+     * Redirects to portal if already authenticated.
      */
-    public function index(): View|RedirectResponse
+    public function index(Request $request): mixed
     {
         if (Auth::check()) {
             return redirect('/portal');
@@ -73,6 +72,20 @@ class RegistrationController extends Controller
             $aiStatus = $result->isValidDocument ? 'success' : 'warning';
             $fields = $result->extractedFields;
 
+            if (! $result->isValidDocument) {
+                $docName = $type === UserDocumentType::Ine ? 'una credencial INE' : 'un comprobante de pago';
+                $warnings[] = filled($result->observations)
+                    ? $result->observations
+                    : "El archivo no parece ser {$docName} válido. Verifica que hayas subido el documento correcto.";
+            }
+
+            // Normalize birth date to ISO format YYYY-MM-DD for HTML5 date input compatibility
+            if ($type === UserDocumentType::Ine && isset($fields['fecha_nacimiento'])) {
+                if (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', (string) $fields['fecha_nacimiento'], $m)) {
+                    $fields['fecha_nacimiento'] = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+                }
+            }
+
             // Extra deterministic warnings for user feedback
             if ($type === UserDocumentType::Ine) {
                 $vigencia = $fields['vigencia'] ?? '';
@@ -107,17 +120,21 @@ class RegistrationController extends Controller
     }
 
     /**
-     * Complete the registration, authenticate the user, and return redirect URL.
+     * Handle the full registration submission.
      */
-    public function store(RegisterAgremiadoRequest $request, RegisterAgremiado $action): JsonResponse
-    {
-        $user = $action->execute($request->validated());
+    public function store(
+        RegisterAgremiadoRequest $request,
+        RegisterAgremiado $action
+    ): JsonResponse {
+        $validated = $request->validated();
+        $user = $action->execute($validated, session());
 
         Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
-            'redirect' => url('/portal'),
-            'message' => '¡Bienvenido al portal SIUT! Tu cuenta ha sido creada exitosamente.',
+            'redirect' => '/portal',
+            'message' => '¡Registro completado con éxito!',
         ]);
     }
 }
