@@ -73,6 +73,18 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
     }
 
     /**
+     * CURP is always stored trimmed and in uppercase so login and uniqueness are case-insensitive.
+     *
+     * @return Attribute<string|null, string|null>
+     */
+    protected function curp(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => filled($value) ? mb_strtoupper(trim($value)) : null,
+        );
+    }
+
+    /**
      * Get the user's full name.
      *
      * @return Attribute<string, never>

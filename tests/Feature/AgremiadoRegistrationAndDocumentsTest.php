@@ -93,6 +93,7 @@ test('registration strictly enforces agremiado role', function () {
             'surnames' => 'Hacker',
             'email' => 'hacker@siut.org',
             'birth_date' => '1990-01-01',
+            'curp' => 'HACK900101HDFRRN01',
             'photo_path' => UploadedFile::fake()->image('hacker.jpg'),
             'password' => 'SecurePassword123!',
             'passwordConfirmation' => 'SecurePassword123!',

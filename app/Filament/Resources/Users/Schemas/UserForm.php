@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Users\Schemas;
 
 use App\Enums\UserRole;
+use App\Rules\UniqueCurp;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -10,6 +11,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 
 class UserForm
@@ -36,7 +38,13 @@ class UserForm
                     ->label('Activo')
                     ->required(),
                 TextInput::make('curp')
-                    ->label('CURP'),
+                    ->label('CURP')
+                    ->required()
+                    ->minLength(18)
+                    ->maxLength(18)
+                    ->rule(fn (?Model $record): UniqueCurp => new UniqueCurp($record?->getKey()))
+                    ->extraInputAttributes(['style' => 'text-transform: uppercase;'])
+                    ->dehydrateStateUsing(fn ($state) => filled($state) ? mb_strtoupper(trim($state)) : null),
                 DatePicker::make('birth_date')
                     ->label('Fecha de Nacimiento')
                     ->required()

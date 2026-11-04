@@ -4,6 +4,7 @@ namespace App\Filament\Pages\Auth;
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Rules\UniqueCurp;
 use DiogoGPinto\AuthUIEnhancer\Pages\Auth\AuthUiEnhancerRegister;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
@@ -79,10 +80,13 @@ class Register extends AuthUiEnhancerRegister
                                     ->label('CURP')
                                     ->placeholder('18 caracteres alfanuméricos')
                                     ->prefixIcon('heroicon-m-identification')
+                                    ->required()
+                                    ->minLength(18)
                                     ->maxLength(18)
-                                    ->unique($this->getUserModel(), 'curp')
+                                    ->rule(new UniqueCurp)
+                                    ->helperText('Será tu usuario para iniciar sesión.')
                                     ->extraInputAttributes(['style' => 'text-transform: uppercase;', 'maxlength' => 18])
-                                    ->dehydrateStateUsing(fn ($state) => filled($state) ? strtoupper(trim($state)) : null),
+                                    ->dehydrateStateUsing(fn ($state) => filled($state) ? mb_strtoupper(trim($state)) : null),
                                 TextInput::make('nss')
                                     ->label('Número de Seguridad Social (NSS)')
                                     ->placeholder('11 dígitos numéricos')
