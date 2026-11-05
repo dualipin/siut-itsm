@@ -15,3 +15,7 @@ Schedule::command('queue:work --stop-when-empty --max-time=50')
 Schedule::command('birthday:send-greetings')
     ->dailyAt('08:00')
     ->withoutOverlapping();
+
+Schedule::command('registration:purge-temp')
+    ->hourly()
+    ->withoutOverlapping();

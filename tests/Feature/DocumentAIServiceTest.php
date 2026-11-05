@@ -50,11 +50,16 @@ beforeEach(function () {
         'api_key' => 'secret-key',
         'model' => 'test-model',
         'timeout' => 5,
+        'sync_timeout' => 5,
         'max_tokens' => 512,
         'max_dimension' => 1000,
         'jpeg_quality' => 70,
+        'store_max_dimension' => 1600,
+        'store_jpeg_quality' => 80,
         'json_mode' => true,
         'min_reject_confidence' => 0.7,
+        'throttle_per_hour' => 100,
+        'daily_cap' => 9999,
         'headers' => ['X-Title' => 'SIUT'],
     ]);
 });
@@ -163,4 +168,149 @@ test('system prompt embeds the expected type and the mandatory JSON contract', f
         ->toContain('"extracted_fields": {"nombre": string, "curp": string, "monto": string}')
         ->not->toContain('{EXPECTED_TYPE}')
         ->not->toContain('{EXPECTED_DESCRIPTION}');
+});
+
+// ── extractIne ────────────────────────────────────────────────────────────────
+
+function ineJson(array $overrides = []): string
+{
+    return json_encode(array_replace([
+        'is_valid_document' => true,
+        'document_type' => 'ine',
+        'extracted_fields' => [
+            'nombre' => 'CARLOS',
+            'apellidos' => 'MENDOZA LOPEZ',
+            'curp' => 'MELC950515HDFRRN09',
+            'fecha_nacimiento' => '1995-05-15',
+            'domicilio' => 'Reforma 123, Col. Centro',
+            'vigencia' => '2030',
+        ],
+        'confidence_score' => 0.95,
+        'observations' => '',
+    ], $overrides));
+}
+
+function payslipJson(array $overrides = []): string
+{
+    return json_encode(array_replace([
+        'is_valid_document' => true,
+        'document_type' => 'comprobante_pago',
+        'extracted_fields' => [
+            'nombre' => 'CARLOS MENDOZA LOPEZ',
+            'nss' => '12345678901',
+            'categoria' => 'Técnico Operativo',
+            'salario' => '8500.00',
+            'periodo' => '01/10/2024 al 15/10/2024',
+            'fecha_pago' => '2024-10-15',
+        ],
+        'confidence_score' => 0.92,
+        'observations' => '',
+    ], $overrides));
+}
+
+test('extractIne returns extended fields including apellidos, vigencia and domicilio', function () {
+    Http::fake(['ai.test/*' => aiCompletion(ineJson())]);
+
+    $result = app(DocumentAIService::class)->extractIne(fakePngBytes(800, 500), 'image/png');
+
+    expect($result->isValidDocument)->toBeTrue()
+        ->and($result->documentType)->toBe('ine')
+        ->and($result->extractedFields['curp'])->toBe('MELC950515HDFRRN09')
+        ->and($result->extractedFields['apellidos'])->toBe('MENDOZA LOPEZ')
+        ->and($result->extractedFields['vigencia'])->toBe('2030')
+        ->and($result->confidenceScore)->toBe(0.95);
+});
+
+test('extractIne uses the dedicated INE system prompt (not the generic one)', function () {
+    Http::fake(['ai.test/*' => aiCompletion(ineJson())]);
+
+    app(DocumentAIService::class)->extractIne(fakePngBytes(300, 200), 'image/png');
+
+    Http::assertSent(function (Request $request): bool {
+        $systemContent = $request['messages'][0]['content'];
+
+        // INE prompt should mention "vigencia" and NOT the generic "{EXPECTED_DESCRIPTION}" placeholder
+        return str_contains($systemContent, 'vigencia')
+            && ! str_contains($systemContent, '{EXPECTED_DESCRIPTION}');
+    });
+});
+
+test('extractPayslip returns extended fields including nss, categoria, salario, fecha_pago', function () {
+    Http::fake(['ai.test/*' => aiCompletion(payslipJson())]);
+
+    $result = app(DocumentAIService::class)->extractPayslip(fakePngBytes(800, 600), 'image/png');
+
+    expect($result->isValidDocument)->toBeTrue()
+        ->and($result->documentType)->toBe('comprobante_pago')
+        ->and($result->extractedFields['nss'])->toBe('12345678901')
+        ->and($result->extractedFields['salario'])->toBe('8500.00')
+        ->and($result->extractedFields['fecha_pago'])->toBe('2024-10-15')
+        ->and($result->confidenceScore)->toBe(0.92);
+});
+
+test('extractPayslip uses the dedicated payslip system prompt', function () {
+    Http::fake(['ai.test/*' => aiCompletion(payslipJson())]);
+
+    app(DocumentAIService::class)->extractPayslip(fakePngBytes(300, 200), 'image/png');
+
+    Http::assertSent(function (Request $request): bool {
+        $systemContent = $request['messages'][0]['content'];
+
+        return str_contains($systemContent, 'nómina')
+            && str_contains($systemContent, 'fecha_pago')
+            && ! str_contains($systemContent, '{EXPECTED_DESCRIPTION}');
+    });
+});
+
+// ── review() ──────────────────────────────────────────────────────────────────
+
+test('review() returns null result when AI is disabled', function () {
+    config()->set('services.document_ai.enabled', false);
+    Http::fake();
+
+    $result = app(DocumentAIService::class)->review(fakePngBytes(300, 200), 'image/png', UserDocumentType::Ine, 'ip:1.2.3.4');
+
+    expect($result['result'])->toBeNull()
+        ->and($result['warnings'])->toBeEmpty();
+
+    Http::assertNothingSent();
+});
+
+test('review() routes INE to extractIne and returns extended fields', function () {
+    Http::fake(['ai.test/*' => aiCompletion(ineJson())]);
+
+    $result = app(DocumentAIService::class)->review(fakePngBytes(300, 200), 'image/png', UserDocumentType::Ine, 'ip:1.2.3.4');
+
+    expect($result['result'])->not->toBeNull()
+        ->and($result['result']->extractedFields['apellidos'])->toBe('MENDOZA LOPEZ')
+        ->and($result['warnings'])->toBeEmpty();
+});
+
+test('review() routes ComprobantePago to extractPayslip and returns extended fields', function () {
+    Http::fake(['ai.test/*' => aiCompletion(payslipJson())]);
+
+    $result = app(DocumentAIService::class)->review(fakePngBytes(300, 200), 'image/png', UserDocumentType::ComprobantePago, 'ip:1.2.3.4');
+
+    expect($result['result'])->not->toBeNull()
+        ->and($result['result']->extractedFields['salario'])->toBe('8500.00')
+        ->and($result['warnings'])->toBeEmpty();
+});
+
+test('review() degrades gracefully when the AI call fails', function () {
+    Http::fake(['ai.test/*' => Http::response(['error' => ['message' => 'service unavailable']], 503)]);
+
+    $result = app(DocumentAIService::class)->review(fakePngBytes(300, 200), 'image/png', UserDocumentType::Ine, 'ip:1.2.3.4');
+
+    expect($result['result'])->toBeNull()
+        ->and($result['warnings'])->not->toBeEmpty();
+});
+
+// ── normalizeForStorage ───────────────────────────────────────────────────────
+
+test('normalizeForStorage produces a JPEG no wider than 1600px', function () {
+    $jpeg = app(DocumentAIService::class)->normalizeForStorage(fakePngBytes(3000, 2000));
+
+    [$width, $height] = getimagesizefromstring($jpeg);
+
+    expect(max($width, $height))->toBeLessThanOrEqual(1600);
 });

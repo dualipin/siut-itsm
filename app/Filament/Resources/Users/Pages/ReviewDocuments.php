@@ -2,11 +2,14 @@
 
 namespace App\Filament\Resources\Users\Pages;
 
+use App\Actions\GenerateUserCredentialPdf;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
+use App\Exceptions\DocumentAIException;
 use App\Filament\Resources\Users\Schemas\DocumentReviewInfolist;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
+use App\Services\DocumentAIService;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Component;
@@ -18,6 +21,9 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ReviewDocuments extends ViewRecord
 {
@@ -75,6 +81,12 @@ class ReviewDocuments extends ViewRecord
             EditAction::make()
                 ->label('Editar perfil'),
 
+            Action::make('downloadCredential')
+                ->label('Descargar Credencial')
+                ->icon(Heroicon::Identification)
+                ->color('primary')
+                ->action(fn () => app(GenerateUserCredentialPdf::class)->execute($this->getRecord())),
+
             Action::make('approveAllDocuments')
                 ->label('Aprobar todos')
                 ->icon('heroicon-m-check-circle')
@@ -123,6 +135,108 @@ class ReviewDocuments extends ViewRecord
     }
 
     // ── Document Review Actions ──────────────────────────────────────────────
+
+    public function analyzeWithAiAction(): Action
+    {
+        return Action::make('analyzeWithAi')
+            ->label('Analizar con IA')
+            ->icon('heroicon-m-cpu-chip')
+            ->color('info')
+            ->modalHeading(fn (array $arguments): string => 'Analizar con IA: '.(UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? ''))
+            ->modalDescription('Se enviará el documento al servicio de IA para extraer datos. Esta operación consume créditos del proveedor.')
+            ->requiresConfirmation()
+            ->action(function (array $arguments): void {
+                $typeKey = $arguments['type'] ?? $this->activeDocumentType;
+                $type = UserDocumentType::from($typeKey);
+
+                /** @var User $user */
+                $user = $this->getRecord();
+                $media = $user->getDocumentMedia($type);
+
+                if (! $media) {
+                    Notification::make()
+                        ->title('Sin documento')
+                        ->body('El documento no ha sido subido aún.')
+                        ->warning()
+                        ->send();
+
+                    return;
+                }
+
+                if (! config('services.document_ai.enabled')) {
+                    Notification::make()
+                        ->title('IA deshabilitada')
+                        ->body('El servicio de IA no está habilitado en esta instalación.')
+                        ->warning()
+                        ->send();
+
+                    return;
+                }
+
+                $bytes = Storage::disk($media->disk)->get($media->getPathRelativeToRoot());
+
+                if (! is_string($bytes) || $bytes === '') {
+                    Notification::make()
+                        ->title('Error')
+                        ->body('No se pudo leer el archivo del documento.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    /** @var DocumentAIService $service */
+                    $service = app(DocumentAIService::class);
+                    $result = $service->analyzeBytes($bytes, (string) $media->mime_type, $type);
+
+                    $media->setCustomProperty('extracted_data', $result->toArray());
+                    $media->setCustomProperty('ai_processed_at', now()->toIso8601String());
+                    $media->setCustomProperty('ai_flagged', ! $result->isValidDocument);
+
+                    if (! empty($result->aiFlags)) {
+                        $media->setCustomProperty('ai_flags', $result->aiFlags);
+                    }
+
+                    $media->save();
+
+                    $message = $result->isValidDocument
+                        ? 'El documento fue analizado correctamente por la IA.'
+                        : 'La IA marcó el documento como posiblemente inválido. Confianza: '.round($result->confidenceScore * 100).'%.';
+
+                    if (filled($result->observations)) {
+                        $message .= ' Observación: '.$result->observations;
+                    }
+
+                    Notification::make()
+                        ->title('Análisis completado')
+                        ->body($message)
+                        ->success()
+                        ->send();
+
+                    Log::info('ReviewDocuments: análisis manual con IA completado.', [
+                        'media_id' => $media->id,
+                        'type' => $type->value,
+                        'valid' => $result->isValidDocument,
+                        'confidence' => $result->confidenceScore,
+                    ]);
+                } catch (DocumentAIException $e) {
+                    Log::warning('ReviewDocuments: análisis manual con IA falló.', [
+                        'media_id' => $media->id,
+                        'type' => $type->value,
+                        'error' => Str::limit($e->getMessage(), 200),
+                    ]);
+
+                    Notification::make()
+                        ->title('Error de IA')
+                        ->body('No se pudo analizar el documento: '.Str::limit($e->getMessage(), 150))
+                        ->danger()
+                        ->send();
+                }
+
+                $this->refreshFormData([]);
+            });
+    }
 
     public function approveDocumentAction(): Action
     {

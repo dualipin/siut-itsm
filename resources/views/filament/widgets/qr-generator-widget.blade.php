@@ -9,7 +9,7 @@
                 ['label' => 'Portal de Afiliados', 'url' => url('/portal')],
                 ['label' => 'Sitio Web Oficial', 'url' => url('/')],
                 ['label' => 'Transparencia', 'url' => url('/transparencia/normativos')],
-                ['label' => 'Registro Sindical', 'url' => url('/portal/register')],
+                ['label' => 'Registro Sindical', 'url' => url('/registro')],
             ],
         ]) }}"
     >

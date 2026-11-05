@@ -2,10 +2,11 @@
 
 namespace App\Filament\Pages;
 
+use App\Actions\GenerateUserCredentialPdf;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
-use App\Jobs\ProcessDocumentAIJob;
 use App\Models\User;
+use App\Services\DocumentAIService;
 use Filament\Actions\Action;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\DatePicker;
@@ -22,10 +23,15 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class Profile extends BaseEditProfile
 {
     protected static ?string $title = 'Mi Perfil';
+
+    /** @var array<string, mixed> Staged AI preview results, keyed by document type value. */
+    public array $aiPreviews = [];
 
     public function getHeading(): string|Htmlable
     {
@@ -35,6 +41,21 @@ class Profile extends BaseEditProfile
     public function getSubheading(): string|Htmlable|null
     {
         return 'Administra tus datos personales, credenciales y expediente digital de agremiado.';
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('downloadCredential')
+                ->label('Descargar Credencial')
+                ->icon(Heroicon::Identification)
+                ->color('primary')
+                ->visible(fn (): bool => $this->getUser()->areAllDocumentsValid())
+                ->action(fn () => app(GenerateUserCredentialPdf::class)->execute($this->getUser())),
+        ];
     }
 
     protected function getNameFormComponent(): Component
@@ -154,8 +175,8 @@ class Profile extends BaseEditProfile
                             ]),
                     ]),
 
-                Section::make('Documentos de Afiliación (PDF)')
-                    ->description('Sube y gestiona tus 5 documentos obligatorios en PDF. Estos documentos son revisados y validados por la administración.')
+                Section::make('Documentos de Afiliación')
+                    ->description('Sube y gestiona tus documentos obligatorios. INE y comprobante de pago también aceptan imagen (JPG, PNG, WebP). Los demás documentos solo en PDF.')
                     ->icon(Heroicon::DocumentCheck)
                     ->schema([
                         $this->buildDocumentUploadField(UserDocumentType::Afiliacion, '1. Comprobante de Afiliación'),
@@ -181,20 +202,31 @@ class Profile extends BaseEditProfile
 
     /**
      * Build a standardized Spatie Media file upload component for an affiliation document.
+     * INE and ComprobantePago also accept images; others remain PDF-only.
      */
     protected function buildDocumentUploadField(UserDocumentType $type, string $label): SpatieMediaLibraryFileUpload
     {
-        return SpatieMediaLibraryFileUpload::make($type->value)
+        $acceptsImages = in_array($type, User::imageAcceptingDocumentTypes(), true);
+
+        $acceptedMimes = $acceptsImages
+            ? ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+            : ['application/pdf'];
+
+        $helperBase = $acceptsImages
+            ? 'Sube un archivo PDF o imagen (JPG, PNG, WebP).'
+            : 'Sube un archivo PDF válido.';
+
+        $field = SpatieMediaLibraryFileUpload::make($type->value)
             ->label($label)
             ->collection($type->value)
             ->visibility('private')
-            ->acceptedFileTypes(['application/pdf'])
+            ->acceptedFileTypes($acceptedMimes)
             ->maxSize(10240)
             ->downloadable()
             ->openable()
             ->hintAction(
                 Action::make('open_'.$type->value)
-                    ->label('Abrir PDF')
+                    ->label('Abrir documento')
                     ->icon(Heroicon::ArrowTopRightOnSquare)
                     ->visible(fn (?Model $record): bool => $record instanceof User && $record->getDocumentMedia($type) !== null)
                     ->url(fn (?Model $record): ?string => $record instanceof User ? route('portal.users.documents.show', ['user' => $record, 'type' => $type->value]) : null)
@@ -243,9 +275,9 @@ class Profile extends BaseEditProfile
 
                 return 'gray';
             })
-            ->helperText(function (?Model $record) use ($type): ?string {
+            ->helperText(function (?Model $record) use ($type, $helperBase): ?string {
                 if (! $record instanceof User) {
-                    return null;
+                    return $helperBase;
                 }
 
                 $status = $record->getDocumentStatus($type);
@@ -255,45 +287,128 @@ class Profile extends BaseEditProfile
                 if ($status === DocumentStatus::Invalid) {
                     $reason = $record->getDocumentRejectionReason($type);
 
-                    return 'Observación de la administración: "'.($reason ?: 'Documento no válido').'". Por favor selecciona un nuevo archivo en PDF para reemplazarlo.';
+                    return 'Observación de la administración: "'.($reason ?: 'Documento no válido').'". Por favor selecciona un nuevo archivo para reemplazarlo.';
                 }
                 if ($status === DocumentStatus::Processing) {
-                    return 'Estamos verificando tu documento automáticamente. Recibirás una notificación si es rechazado.';
+                    return 'Estamos verificando tu documento. Recibirás una notificación si es rechazado.';
                 }
                 if ($status === DocumentStatus::Pending) {
                     return 'Documento en proceso de revisión por parte de la administración.';
                 }
 
-                return 'Documento pendiente. Sube un archivo PDF válido.';
+                return $helperBase;
             });
+
+        // For INE and nómina, run AI sync analysis when a new file is chosen
+        if ($acceptsImages) {
+            $field->live()->afterStateUpdated(function ($state, ?Model $record) use ($type): void {
+                if (! $record instanceof User || ! filled($state)) {
+                    return;
+                }
+
+                // Stage the AI preview so it can be persisted when the form is saved
+                $this->stageAiPreviewForProfile($record, $type);
+            });
+        }
+
+        return $field;
     }
 
     /**
-     * Handle updating user profile, saving media relationships, and resetting status on replaced files.
+     * Run AI analysis synchronously and stage the result for persistence at save time.
+     * Never throws — any failure is logged and ignored.
+     */
+    private function stageAiPreviewForProfile(User $user, UserDocumentType $type): void
+    {
+        $media = $user->getFirstMedia($type->value);
+
+        if (! $media) {
+            return;
+        }
+
+        // Skip if already analyzed (avoid double-billing)
+        if ($media->hasCustomProperty('ai_processed_at')) {
+            return;
+        }
+
+        $bytes = Storage::disk($media->disk)->get($media->getPathRelativeToRoot());
+
+        if (! is_string($bytes) || $bytes === '') {
+            return;
+        }
+
+        $throttleKey = 'user:'.($user->id ?? 'unknown');
+
+        /** @var DocumentAIService $service */
+        $service = app(DocumentAIService::class);
+
+        ['result' => $result, 'warnings' => $warnings] = $service->review(
+            $bytes,
+            (string) $media->mime_type,
+            $type,
+            $throttleKey,
+        );
+
+        if (! empty($warnings)) {
+            Log::info('Profile AI warnings staged.', ['type' => $type->value, 'warnings' => $warnings]);
+        }
+
+        // Only store a result; never overwrite a previously staged preview with null
+        if ($result !== null) {
+            $this->aiPreviews[$type->value] = $result->toArray();
+        }
+    }
+
+    /**
+     * Handle updating user profile, saving media relationships, and persisting AI metadata.
+     * No longer dispatches ProcessDocumentAIJob — analysis is synchronous.
      */
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         $record = parent::handleRecordUpdate($record, $data);
         $this->form->model($record)->saveRelationships();
 
-        // Check if any media was uploaded or replaced
         $updatedAny = false;
+
         foreach (UserDocumentType::cases() as $type) {
             $media = $record->getFirstMedia($type->value);
-            if ($media) {
-                $status = $media->getCustomProperty('status');
-                // If it's freshly uploaded without status or was invalid and now replaced
-                if (! $status || $status === DocumentStatus::Invalid->value) {
-                    $media->setCustomProperty('status', DocumentStatus::Pending->value);
-                    $media->forgetCustomProperty('rejection_reason');
-                    $media->save();
-                    $updatedAny = true;
 
-                    if (config('services.document_ai.enabled')) {
-                        ProcessDocumentAIJob::dispatch($media)->afterCommit();
+            if (! $media) {
+                continue;
+            }
+
+            $status = $media->getCustomProperty('status');
+
+            // Only process freshly uploaded or previously invalid documents
+            if ($status && $status !== DocumentStatus::Invalid->value) {
+                continue;
+            }
+
+            // Set Pending status and clear rejection reason
+            $media->setCustomProperty('status', DocumentStatus::Pending->value);
+            $media->forgetCustomProperty('rejection_reason');
+
+            // Persist AI metadata staged during file selection (no second call)
+            if (isset($this->aiPreviews[$type->value])) {
+                $preview = $this->aiPreviews[$type->value];
+
+                if ($preview !== null) {
+                    $media->setCustomProperty('extracted_data', $preview);
+                    $media->setCustomProperty('ai_flagged', ! ($preview['is_valid_document'] ?? true));
+                    $media->setCustomProperty('ai_processed_at', now()->toIso8601String());
+
+                    if (! empty($preview['ai_flags'])) {
+                        $media->setCustomProperty('ai_flags', $preview['ai_flags']);
                     }
+                } else {
+                    // AI was unavailable: mark for manual review
+                    $media->setCustomProperty('ai_processed_at', now()->toIso8601String());
+                    $media->setCustomProperty('ai_error', 'Análisis automático no disponible; revisión manual pendiente.');
                 }
             }
+
+            $media->save();
+            $updatedAny = true;
         }
 
         if ($updatedAny) {
@@ -303,6 +418,9 @@ class Profile extends BaseEditProfile
                 ->info()
                 ->send();
         }
+
+        // Reset staged previews after save
+        $this->aiPreviews = [];
 
         return $record;
     }

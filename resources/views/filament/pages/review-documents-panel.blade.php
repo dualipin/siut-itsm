@@ -197,6 +197,16 @@
                             </x-filament::button>
 
                             <x-filament::button
+                                wire:click="mountAction('analyzeWithAi', { type: '{{ $key }}' })"
+                                color="info"
+                                size="sm"
+                                icon="heroicon-m-cpu-chip"
+                                outlined
+                            >
+                                Analizar con IA
+                            </x-filament::button>
+
+                            <x-filament::button
                                 wire:click="mountAction('replaceDocument', { type: '{{ $key }}' })"
                                 color="gray"
                                 size="sm"
@@ -229,6 +239,106 @@
                         @endif
                     </div>
                 </div>
+
+                {{-- ── Bloque de IA ────────────────────────────────────────────── --}}
+                @if ($doc['media'] !== null && ($doc['extractedData'] !== null || $doc['aiError'] !== null || $doc['aiFlagged']))
+                    <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 bg-info-50/60 dark:bg-info-950/30 border-b border-info-200/70 dark:border-info-800/40 flex items-center gap-2">
+                            <x-filament::icon icon="heroicon-m-cpu-chip" class="w-4 h-4 text-info-600 dark:text-info-400 shrink-0" />
+                            <h4 class="text-sm font-semibold text-info-800 dark:text-info-200">Análisis de Inteligencia Artificial</h4>
+                            @if ($doc['aiProcessedAt'])
+                                <span class="text-xs text-info-500 dark:text-info-400 ml-auto">{{ \Carbon\Carbon::parse($doc['aiProcessedAt'])->diffForHumans() }}</span>
+                            @endif
+                        </div>
+
+                        <div class="p-4 space-y-4">
+                            {{-- AI error / unavailable --}}
+                            @if ($doc['aiError'])
+                                <div class="flex items-start gap-2 text-sm text-warning-700 dark:text-warning-300 bg-warning-50 dark:bg-warning-950/30 border border-warning-200 dark:border-warning-800/50 rounded-lg p-3">
+                                    <x-filament::icon icon="heroicon-m-exclamation-triangle" class="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>{{ $doc['aiError'] }}</span>
+                                </div>
+                            @endif
+
+                            {{-- Flagged --}}
+                            @if ($doc['aiFlagged'])
+                                <div class="flex items-start gap-2 text-sm text-danger-700 dark:text-danger-300 bg-danger-50 dark:bg-danger-950/30 border border-danger-200 dark:border-danger-800/50 rounded-lg p-3">
+                                    <x-filament::icon icon="heroicon-m-flag" class="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>La IA marcó este documento como posiblemente incorrecto. Revísalo con atención.</span>
+                                </div>
+                            @endif
+
+                            {{-- AI flags (reviewer alerts) --}}
+                            @if (!empty($doc['aiFlags']))
+                                <div class="space-y-2">
+                                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Alertas para el revisor</p>
+                                    @foreach ($doc['aiFlags'] as $flagMsg)
+                                        <div class="flex items-start gap-2 text-sm text-warning-700 dark:text-warning-300 bg-warning-50 dark:bg-warning-950/30 border border-warning-200 dark:border-warning-800/50 rounded-lg p-2.5">
+                                            <x-filament::icon icon="heroicon-m-exclamation-circle" class="w-4 h-4 shrink-0 mt-0.5" />
+                                            <span>{{ $flagMsg }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            {{-- Extracted fields --}}
+                            @if (!empty($doc['extractedData']['extracted_fields']))
+                                @php $ef = $doc['extractedData']['extracted_fields']; @endphp
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Datos extraídos</p>
+                                    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                                        @foreach ($ef as $efKey => $efVal)
+                                            @if (filled($efVal))
+                                                <div>
+                                                    <dt class="text-xs text-gray-500 dark:text-gray-400">{{ ucfirst(str_replace('_', ' ', $efKey)) }}</dt>
+                                                    <dd class="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{{ $efVal }}</dd>
+                                                </div>
+                                            @endif
+                                        @endforeach
+                                    </dl>
+                                </div>
+                            @endif
+
+                            {{-- Confidence score --}}
+                            @if (isset($doc['extractedData']['confidence_score']))
+                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                    Confianza IA: <span class="font-semibold text-gray-700 dark:text-gray-300">{{ round($doc['extractedData']['confidence_score'] * 100) }}%</span>
+                                    @if (!empty($doc['extractedData']['observations']))
+                                        · {{ $doc['extractedData']['observations'] }}
+                                    @endif
+                                </div>
+                            @endif
+
+                            {{-- Side-by-side photo comparison (INE only) --}}
+                            @if ($key === 'ine' && $doc['documentUrl'])
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Comparación de fotos</p>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="text-center">
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">Foto de Perfil</p>
+                                            @if ($doc['profilePhotoUrl'])
+                                                <img
+                                                    src="{{ $doc['profilePhotoUrl'] }}"
+                                                    alt="Foto de perfil"
+                                                    class="w-full max-w-[140px] mx-auto rounded-lg border border-gray-200 dark:border-gray-700 object-cover aspect-square"
+                                                >
+                                            @else
+                                                <div class="w-full max-w-[140px] mx-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 aspect-square flex items-center justify-center text-xs text-gray-400">Sin foto</div>
+                                            @endif
+                                        </div>
+                                        <div class="text-center">
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">INE (documento)</p>
+                                            <div class="w-full max-w-[140px] mx-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 aspect-square flex items-center justify-center">
+                                                <a href="{{ $doc['documentUrl'] }}" target="_blank" class="text-xs text-primary-600 dark:text-primary-400 underline text-center p-2">Ver INE completa →</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">La comparación facial es manual. Verifica que ambas fotos correspondan a la misma persona.</p>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                @endif
 
                 {{-- Visor de Documento o Estado Vacío --}}
                 <div class="relative w-full rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm bg-gray-100 dark:bg-gray-950 flex-1">
