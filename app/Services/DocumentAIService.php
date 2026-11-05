@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\UserDocumentType;
 use App\Exceptions\DocumentAIException;
 use App\Support\DocumentAIResult;
+use App\Support\PayslipTextParser;
 use ErrorException;
 use Exception;
 use Illuminate\Http\Client\ConnectionException;
@@ -89,15 +90,19 @@ REGLAS
 - NO inventes datos. Si un campo no es legible, devuelve cadena vacía "".
 - "fecha_pago": fecha del pago o fin del periodo, formato "YYYY-MM-DD" si es posible, o "YYYY-MM" si solo aparece mes/año, o cadena vacía.
 - "periodo": descripción del periodo de pago (ej. "01/10/2024 al 15/10/2024"). Cadena vacía si no aparece.
-- "salario": monto neto o total pagado, solo dígitos y punto decimal sin símbolo de moneda (ej. "8500.00"). Cadena vacía si no aparece.
-- "nss": NSS de 11 dígitos. Cadena vacía si no aparece.
-- "categoria": puesto o categoría laboral tal como aparece. Cadena vacía si no aparece.
+- "salario": monto NETO pagado ("Neto del recibo" / "Total a pagar"), solo dígitos y punto decimal, sin comas ni símbolo de moneda (ej. "8500.00"). Cadena vacía si no aparece.
+- "nombre": nombre del trabajador SIN el número/clave de empleado (ej. de "D0054 - ALEXANDER RAMIREZ ARCOS" devuelve "ALEXANDER RAMIREZ ARCOS").
+- "nss": número de seguridad social (campo "NSS"), exactamente 11 dígitos, solo dígitos. Cadena vacía si no aparece.
+- "curp": CURP del trabajador, 18 caracteres en mayúsculas. Cadena vacía si no aparece.
+- "rfc": RFC del TRABAJADOR (13 caracteres), no el del patrón/institución. Cadena vacía si no aparece.
+- "categoria": campo "Puesto" o categoría laboral tal como aparece. Cadena vacía si no aparece.
+- "fecha_ingreso": campo "Fecha Ini Relación Lab" (inicio de la relación laboral) en formato "YYYY-MM-DD". Cadena vacía si no aparece.
 - "confidence_score": tu certeza sobre "is_valid_document" (0–1).
 - "observations": en español, ≤ 200 caracteres, para el usuario. Sin datos personales.
 
 FORMATO DE SALIDA (OBLIGATORIO)
 Responde ÚNICAMENTE con JSON válido, sin markdown ni texto extra:
-{"is_valid_document": boolean, "document_type": "comprobante_pago", "extracted_fields": {"nombre": string, "nss": string, "categoria": string, "salario": string, "periodo": string, "fecha_pago": string}, "confidence_score": number, "observations": string}
+{"is_valid_document": boolean, "document_type": "comprobante_pago", "extracted_fields": {"nombre": string, "nss": string, "curp": string, "rfc": string, "categoria": string, "salario": string, "periodo": string, "fecha_pago": string, "fecha_ingreso": string}, "confidence_score": number, "observations": string}
 PROMPT;
 
     /**
@@ -198,9 +203,34 @@ PROMPT;
      */
     public function extractPayslip(string $bytes, string $mimeType): DocumentAIResult
     {
-        $parts = $this->buildPartsForFile($bytes, $mimeType, UserDocumentType::ComprobantePago);
+        // Digital CFDI PDFs carry an exact text layer: read it first (free, no OCR errors).
+        $fromText = $mimeType === 'application/pdf' ? PayslipTextParser::parse($this->pdfText($bytes)) : [];
 
-        return $this->parsePayslipResponse($this->sendRequestWithPrompt(self::PAYSLIP_SYSTEM_PROMPT, $parts));
+        if ($fromText !== [] && PayslipTextParser::isComplete($fromText)) {
+            return new DocumentAIResult(true, 'comprobante_pago', $fromText, 0.99, '');
+        }
+
+        $parts = $this->buildPartsForFile($bytes, $mimeType, UserDocumentType::ComprobantePago, dense: true);
+        $result = $this->parsePayslipResponse($this->sendRequestWithPrompt(self::PAYSLIP_SYSTEM_PROMPT, $parts));
+
+        // Anything the text layer did read is exact, so it wins over the model's reading.
+        return new DocumentAIResult(
+            $result->isValidDocument,
+            $result->documentType,
+            array_merge($result->extractedFields, array_filter($fromText, filled(...))),
+            $result->confidenceScore,
+            $result->observations,
+            $result->aiFlags,
+        );
+    }
+
+    private function pdfText(string $pdf): string
+    {
+        try {
+            return (string) $this->extractFromPdf($pdf)['text'];
+        } catch (DocumentAIException) {
+            return '';
+        }
     }
 
     /**
@@ -318,10 +348,13 @@ PROMPT;
      *
      * @throws DocumentAIException
      */
-    private function buildPartsForFile(string $bytes, string $mimeType, UserDocumentType $type): array
+    private function buildPartsForFile(string $bytes, string $mimeType, UserDocumentType $type, bool $dense = false): array
     {
+        // Dense documents (payslips) have tiny print: keep more pixels so digits like the NSS stay legible.
+        $maxSide = $dense ? max(256, (int) config('services.document_ai.store_max_dimension', 1600)) : null;
+
         if ($mimeType !== 'application/pdf') {
-            $jpeg = $this->optimizeImage($bytes);
+            $jpeg = $this->optimizeImage($bytes, $maxSide);
 
             return [
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,'.base64_encode($jpeg)]],
@@ -331,7 +364,7 @@ PROMPT;
         // PDF: try rasterization first, then embedded JPEG, then text
         if (extension_loaded('imagick')) {
             try {
-                $jpeg = $this->optimizeImage($this->rasterizeFirstPdfPage($bytes));
+                $jpeg = $this->optimizeImage($this->rasterizeFirstPdfPage($bytes, $dense ? 170 : self::PDF_DPI), $maxSide);
 
                 return [
                     ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,'.base64_encode($jpeg)]],
@@ -346,7 +379,7 @@ PROMPT;
         ['image' => $image, 'text' => $text] = $this->extractFromPdf($bytes);
 
         if ($image !== null) {
-            $jpeg = $this->optimizeImage($image);
+            $jpeg = $this->optimizeImage($image, $maxSide);
 
             return [
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,'.base64_encode($jpeg)]],
@@ -366,7 +399,7 @@ PROMPT;
      *
      * @throws DocumentAIException
      */
-    private function rasterizeFirstPdfPage(string $pdf): string
+    private function rasterizeFirstPdfPage(string $pdf, int $dpi = self::PDF_DPI): string
     {
         if (! extension_loaded('imagick')) {
             throw DocumentAIException::unprocessable('La extensión Imagick no está disponible para convertir PDF a imagen.');
@@ -379,7 +412,7 @@ PROMPT;
             file_put_contents($tmp, $pdf);
 
             $imagick = new Imagick;
-            $imagick->setResolution(self::PDF_DPI, self::PDF_DPI);
+            $imagick->setResolution($dpi, $dpi);
             $imagick->readImage($tmp.'[0]');
             $imagick->setImageBackgroundColor('white');
             $flattened = $imagick->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
@@ -457,11 +490,11 @@ PROMPT;
      *
      * @throws DocumentAIException
      */
-    private function optimizeImage(string $bytes): string
+    private function optimizeImage(string $bytes, ?int $maxSide = null): string
     {
         return $this->resizeToJpeg(
             $bytes,
-            max(256, (int) config('services.document_ai.max_dimension', 1000)),
+            $maxSide ?? max(256, (int) config('services.document_ai.max_dimension', 1000)),
             (int) config('services.document_ai.jpeg_quality', 70),
         );
     }
@@ -670,11 +703,14 @@ PROMPT;
 
         $extractedFields = [
             'nombre' => trim((string) ($fields['nombre'] ?? '')),
-            'nss' => trim((string) ($fields['nss'] ?? '')),
+            'nss' => $this->digitsOnly((string) ($fields['nss'] ?? '')),
+            'curp' => Str::upper(trim((string) ($fields['curp'] ?? ''))),
+            'rfc' => Str::upper(trim((string) ($fields['rfc'] ?? ''))),
             'categoria' => trim((string) ($fields['categoria'] ?? '')),
-            'salario' => trim((string) ($fields['salario'] ?? '')),
+            'salario' => str_replace(',', '', trim((string) ($fields['salario'] ?? ''))),
             'periodo' => trim((string) ($fields['periodo'] ?? '')),
             'fecha_pago' => trim((string) ($fields['fecha_pago'] ?? '')),
+            'fecha_ingreso' => trim((string) ($fields['fecha_ingreso'] ?? '')),
         ];
 
         return new DocumentAIResult(
@@ -684,6 +720,14 @@ PROMPT;
             confidenceScore: $confidence,
             observations: Str::limit(trim(strip_tags((string) ($data['observations'] ?? ''))), 300),
         );
+    }
+
+    /** An NSS has exactly 11 digits; anything else is a misread and is dropped. */
+    private function digitsOnly(string $value): string
+    {
+        $digits = (string) preg_replace('/\D/', '', $value);
+
+        return strlen($digits) === 11 ? $digits : '';
     }
 
     /**

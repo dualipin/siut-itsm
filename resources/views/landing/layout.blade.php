@@ -7,9 +7,9 @@
 @section('base-content')
     <div class="drawer drawer-end">
         <input id="landing-drawer" type="checkbox" class="drawer-toggle" />
-        <div class="min-h-dvh flex flex-col">
+        <div class="drawer-content min-h-dvh flex flex-col min-w-0">
             <x-landing-navbar />
-            <main>
+            <main class="min-w-0 flex-1">
                 @yield('content')
             </main>
             <x-landing-floating-elements />

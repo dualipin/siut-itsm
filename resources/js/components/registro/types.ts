@@ -23,6 +23,10 @@ export interface ExtractedIneFields {
 export interface ExtractedNominaFields {
     nombre?: string
     nss?: string
+    curp?: string
+    rfc?: string
+    fecha_nacimiento?: string
+    fecha_ingreso?: string
     categoria?: string
     salario?: string
     periodo?: string

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { User, Sparkles, ChevronDown, ChevronUp } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ChevronDown, ChevronUp, Sparkles, User } from '@lucide/vue'
+import QRCodeStyling from 'qr-code-styling'
+import CredentialCard from './credential-card.vue'
 
 interface Props {
     name?: string
@@ -14,7 +16,6 @@ interface Props {
     logoTecnmUrl?: string
     logoItsmUrl?: string
     logoSiutUrl?: string
-    organization?: string
     website?: string
 }
 
@@ -30,8 +31,7 @@ const props = withDefaults(defineProps<Props>(), {
     logoTecnmUrl: '/assets/img/logo/logo-tecnm.png',
     logoItsmUrl: '/assets/img/logo/logo-itsm.jpg',
     logoSiutUrl: '/assets/images/logo.webp',
-    organization: 'Sindicato Único de Trabajadores del ITSM',
-    website: 'www.siutitsm.com',
+    website: 'www.siutitsm.com.mx',
 })
 
 const isExpandedMobile = ref(false)
@@ -41,10 +41,6 @@ const displayName = computed(() => {
     return full || 'Tu Nombre Completo'
 })
 
-const displayCurp = computed(() => {
-    return (props.curp || '').toUpperCase().trim() || 'CURP — 18 DÍGITOS'
-})
-
 const displayNss = computed(() => {
     return (props.nss || '').trim() || 'NSS — 11 DÍGITOS'
 })
@@ -52,28 +48,99 @@ const displayNss = computed(() => {
 const displayCategory = computed(() => {
     return (props.category || '').trim() || 'Puesto o categoría laboral'
 })
+
+const qrSrc = ref<string | null>(null)
+let qrObjectUrl: string | null = null
+
+// ponytail: QR estático al sitio; cambiar a token cuando exista /verificar/{token}
+const qrTargetUrl = computed(() => {
+    const website = props.website.replace(/^https?:\/\//, '')
+    return `https://${website}`
+})
+
+async function generateQr(): Promise<void> {
+    try {
+        const qr = new QRCodeStyling({
+            width: 160,
+            height: 160,
+            type: 'png',
+            data: qrTargetUrl.value,
+            image: props.logoSiutUrl,
+            qrOptions: {
+                errorCorrectionLevel: 'H',
+            },
+            imageOptions: {
+                crossOrigin: 'anonymous',
+                margin: 1,
+                imageSize: 0.22,
+            },
+            dotsOptions: {
+                color: '#2E3A6B',
+                type: 'square',
+            },
+            cornersSquareOptions: {
+                color: '#2E3A6B',
+                type: 'square',
+            },
+            cornersDotOptions: {
+                color: '#2E3A6B',
+                type: 'square',
+            },
+            backgroundOptions: {
+                color: '#ffffff',
+            },
+        })
+
+        const raw = await qr.getRawData('png')
+
+        if (!raw) {
+            return
+        }
+
+        const blob = raw instanceof Blob ? raw : new Blob([raw], { type: 'image/png' })
+
+        if (qrObjectUrl) {
+            URL.revokeObjectURL(qrObjectUrl)
+        }
+
+        qrObjectUrl = URL.createObjectURL(blob)
+        qrSrc.value = qrObjectUrl
+    } catch {
+        qrSrc.value = null
+    }
+}
+
+onMounted(generateQr)
+
+watch(() => [props.website, props.logoSiutUrl], generateQr)
+
+onBeforeUnmount(() => {
+    if (qrObjectUrl) {
+        URL.revokeObjectURL(qrObjectUrl)
+    }
+})
 </script>
 
 <template>
     <aside aria-label="Credencial de agremiado digital en vivo" class="w-full">
         <!-- Barra compacta en móvil (< lg) con opción de expandir -->
-        <div class="lg:hidden mb-6 bg-base-100 rounded-box border border-base-300 shadow-sm overflow-hidden">
+        <div class="mb-6 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm lg:hidden">
             <button
                 type="button"
-                @click="isExpandedMobile = !isExpandedMobile"
-                class="w-full p-4 flex items-center justify-between text-left transition-colors hover:bg-base-200/50"
+                class="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-base-200/50"
                 :aria-expanded="isExpandedMobile"
                 aria-controls="mobile-credential-body"
+                @click="isExpandedMobile = !isExpandedMobile"
             >
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="relative size-10 rounded-full overflow-hidden bg-base-200 border border-primary/30 shrink-0">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="relative size-10 shrink-0 overflow-hidden rounded-full border border-primary/30 bg-base-200">
                         <img
                             v-if="photoUrl"
                             :src="photoUrl"
                             alt="Fotografía"
                             class="size-full object-cover"
                         />
-                        <div v-else class="size-full flex items-center justify-center text-base-content/40">
+                        <div v-else class="flex size-full items-center justify-center text-base-content/40">
                             <User class="size-5" />
                         </div>
                     </div>
@@ -82,7 +149,7 @@ const displayCategory = computed(() => {
                             <span class="text-xs font-semibold uppercase tracking-wider text-primary">Credencial en Vivo</span>
                             <span v-if="isScanning" class="badge badge-primary badge-xs animate-pulse">Escaneando...</span>
                         </div>
-                        <p class="text-sm font-bold truncate text-base-content">{{ displayName }}</p>
+                        <p class="truncate text-sm font-bold text-base-content">{{ displayName }}</p>
                     </div>
                 </div>
                 <div class="shrink-0 text-base-content/60">
@@ -95,175 +162,50 @@ const displayCategory = computed(() => {
             <div
                 v-show="isExpandedMobile"
                 id="mobile-credential-body"
-                class="p-4 pt-0 border-t border-base-200"
+                class="border-t border-base-200 p-4 pt-0"
             >
                 <div class="mt-4 flex justify-center">
-                    <!-- Tarjeta de la credencial en móvil -->
-                    <div class="relative w-full max-w-[280px] aspect-[54/85.6] bg-base-100 rounded-2xl shadow-xl overflow-hidden border border-base-300 text-center select-none flex flex-col justify-between">
-                        <!-- Arcos superior e inferior -->
-                        <div
-                            class="absolute inset-x-0 top-0 h-[38%] bg-cover bg-top bg-no-repeat pointer-events-none z-1"
-                            :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
-                        />
-                        <div
-                            class="absolute inset-x-0 bottom-0 h-[38%] bg-cover bg-bottom bg-no-repeat pointer-events-none z-2 scale-y-[-1] scale-x-[-1]"
-                            :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
-                        />
-
-                        <!-- Marca de agua central -->
-                        <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-3">
-                            <img :src="logoSiutUrl" alt="Marca de agua SIUT" class="size-24 rounded-full object-contain" />
-                        </div>
-
-                        <!-- Efecto de escaneo IA -->
-                        <div
-                            v-if="isScanning"
-                            class="absolute inset-0 pointer-events-none z-20 motion-safe:animate-pulse bg-gradient-to-b from-primary/10 via-primary/5 to-transparent"
-                            aria-hidden="true"
-                        >
-                            <div class="w-full h-1 bg-primary/70 shadow-[0_0_12px_var(--siut-color-primary)] animate-bounce" />
-                        </div>
-
-                        <!-- Contenido Principal -->
-                        <div class="relative z-10 size-full flex flex-col justify-between p-3.5">
-                            <div class="pt-2 flex flex-col items-center">
-                                <!-- Foto circular -->
-                                <div class="size-20 rounded-full border-[3px] border-primary bg-base-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
-                                    <img
-                                        v-if="photoUrl"
-                                        :src="photoUrl"
-                                        alt="Foto"
-                                        class="size-full object-cover"
-                                    />
-                                    <div v-else class="flex flex-col items-center justify-center text-base-content/40 text-[9px] font-medium leading-none">
-                                        <User class="size-6 mb-1 text-base-content/30" />
-                                        <span>SIN FOTO</span>
-                                    </div>
-                                </div>
-
-                                <!-- Datos del agremiado -->
-                                <div class="mt-2 w-full px-1">
-                                    <div class="font-bold text-xs uppercase tracking-tight text-primary px-1.5 py-0.5 rounded bg-base-100/90 shadow-2xs inline-block max-w-full truncate leading-tight">
-                                        {{ displayName }}
-                                    </div>
-                                    <div class="text-[9px] text-base-content/60 uppercase font-semibold mt-0.5 truncate">
-                                        {{ displayCategory }}
-                                    </div>
-                                    <div class="text-[7.5px] font-bold uppercase text-base-content/80 leading-tight mt-1 line-clamp-1">
-                                        {{ organization }}
-                                    </div>
-                                    <div class="text-[7.5px] font-semibold text-base-content/60">
-                                        REG. RS-033/2019.
-                                    </div>
-                                    <div class="text-[8.5px] font-bold text-base-content/80 mt-1">
-                                        IMSS: <span class="font-mono">{{ displayNss }}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Footer con logos y web -->
-                            <div class="pb-1 flex flex-col items-center">
-                                <div class="flex items-center justify-center gap-3 w-full">
-                                    <img :src="logoTecnmUrl" alt="TecNM" class="h-4 max-w-[28px] object-contain rounded-full" />
-                                    <img :src="logoItsmUrl" alt="ITSM" class="h-4 max-w-[28px] object-cover rounded-full" />
-                                    <img :src="logoSiutUrl" alt="SIUT" class="h-4 max-w-[28px] object-cover rounded-full" />
-                                </div>
-                                <div class="text-[8px] font-bold text-primary mt-1">
-                                    {{ website }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <CredentialCard
+                        :display-name="displayName"
+                        :display-nss="displayNss"
+                        :display-category="displayCategory"
+                        :photo-url="photoUrl"
+                        :qr-src="qrSrc"
+                        :is-scanning="isScanning"
+                        :background-image-url="backgroundImageUrl"
+                        :logo-tecnm-url="logoTecnmUrl"
+                        :logo-itsm-url="logoItsmUrl"
+                        :logo-siut-url="logoSiutUrl"
+                        :website="website"
+                    />
                 </div>
             </div>
         </div>
 
         <!-- Tarjeta de Credencial fija (Sticky en desktop lg+) -->
-        <div class="hidden lg:block sticky top-24">
-            <div class="text-center mb-3">
-                <span class="text-xs font-bold uppercase tracking-wider text-primary inline-flex items-center gap-1.5">
+        <div class="sticky top-24 hidden lg:block">
+            <div class="mb-3 text-center">
+                <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-primary">
                     <Sparkles class="size-3.5" />
                     Credencial Digital en Vivo
                 </span>
-                <p class="text-xs text-base-content/60 mt-0.5">Se actualiza automáticamente con tus documentos</p>
+                <p class="mt-0.5 text-xs text-base-content/60">Se actualiza automáticamente con tus documentos</p>
             </div>
 
-            <!-- Contenedor PVC réplica fiel al anverso del PDF -->
-            <div class="relative w-full max-w-[280px] mx-auto aspect-[54/85.6] bg-base-100 rounded-2xl shadow-xl overflow-hidden border border-base-300 text-center select-none flex flex-col justify-between">
-                <!-- Arcos superior e inferior -->
-                <div
-                    class="absolute inset-x-0 top-0 h-[38%] bg-cover bg-top bg-no-repeat pointer-events-none z-1"
-                    :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
-                />
-                <div
-                    class="absolute inset-x-0 bottom-0 h-[38%] bg-cover bg-bottom bg-no-repeat pointer-events-none z-2 scale-y-[-1] scale-x-[-1]"
-                    :style="{ backgroundImage: `url(${backgroundImageUrl})` }"
-                />
-
-                <!-- Marca de agua central -->
-                <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-3">
-                    <img :src="logoSiutUrl" alt="Marca de agua SIUT" class="size-24 rounded-full object-contain" />
-                </div>
-
-                <!-- Efecto de escaneo IA -->
-                <div
-                    v-if="isScanning"
-                    class="absolute inset-0 pointer-events-none z-20 motion-safe:animate-pulse bg-gradient-to-b from-primary/10 via-primary/5 to-transparent"
-                    aria-hidden="true"
-                >
-                    <div class="w-full h-1 bg-primary/70 shadow-[0_0_12px_var(--siut-color-primary)] animate-bounce" />
-                </div>
-
-                <!-- Contenido Principal -->
-                <div class="relative z-10 size-full flex flex-col justify-between p-3.5">
-                    <div class="pt-2 flex flex-col items-center">
-                        <!-- Foto circular -->
-                        <div class="size-20 rounded-full border-[3px] border-primary bg-base-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
-                            <img
-                                v-if="photoUrl"
-                                :src="photoUrl"
-                                alt="Foto"
-                                class="size-full object-cover"
-                            />
-                            <div v-else class="flex flex-col items-center justify-center text-base-content/40 text-[9px] font-medium leading-none">
-                                <User class="size-6 mb-1 text-base-content/30" />
-                                <span>SIN FOTO</span>
-                            </div>
-                        </div>
-
-                        <!-- Datos del agremiado -->
-                        <div class="mt-2 w-full px-1">
-                            <div class="font-bold text-xs uppercase tracking-tight text-primary px-1.5 py-0.5 rounded bg-base-100/90 shadow-2xs inline-block max-w-full truncate leading-tight">
-                                {{ displayName }}
-                            </div>
-                            <div class="text-[9px] text-base-content/60 uppercase font-semibold mt-0.5 truncate">
-                                {{ displayCategory }}
-                            </div>
-                            <div class="text-[7.5px] font-bold uppercase text-base-content/80 leading-tight mt-1 line-clamp-1">
-                                {{ organization }}
-                            </div>
-                            <div class="text-[7.5px] font-semibold text-base-content/60">
-                                REG. RS-033/2019.
-                            </div>
-                            <div class="text-[8.5px] font-bold text-base-content/80 mt-1">
-                                IMSS: <span class="font-mono">{{ displayNss }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Footer con logos y web -->
-                    <div class="pb-1 flex flex-col items-center">
-                        <div class="flex items-center justify-center gap-3 w-full">
-                            <img :src="logoTecnmUrl" alt="TecNM" class="h-4 max-w-[28px] object-contain rounded-full" />
-                            <img :src="logoItsmUrl" alt="ITSM" class="h-4 max-w-[28px] object-cover rounded-full" />
-                            <img :src="logoSiutUrl" alt="SIUT" class="h-4 max-w-[28px] object-cover rounded-full" />
-                        </div>
-                        <div class="text-[8px] font-bold text-primary mt-1">
-                            {{ website }}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <CredentialCard
+                :display-name="displayName"
+                :display-nss="displayNss"
+                :display-category="displayCategory"
+                :photo-url="photoUrl"
+                :qr-src="qrSrc"
+                :is-scanning="isScanning"
+                :background-image-url="backgroundImageUrl"
+                :logo-tecnm-url="logoTecnmUrl"
+                :logo-itsm-url="logoItsmUrl"
+                :logo-siut-url="logoSiutUrl"
+                :website="website"
+                class="mx-auto"
+            />
         </div>
     </aside>
 </template>

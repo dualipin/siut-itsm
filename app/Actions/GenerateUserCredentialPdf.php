@@ -3,36 +3,21 @@
 namespace App\Actions;
 
 use App\Models\User;
-use App\Support\DocumentThemePalette;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
+use chillerlan\QRCode\Common\EccLevel;
+use chillerlan\QRCode\Output\QROutputInterface;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 
 class GenerateUserCredentialPdf
 {
-    public function __construct(
-        protected readonly DocumentThemePalette $documentThemePalette,
-    ) {}
-
     /**
      * Generate the user credential card PDF (front and back).
      */
     public function execute(User $user): Response
     {
-        $palette = $this->documentThemePalette->resolve();
-
-        $theme = [
-            'primary' => $palette['primary'],
-            'secondary' => $palette['secondary'],
-            'text' => $palette['base_content'],
-            'muted' => $palette['base_300'],
-            'border' => $palette['base_300'],
-            'surface' => $palette['base_100'],
-            'background' => $palette['base_200'],
-            'onPrimary' => $palette['primary_content'],
-            'onSecondary' => $palette['secondary_content'],
-        ];
-
         $bgPath = public_path('assets/images/background-id.png');
         $backgroundImage = file_exists($bgPath) ? $this->imageToBase64($bgPath) : null;
 
@@ -73,19 +58,19 @@ class GenerateUserCredentialPdf
         ];
 
         // ponytail: QR apunta al sitio; ruta /verificar/{token} es scope separado
-        $qrSrc = null;
+        $website = 'www.siutitsm.com.mx';
+        $qrSrc = $this->generateQrDataUri("https://{$website}");
 
         $curpPart = filled($user->curp) ? $user->curp : "usuario-{$user->id}";
         $filename = "credencial-{$curpPart}.pdf";
 
         /** @var Response $response */
         $response = DomPdf::loadView('pdf.credential', [
-            'theme' => $theme,
             'backgroundImage' => $backgroundImage,
             'logos' => $logos,
             'holder' => $holder,
             'organization' => (string) config('syndicate.name', 'Sindicato Único de Trabajadores del ITSM'),
-            'website' => (string) config('app.url'),
+            'website' => $website,
             'rfc' => '',
             'address' => (string) config('syndicate.address', ''),
             'issuedAt' => now()->format('d/m/Y'),
@@ -117,5 +102,24 @@ class GenerateUserCredentialPdf
         $content = (string) file_get_contents($path);
 
         return "data:{$mime};base64,".base64_encode($content);
+    }
+
+    /**
+     * Generate a QR code PNG data URI for the credential.
+     */
+    protected function generateQrDataUri(string $data): ?string
+    {
+        try {
+            $options = new QROptions([
+                'outputType' => QROutputInterface::GDIMAGE_PNG,
+                'eccLevel' => EccLevel::M,
+                'scale' => 8,
+                'imageBase64' => true,
+            ]);
+
+            return (new QRCode($options))->render($data);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

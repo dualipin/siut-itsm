@@ -4,7 +4,7 @@
 @section('description', 'Solicita tu alta oficial en el padrón sindical del Sindicato Independiente de Trabajadores del ITSM.')
 
 @section('content')
-    <div class="py-8 md:py-12 bg-base-200/50 min-h-[calc(100vh-16rem)]">
+    <div class="py-6 sm:py-8 md:py-12 bg-base-200/50 min-h-[calc(100vh-16rem)] w-full max-w-full overflow-x-clip">
         <noscript>
             <div class="max-w-4xl mx-auto px-4 mb-8">
                 <div class="alert alert-warning shadow-lg" role="alert">

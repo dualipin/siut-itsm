@@ -12,6 +12,7 @@ use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use Smalot\PdfParser\Parser;
 
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('portal'));
@@ -58,6 +59,35 @@ test('it generates a valid PDF download response for user with missing optional 
         ->and($response->headers->get('content-type'))->toBe('application/pdf')
         ->and($response->headers->get('content-disposition'))->toContain("credencial-usuario-{$user->id}.pdf")
         ->and(strlen($response->getContent()))->toBeGreaterThan(1000);
+});
+
+test('credential pdf front matches the original credential layout', function () {
+    $user = User::factory()->create([
+        'name' => 'Angel',
+        'surnames' => 'Leon Ramos',
+        'curp' => 'LERM800101HDFRRN01',
+        'nss' => '83917114858',
+        'category' => 'Docente',
+        'hiring_date' => now()->subYears(2),
+        'role' => UserRole::Agremiado,
+    ]);
+
+    /** @var GenerateUserCredentialPdf $action */
+    $action = app(GenerateUserCredentialPdf::class);
+    $response = $action->execute($user);
+
+    $text = (new Parser)->parseContent($response->getContent())->getText();
+
+    expect($text)
+        ->toContain('ANGEL LEON RAMOS')
+        ->toContain('DOCENTE')
+        ->toContain('NO. IMSS 83917114858')
+        ->toContain('MIEMBRO ACTIVO DEL')
+        ->toContain('SINDICATO ÚNICO DE TRABAJADORES')
+        ->toContain('DEL INSTITUTO TECNOLÓGICO')
+        ->toContain('SUPERIOR DE MACUSPANA.')
+        ->toContain('REG. RS-033/2019.')
+        ->toContain('www.siutitsm.com.mx');
 });
 
 test('downloadCredential action is hidden on profile page when documents are not valid', function () {

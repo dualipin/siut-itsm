@@ -6,15 +6,13 @@
         @page { margin: 0cm; }
 
         :root {
-            --card-primary: {{ $theme['primary'] }};
-            --card-secondary: {{ $theme['secondary'] }};
-            --card-text: {{ $theme['text'] }};
-            --card-muted: {{ $theme['muted'] }};
-            --card-border: {{ $theme['border'] }};
-            --card-surface: {{ $theme['surface'] }};
-            --card-bg: {{ $theme['background'] }};
-            --card-on-primary: {{ $theme['onPrimary'] }};
-            --card-on-secondary: {{ $theme['onSecondary'] }};
+            --card-primary: #2E3A6B;
+            --card-secondary: #E8621A;
+            --card-text: #2E3A6B;
+            --card-muted: #3B4A7A;
+            --card-border: #E4E8F2;
+            --card-surface: #FFFFFF;
+            --card-bg: #FFFFFF;
         }
 
         body {
@@ -22,7 +20,6 @@
             display: flex;
             justify-content: center;
             padding-top: 2cm;
-            {{-- background: var(--card-bg); --}}
             color: var(--card-text);
         }
 
@@ -73,30 +70,6 @@
             z-index: 2;
         }
 
-        .watermark {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            opacity: 0.15;
-            z-index: 3;
-            pointer-events: none;
-            text-align: center;
-        }
-
-        .watermark img {
-            max-width: 30mm;
-            max-height: 30mm;
-            object-fit: contain;
-            border-radius: 50%;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            margin-top: -15mm;
-            margin-left: -15mm;
-        }
-
         .content {
             position: relative;
             z-index: 10;
@@ -105,85 +78,30 @@
         }
 
         .content-front {
-            display: table;
-            width: 100%;
-            height: 100%;
             padding: 0 3mm;
         }
 
         .front-main {
-            display: table-cell;
-            vertical-align: middle;
-            padding-bottom: 8mm;
-            padding-top: 10mm;
-        }
-
-        .content-back {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding-bottom: 16mm;
-        }
-
-        .logo-row {
-            display: table;
-            width: 100%;
-            margin: 0;
-        }
-
-        .logo-cell {
-            display: table-cell;
-            width: 33.33%;
-            height: 6mm;
-            text-align: center;
-            vertical-align: middle;
-        }
-
-        .logo-img {
-            max-width: 13mm;
-            max-height: 10mm;
-            border-radius: 50%;
-            object-fit: cover;
+            padding-top: 12mm;
         }
 
         .front-footer {
             position: absolute;
             left: 0;
             right: 0;
-            bottom: 5mm;
+            bottom: 0;
             padding: 0 2mm;
         }
 
-        .name {
-            color: var(--card-primary);
-            font-size: 9pt;
-            font-weight: bold;
-            margin-top: 0;
-            text-transform: uppercase;
-            line-height: 1.15;
-            display: inline-block;
-            padding: 0.6mm 1.3mm;
-            border-radius: 1.2mm;
-            background: var(--card-surface);
-        }
-
-        .role {
-            font-size: 6.8pt;
-            color: var(--card-muted);
-            margin-bottom: 2mm;
-            text-transform: uppercase;
-        }
-
         .photo {
-            width: 24mm;
-            height: 24mm;
+            width: 18mm;
+            height: 18mm;
             margin: 0 auto 2mm;
-            border: 1mm solid var(--card-primary);
+            border: 0.8mm solid var(--card-primary);
             border-radius: 50%;
             overflow: hidden;
             background-color: var(--card-surface);
             position: relative;
-            display: inline-block;
         }
 
         .photo img {
@@ -197,57 +115,126 @@
         .photo-fallback {
             font-size: 6pt;
             color: var(--card-muted);
-            line-height: 24mm;
+            line-height: 18mm;
             margin: 0;
         }
 
-        .org {
-            font-size: 4.8pt;
+        .name {
+            color: var(--card-primary);
+            font-size: 10pt;
             font-weight: bold;
-            line-height: 1.1;
-            margin-bottom: 2mm;
-            padding: 0 2mm;
+            margin: 0 0 0.5mm;
             text-transform: uppercase;
-            color: var(--card-text);
+            line-height: 1.05;
         }
 
-        .id-info {
-            font-size: 6.4pt;
-            font-weight: bold;
-            margin-bottom: 2mm;
-            line-height: 1.2;
-            color: var(--card-text);
+        .role {
+            font-size: 6.8pt;
+            color: var(--card-muted);
+            margin: 0 0 1.5mm;
+            text-transform: uppercase;
+            line-height: 1.1;
         }
 
-        .qr {
-            width: 13mm;
-            height: 13mm;
+        .qr-pill {
+            width: 29mm;
+            height: 7.4mm;
+            margin: 0 auto 1mm;
+            padding: 0.8mm;
+            border-radius: 2.5mm;
+            background: var(--card-primary);
+        }
+
+        .qr-pill img {
+            width: 7.4mm;
+            height: 7.4mm;
+            display: block;
             margin: 0 auto;
-            border: 0.25pt solid var(--card-border);
             background: var(--card-surface);
-            overflow: hidden;
-        }
-
-        .qr img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
         }
 
         .qr-fallback {
             margin: 0;
             font-size: 5pt;
-            color: var(--card-muted);
-            line-height: 13mm;
+            color: var(--card-surface);
+            line-height: 7.4mm;
+        }
+
+        .id-info {
+            font-size: 6.4pt;
+            font-weight: bold;
+            margin-bottom: 1.5mm;
+            line-height: 1.2;
+            color: var(--card-text);
+            text-transform: uppercase;
+        }
+
+        .membership {
+            color: var(--card-text);
+            line-height: 1.15;
+        }
+
+        .membership-lead {
+            font-size: 5.8pt;
+            font-weight: normal;
+            text-transform: uppercase;
+            margin-bottom: 0.4mm;
+        }
+
+        .membership-org {
+            font-size: 6.2pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            line-height: 1.15;
+            margin-bottom: 1mm;
+        }
+
+        .membership-reg {
+            font-size: 6.4pt;
+            font-weight: bold;
+            text-transform: uppercase;
         }
 
         .web {
-            position: static;
             width: 100%;
-            font-size: 5.5pt;
+            font-size: 6.2pt;
             color: var(--card-primary);
             font-weight: bold;
-            margin-top: 1mm;
+            margin-bottom: 1mm;
+        }
+
+        .logo-row {
+            display: table;
+            width: 100%;
+            margin: 0;
+        }
+
+        .logo-cell {
+            display: table-cell;
+            width: 33.33%;
+            height: 11mm;
+            text-align: center;
+            vertical-align: bottom;
+        }
+
+        .logo-img {
+            max-width: 12mm;
+            max-height: 9mm;
+            object-fit: contain;
+        }
+
+        .logo-img-itsm {
+            max-width: 17mm;
+            max-height: 11mm;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .content-back {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding-bottom: 16mm;
         }
 
         .back-qr-wrap {
@@ -279,6 +266,28 @@
             margin-bottom: 2mm;
             padding: 0 4mm;
             color: var(--card-text);
+        }
+
+        .qr {
+            width: 13mm;
+            height: 13mm;
+            margin: 0 auto;
+            border: 0.25pt solid var(--card-border);
+            background: var(--card-surface);
+            overflow: hidden;
+        }
+
+        .qr img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .back-qr-fallback {
+            margin: 0;
+            font-size: 5pt;
+            color: var(--card-muted);
+            line-height: 13mm;
         }
 
         .v-box {
@@ -334,7 +343,6 @@
         }
 
         .meta {
-            {{-- position: absolute; --}}
             margin-top: 1mm;
             font-size: 4.8pt;
             color: var(--card-text);
@@ -348,24 +356,15 @@
 </head>
 <body>
 <div class="print-container">
-<p style="font-size: 10pt; color: {{ $theme['muted'] }}; margin-bottom: 1cm;">Guia de impresion: recorte por la linea punteada.</p>
+<p style="font-size: 10pt; color: #3B4A7A; margin-bottom: 1cm;">Guia de impresion: recorte por la linea punteada.</p>
 <div class="card-wrapper">
 <div class="card">
             @if (!empty($backgroundImage))
-            <div class="arc-blue" style="background-image: url('{!! $backgroundImage !!}');">
-</div>
-<div class="arc-red" style="background-image: url('{!! $backgroundImage !!}');">
-</div>
+            <div class="arc-blue" style="background-image: url('{!! $backgroundImage !!}');"></div>
+            <div class="arc-red" style="background-image: url('{!! $backgroundImage !!}');"></div>
             @else
-            <div class="arc-blue">
-</div>
-<div class="arc-red">
-</div>
-            @endif
-            @if (!empty($logos['siut']))
-            <div class="watermark">
-<img src="{!! $logos['siut'] !!}" alt="SIUT Watermark">
-</div>
+            <div class="arc-blue"></div>
+            <div class="arc-red"></div>
             @endif
             <div class="content content-front">
 <div class="front-main">
@@ -378,13 +377,27 @@
                     </div>
 <div class="name">{{ $holder['fullName'] }}</div>
 <div class="role">{{ $holder['cargo'] }}</div>
-<div class="org">{{ $organization }}</div>
-<div class="org">REG. RS-033/2019.</div>
-<div class="id-info">
-                        IMSS: {{ $holder['imss'] }}<br>
+<div class="qr-pill">
+                        @if (!empty($qrSrc))
+                            <img src="{!! $qrSrc !!}" alt="QR">
+                        @else
+                            <p class="qr-fallback">SIN QR</p>
+                        @endif
+                    </div>
+<div class="id-info">NO. IMSS {{ $holder['imss'] }}</div>
+<div class="membership">
+<div class="membership-lead">MIEMBRO ACTIVO DEL</div>
+{{-- ponytail: saltos fijos para replicar el PDF original; usar $organization si cambia la razón social --}}
+<div class="membership-org">
+                            SINDICATO ÚNICO DE TRABAJADORES<br>
+                            DEL INSTITUTO TECNOLÓGICO<br>
+                            SUPERIOR DE MACUSPANA.
+                        </div>
+<div class="membership-reg">REG. RS-033/2019.</div>
 </div>
 </div>
 <div class="front-footer">
+<div class="web">{{ $website }}</div>
 <div class="logo-row">
 <div class="logo-cell">
                             @if (!empty($logos['tecnm']))
@@ -393,7 +406,7 @@
                         </div>
 <div class="logo-cell">
                             @if (!empty($logos['itsm']))
-                                <img src="{!! $logos['itsm'] !!}" alt="ITSM" class="logo-img">
+                                <img src="{!! $logos['itsm'] !!}" alt="ITSM" class="logo-img-itsm">
                             @endif
                         </div>
 <div class="logo-cell">
@@ -402,35 +415,25 @@
                             @endif
                         </div>
 </div>
-<div class="web">{{ $website }}</div>
 </div>
 </div>
 </div>
-<p style="font-size: 8pt; color: {{ $theme['muted'] }};">Anverso</p>
+<p style="font-size: 8pt; color: #3B4A7A;">Anverso</p>
 </div>
 <div class="card-wrapper">
 <div class="card">
             @if (!empty($backgroundImage))
-            <div class="arc-blue" style="background-image: url('{!! $backgroundImage !!}');">
-</div>
-<div class="arc-red" style="background-image: url('{!! $backgroundImage !!}');">
-</div>
+            <div class="arc-blue" style="background-image: url('{!! $backgroundImage !!}');"></div>
+            <div class="arc-red" style="background-image: url('{!! $backgroundImage !!}');"></div>
             @else
-            <div class="arc-blue">
-</div>
-<div class="arc-red">
-</div>
-            @endif
-            @if (!empty($logos['siut']))
-            <div class="watermark">
-<img src="{!! $logos['siut'] !!}" alt="SIUT Watermark">
-</div>
+            <div class="arc-blue"></div>
+            <div class="arc-red"></div>
             @endif
             <div class="content content-back">
 <div class="back-text">
 Se acredita que la persona titular de esta
 credencial pertenece al padron de
-afiliados del 
+afiliados del
                     <strong>{{ $organization }}</strong>.
                 </div>
 <div class="v-box">
@@ -442,7 +445,7 @@ afiliados del
                         @if (!empty($qrSrc))
                             <img src="{!! $qrSrc !!}" alt="QR">
                         @else
-                            <p class="qr-fallback">SIN QR</p>
+                            <p class="back-qr-fallback">SIN QR</p>
                         @endif
                     </div>
 </div>
@@ -458,7 +461,7 @@ afiliados del
 </div>
 </div>
 </div>
-<p style="font-size: 8pt; color: {{ $theme['muted'] }};">Reverso</p>
+<p style="font-size: 8pt; color: #3B4A7A;">Reverso</p>
 </div>
 </div>
 </body>

@@ -54,6 +54,7 @@ class RegisterAgremiado
                 'category' => filled($data['category'] ?? null) ? trim((string) $data['category']) : null,
                 'salary' => filled($data['salary'] ?? null) ? $data['salary'] : null,
                 'address' => filled($data['address'] ?? null) ? trim((string) $data['address']) : null,
+                'hiring_date' => $this->hiringDate($nominaEntry),
                 'photo_path' => $photoDestination,
                 'password' => Hash::make((string) $data['password']),
                 'role' => UserRole::Agremiado,
@@ -96,6 +97,18 @@ class RegisterAgremiado
 
             return $user;
         });
+    }
+
+    /**
+     * Start of the labour relationship as printed on the payslip (server-side staged data, not client input).
+     *
+     * @param  ?array<string, mixed>  $nominaEntry
+     */
+    protected function hiringDate(?array $nominaEntry): ?string
+    {
+        $date = (string) data_get($nominaEntry, 'ai.extracted_fields.fecha_ingreso', '');
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) && strtotime($date) !== false && $date <= now()->toDateString() ? $date : null;
     }
 
     /**

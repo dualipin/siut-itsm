@@ -100,10 +100,10 @@ function formatBytes(bytes: number): string {
 </script>
 
 <template>
-    <div class="fieldset w-full">
-        <label class="fieldset-label font-bold text-base text-base-content flex items-center justify-between">
-            <span>{{ label }}</span>
-            <span class="text-xs font-normal text-base-content/60">Máx. {{ maxSizeMb }} MB</span>
+    <div class="w-full min-w-0">
+        <label class="font-bold text-sm sm:text-base text-base-content flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2 w-full">
+            <span class="min-w-0 break-words">{{ label }}</span>
+            <span class="text-xs font-normal text-base-content/60 shrink-0">Máx. {{ maxSizeMb }} MB</span>
         </label>
 
         <!-- Hidden Native File Input -->
@@ -120,16 +120,16 @@ function formatBytes(bytes: number): string {
         <!-- In-Progress Upload State -->
         <div
             v-if="state.uploading"
-            class="border border-base-300 bg-base-100 rounded-2xl p-5 shadow-xs"
+            class="card card-border bg-base-100 rounded-2xl p-4 sm:p-5 shadow-xs w-full min-w-0"
         >
-            <div class="flex items-center justify-between gap-3 mb-2">
-                <div class="flex items-center gap-2.5 min-w-0">
+            <div class="flex items-center justify-between gap-3 mb-2 min-w-0">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
                     <Loader2 class="size-5 text-primary animate-spin shrink-0" />
                     <span class="text-sm font-medium text-base-content truncate">
                         Subiendo {{ state.fileName || 'archivo' }}...
                     </span>
                 </div>
-                <span class="text-xs font-mono font-bold text-primary">{{ state.progress }}%</span>
+                <span class="text-xs font-mono font-bold text-primary shrink-0">{{ state.progress }}%</span>
             </div>
 
             <!-- Progress Bar -->
@@ -149,37 +149,37 @@ function formatBytes(bytes: number): string {
         <!-- Uploaded / Processed State (Requires valid token) -->
         <div
             v-else-if="state.token"
-            class="border border-base-300 bg-base-100 rounded-2xl p-4 sm:p-5 shadow-sm transition-all"
+            class="card card-border bg-base-100 rounded-2xl p-3.5 sm:p-5 shadow-sm transition-all w-full max-w-full min-w-0 overflow-hidden"
         >
-            <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center justify-between gap-2.5 sm:gap-3 w-full min-w-0">
                 <!-- Preview / Icon + File Details -->
-                <div class="flex items-center gap-3 min-w-0">
+                <div class="flex flex-1 items-center gap-2.5 sm:gap-3 min-w-0">
                     <!-- Photo thumbnail or Document Icon -->
                     <div
                         v-if="kind === 'photo' && state.previewUrl"
-                        class="size-14 rounded-xl overflow-hidden border border-base-300 shrink-0 bg-base-200"
+                        class="size-11 sm:size-14 rounded-xl overflow-hidden border border-base-300 shrink-0 bg-base-200"
                     >
                         <img :src="state.previewUrl" alt="Vista previa de foto" class="size-full object-cover" />
                     </div>
                     <div
                         v-else
-                        class="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0"
+                        class="size-10 sm:size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0"
                     >
-                        <FileText class="size-6" />
+                        <FileText class="size-5 sm:size-6" />
                     </div>
 
-                    <div class="min-w-0">
-                        <p class="text-sm font-bold text-base-content truncate max-w-xs">
+                    <div class="min-w-0 flex-1 flex flex-col">
+                        <p class="text-xs sm:text-sm font-bold text-base-content truncate break-all block" :title="state.fileName">
                             {{ state.fileName }}
                         </p>
-                        <p class="text-xs text-base-content/60 font-mono mt-0.5">
+                        <p class="text-[11px] sm:text-xs text-base-content/60 font-mono mt-0.5">
                             {{ formatBytes(state.fileSize) }}
                         </p>
                     </div>
                 </div>
 
                 <!-- Action Buttons: Replace / Delete -->
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1 shrink-0">
                     <button
                         type="button"
                         class="btn btn-soft btn-xs gap-1 font-semibold"
@@ -201,45 +201,46 @@ function formatBytes(bytes: number): string {
             </div>
 
             <!-- AI Status Badges & Info -->
-            <div class="mt-3 pt-3 border-t border-base-200 flex flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
+            <div class="mt-3 pt-3 border-t border-base-200 flex flex-wrap items-center justify-between gap-2 w-full min-w-0" role="status" aria-live="polite">
                 <!-- Success -->
-                <div v-if="state.aiStatus === 'success'" class="badge badge-success badge-sm gap-1 font-medium">
-                    <CheckCircle2 class="size-3.5" />
-                    Datos leídos por IA
+                <div v-if="state.aiStatus === 'success'" class="badge badge-success badge-sm gap-1 font-medium max-w-full">
+                    <CheckCircle2 class="size-3.5 shrink-0" />
+                    <span class="truncate">Datos leídos por IA</span>
                 </div>
 
                 <!-- Warning (e.g. vigencia/fecha) -->
-                <div v-else-if="state.aiStatus === 'warning'" class="badge badge-warning badge-sm gap-1 font-medium">
-                    <AlertTriangle class="size-3.5" />
-                    Revisión requerida
+                <div v-else-if="state.aiStatus === 'warning'" class="badge badge-warning badge-sm gap-1 font-medium max-w-full">
+                    <AlertTriangle class="size-3.5 shrink-0" />
+                    <span class="truncate">Revisión requerida</span>
                 </div>
 
                 <!-- Degradado / Falló IA -->
-                <div v-else-if="state.aiStatus === 'failed'" class="badge badge-info badge-sm gap-1 font-medium">
-                    <CheckCircle2 class="size-3.5" />
-                    Documento listo • Revisión manual
+                <div v-else-if="state.aiStatus === 'failed'" class="badge badge-info badge-sm gap-1 font-medium max-w-full">
+                    <CheckCircle2 class="size-3.5 shrink-0" />
+                    <span class="truncate">Documento listo • Revisión manual</span>
                 </div>
 
                 <!-- Photo (not applicable) -->
-                <div v-else-if="state.aiStatus === 'not_applicable'" class="badge badge-primary badge-sm gap-1 font-medium">
-                    <CheckCircle2 class="size-3.5" />
-                    Fotografía lista
+                <div v-else-if="state.aiStatus === 'not_applicable'" class="badge badge-primary badge-sm gap-1 font-medium max-w-full">
+                    <CheckCircle2 class="size-3.5 shrink-0" />
+                    <span class="truncate">Fotografía lista</span>
                 </div>
             </div>
 
             <!-- Warnings alerts if any -->
-            <div v-if="state.warnings && state.warnings.length > 0" class="mt-3 space-y-1.5">
+            <div v-if="state.warnings && state.warnings.length > 0" class="mt-3 space-y-2 w-full min-w-0">
                 <div
                     v-for="(warning, idx) in state.warnings"
                     :key="idx"
-                    class="alert text-xs py-2 px-3 rounded-xl flex items-start gap-2 shadow-xs"
-                    :class="state.aiStatus === 'failed' ? 'alert-info bg-info/10 border-info/30 text-info-content' : 'alert-warning'"
+                    role="alert"
+                    class="alert alert-soft text-xs py-2.5 px-3 rounded-xl flex items-start gap-2 shadow-xs w-full min-w-0"
+                    :class="state.aiStatus === 'failed' ? 'alert-info' : 'alert-warning'"
                 >
-                    <AlertTriangle v-if="state.aiStatus !== 'failed'" class="size-4 shrink-0 text-warning mt-0.5" />
-                    <CheckCircle2 v-else class="size-4 shrink-0 text-info mt-0.5" />
-                    <div class="leading-relaxed">
-                        <span>{{ warning }}</span>
-                        <p v-if="state.aiStatus === 'failed'" class="mt-1 font-medium text-base-content/80">
+                    <AlertTriangle v-if="state.aiStatus !== 'failed'" class="size-4 shrink-0 mt-0.5" />
+                    <CheckCircle2 v-else class="size-4 shrink-0 mt-0.5" />
+                    <div class="leading-relaxed flex-1 min-w-0">
+                        <span class="block break-words font-medium">{{ warning }}</span>
+                        <p v-if="state.aiStatus === 'failed'" class="mt-1 opacity-80 break-words">
                             Tu archivo ya está guardado correctamente. Podrás ingresar tus datos manualmente en el siguiente paso.
                         </p>
                     </div>
@@ -250,7 +251,7 @@ function formatBytes(bytes: number): string {
         <!-- Empty / Error / Ready to Upload State -->
         <div
             v-else
-            class="relative border-2 border-dashed rounded-2xl p-6 transition-all duration-200 text-center flex flex-col items-center justify-center cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            class="relative border-2 border-dashed rounded-2xl p-6 transition-all duration-200 text-center flex flex-col items-center justify-center cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 w-full min-w-0"
             :class="[
                 isDragging
                     ? 'border-primary bg-primary/10 scale-[1.01]'
@@ -269,7 +270,7 @@ function formatBytes(bytes: number): string {
             @drop.prevent="handleDrop"
         >
             <div
-                class="size-12 rounded-full flex items-center justify-center mb-3"
+                class="size-12 rounded-full flex items-center justify-center mb-3 shrink-0"
                 :class="(state.error || errorMsg) ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary'"
             >
                 <AlertTriangle v-if="state.error || errorMsg" class="size-6" />
@@ -277,12 +278,12 @@ function formatBytes(bytes: number): string {
                 <UploadCloud v-else class="size-6" />
             </div>
 
-            <p class="text-sm font-semibold text-base-content">
+            <p class="text-sm font-semibold text-base-content max-w-full">
                 <span v-if="state.error || errorMsg" class="text-error font-bold">Error: Clic para elegir otro archivo</span>
                 <span v-else><span class="text-primary underline font-bold">Selecciona un archivo</span> o arrástralo aquí</span>
             </p>
 
-            <p v-if="state.error || errorMsg" class="text-xs text-error font-medium mt-1 max-w-sm">
+            <p v-if="state.error || errorMsg" class="text-xs text-error font-medium mt-1 max-w-sm break-words">
                 {{ state.error || errorMsg }}
             </p>
             <p v-else class="text-xs text-base-content/60 mt-1 max-w-sm">
@@ -291,9 +292,9 @@ function formatBytes(bytes: number): string {
         </div>
 
         <!-- Field Validation Error -->
-        <span v-if="state.error || errorMsg" class="fieldset-label text-error text-xs mt-1.5 font-semibold flex items-center gap-1" role="alert">
+        <span v-if="state.error || errorMsg" class="text-error text-xs mt-1.5 font-semibold flex items-center gap-1" role="alert">
             <AlertTriangle class="size-3.5 shrink-0" />
-            {{ state.error || errorMsg }}
+            <span class="break-words">{{ state.error || errorMsg }}</span>
         </span>
     </div>
 </template>

@@ -53,7 +53,7 @@ const canProceed = computed(() => {
 </script>
 
 <template>
-    <section aria-labelledby="step-2-title" class="space-y-6">
+    <section aria-labelledby="step-2-title" class="space-y-6 scroll-mt-44">
         <div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary mb-2">
                 <Sparkles class="size-3.5" />
@@ -299,7 +299,7 @@ const canProceed = computed(() => {
         </div>
 
         <!-- Botones de Navegación -->
-        <div class="pt-4 flex items-center justify-between gap-4">
+        <div class="pt-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
             <button
                 type="button"
                 class="btn btn-ghost btn-md gap-2 font-semibold"

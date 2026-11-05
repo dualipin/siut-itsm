@@ -162,6 +162,14 @@ async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
                     form.data.nss = res.fields.nss
                     fieldSources.nss = 'nomina'
                 }
+                if (res.fields.curp && !form.data.curp) {
+                    form.data.curp = res.fields.curp.toUpperCase()
+                    fieldSources.curp = 'nomina'
+                }
+                if (res.fields.fecha_nacimiento && !form.data.birth_date) {
+                    form.data.birth_date = res.fields.fecha_nacimiento
+                    fieldSources.birth_date = 'nomina'
+                }
                 if (res.fields.categoria && !form.data.category) {
                     form.data.category = res.fields.categoria
                     fieldSources.category = 'nomina'
@@ -260,28 +268,33 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full min-w-0">
         <!-- Page Header -->
-        <header class="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
+        <header class="text-center max-w-2xl mx-auto mb-6 sm:mb-8">
             <h1 class="text-3xl sm:text-4xl font-display font-black text-base-content tracking-tight">
                 Afiliación Sindical en Línea
             </h1>
             <p class="text-sm sm:text-base text-base-content/70 mt-2">
                 Completa tu solicitud oficial para integrarte al padrón del Sindicato Independiente de Trabajadores del ITSM.
             </p>
-
-            <!-- Stepper DaisyUI -->
-            <ul class="steps steps-horizontal w-full mt-6 text-xs font-semibold">
-                <li class="step" :class="{ 'step-primary': currentStep >= 1 }">Documentos</li>
-                <li class="step" :class="{ 'step-primary': currentStep >= 2 }">Tus Datos</li>
-                <li class="step" :class="{ 'step-primary': currentStep >= 3 }">Cuenta y Envío</li>
-            </ul>
         </header>
 
+        <!-- Stepper DaisyUI fijo: se mantiene visible mientras se recorre el formulario -->
+        <nav
+            aria-label="Progreso del registro"
+            class="sticky rounded-2xl top-20 z-40 mb-6 border border-base-300/70 bg-base-100/90 backdrop-blur-md px-3 sm:px-6 py-2 shadow-xs w-full min-w-0"
+        >
+            <ul class="steps steps-horizontal w-full text-[11px] sm:text-xs font-semibold">
+                <li class="step" :class="{ 'step-primary': currentStep >= 1 }" :aria-current="currentStep === 1 ? 'step' : undefined">Documentos</li>
+                <li class="step" :class="{ 'step-primary': currentStep >= 2 }" :aria-current="currentStep === 2 ? 'step' : undefined">Tus Datos</li>
+                <li class="step" :class="{ 'step-primary': currentStep >= 3 }" :aria-current="currentStep === 3 ? 'step' : undefined">Cuenta y Envío</li>
+            </ul>
+        </nav>
+
         <!-- Main Content Grid (Wizard + Sticky Credential) -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div class="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             <!-- Form Steps Column -->
-            <div class="lg:col-span-7 bg-base-100 rounded-3xl p-6 sm:p-8 border border-base-300 shadow-sm">
+            <div class="min-w-0 w-full lg:col-span-7 bg-base-100 rounded-3xl p-4 sm:p-8 border border-base-300 shadow-sm overflow-hidden">
                 <!-- Step 1: Documents -->
                 <StepDocuments
                     v-if="currentStep === 1"
@@ -317,7 +330,7 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Credential Live Preview Column -->
-            <div class="lg:col-span-5">
+            <div class="min-w-0 lg:col-span-5 lg:sticky lg:top-44">
                 <CredentialPreview
                     :name="form.data.name"
                     :surnames="form.data.surnames"

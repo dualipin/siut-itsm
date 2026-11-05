@@ -38,7 +38,7 @@ const canProceed = computed(() => {
 </script>
 
 <template>
-    <section aria-labelledby="step-1-title" class="space-y-6">
+    <section aria-labelledby="step-1-title" class="space-y-6 scroll-mt-44 min-w-0 w-full">
         <div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary mb-2">
                 <Sparkles class="size-3.5" />
@@ -52,7 +52,7 @@ const canProceed = computed(() => {
             </p>
         </div>
 
-        <div class="space-y-6">
+        <div class="space-y-6 min-w-0 w-full">
             <!-- INE -->
             <DocumentDropzone
                 kind="ine"
