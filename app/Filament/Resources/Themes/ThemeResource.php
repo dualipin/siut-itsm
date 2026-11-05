@@ -20,7 +20,7 @@ class ThemeResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Swatch;
 
-    protected static UnitEnum|string|null $navigationGroup = 'Administración';
+    protected static UnitEnum|string|null $navigationGroup = 'Configuración del Sistema';
 
     protected static ?string $breadcrumb = 'Apariencia';
 

@@ -25,6 +25,7 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Throwable;
 
 use function asset;
 use function config;
@@ -36,9 +37,8 @@ class PortalPanelProvider extends PanelProvider
         $theme = null;
         try {
             $theme = Theme::where('id', 1)->first();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Database/table may not exist yet during testing or migrations
-
         }
 
         return $panel
@@ -62,6 +62,7 @@ class PortalPanelProvider extends PanelProvider
                 'Comunicación',
                 'Transparencia y Finanzas',
                 'Administración',
+                'Configuración del Sistema',
             ])
             ->colors([
                 'primary' => $theme?->getVariants($theme?->color_primary) ?? Color::Red,
@@ -71,12 +72,12 @@ class PortalPanelProvider extends PanelProvider
                 'info' => $theme?->color_info ?? Color::Blue,
                 'gray' => $theme?->color_neutral ?? Color::Slate,
             ])
-            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
+            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
+            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
+            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 AccountWidget::class,
                 QrGeneratorWidget::class,

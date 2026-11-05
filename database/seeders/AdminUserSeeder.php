@@ -14,13 +14,15 @@ class AdminUserSeeder extends Seeder
      */
     public function run(): void
     {
+        $curp = env('ADMIN_CURP');
+
         $admin = User::firstOrCreate([
             'email' => env('MAIL_ADMIN_ADDRESS'),
         ], [
             'role' => UserRole::Admin->value,
             'name' => 'Administrador',
-            'curp' => env('ADMIN_CURP'),
-            'password' => Hash::make('admin1234'),
+            'curp' => $curp,
+            'password' => Hash::make($curp),
         ]);
 
         // Login is done with CURP: backfill it for an admin created before this requirement.
