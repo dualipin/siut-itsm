@@ -238,15 +238,34 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
     }
 
     /**
+     * Document types that also accept image uploads in addition to PDF.
+     * INE and payslip support images for AI extraction at registration time.
+     *
+     * @return list<UserDocumentType>
+     */
+    public static function imageAcceptingDocumentTypes(): array
+    {
+        return [UserDocumentType::Ine, UserDocumentType::ComprobantePago];
+    }
+
+    /**
      * Register Spatie media collections for affiliation documents.
+     * INE and comprobante_pago accept PDF, JPEG, PNG and WebP.
+     * The other three documents remain PDF-only.
      */
     public function registerMediaCollections(): void
     {
+        $imageTypes = self::imageAcceptingDocumentTypes();
+
         foreach (UserDocumentType::cases() as $documentType) {
+            $acceptedMimes = in_array($documentType, $imageTypes, true)
+                ? ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/x-empty']
+                : ['application/pdf', 'application/x-empty'];
+
             $this->addMediaCollection($documentType->value)
                 ->useDisk('local')
                 ->singleFile()
-                ->acceptsMimeTypes(['application/pdf', 'application/x-empty']);
+                ->acceptsMimeTypes($acceptedMimes);
         }
     }
 

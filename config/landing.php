@@ -59,7 +59,7 @@ return [
             'items' => [
                 [
                     'label' => 'Simulador de prestamos',
-                    'href' => '/simulador-prestamos',
+                    'href' => '/simulador-prestamo',
                 ],
                 [
                     'label' => 'Repositorios',

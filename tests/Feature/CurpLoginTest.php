@@ -2,31 +2,19 @@
 
 use App\Enums\UserRole;
 use App\Filament\Pages\Auth\Login;
-use App\Filament\Pages\Auth\Register;
+use App\Filament\Resources\Users\Pages\CreateUser;
+use App\Filament\Resources\Users\Pages\EditUser;
 use App\Models\User;
+use App\Services\RegistrationStaging;
 use Filament\Facades\Filament;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('portal'));
     Storage::fake('public');
+    Storage::fake('local');
 });
-
-function registrationData(array $overrides = []): array
-{
-    return array_merge([
-        'name' => 'Carlos',
-        'surnames' => 'Mendoza Lopez',
-        'email' => 'carlos.mendoza@siut.org',
-        'birth_date' => '1995-05-15',
-        'curp' => 'MELC950515HDFRRN09',
-        'photo_path' => UploadedFile::fake()->image('carlos.jpg'),
-        'password' => 'SecurePassword123!',
-        'passwordConfirmation' => 'SecurePassword123!',
-    ], $overrides);
-}
 
 test('login page asks for curp instead of email', function () {
     $this->get('/portal/login')
@@ -90,24 +78,64 @@ test('inactive user cannot log in', function () {
 });
 
 test('curp is required to register', function () {
-    Livewire::test(Register::class)
-        ->fillForm(registrationData(['curp' => null]))
-        ->call('register')
-        ->assertHasFormErrors(['curp' => ['required']]);
+    $staging = app(RegistrationStaging::class);
+    Storage::disk('local')->put('temp/d.jpg', 'content');
+    $t = $staging->stage('ine', 'temp/d.jpg');
+
+    $this->postJson('/api/registro', [
+        'name' => 'Carlos',
+        'surnames' => 'Mendoza Lopez',
+        'email' => 'carlos.mendoza@siut.org',
+        'birth_date' => '1995-05-15',
+        'curp' => '',
+        'password' => 'SecurePassword123!',
+        'password_confirmation' => 'SecurePassword123!',
+        'ine_token' => $t,
+        'nomina_token' => $t,
+        'photo_token' => $t,
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['curp']);
 });
 
 test('curp must have 18 characters to register', function () {
-    Livewire::test(Register::class)
-        ->fillForm(registrationData(['curp' => 'CORTA']))
-        ->call('register')
-        ->assertHasFormErrors(['curp']);
+    $staging = app(RegistrationStaging::class);
+    Storage::disk('local')->put('temp/d.jpg', 'content');
+    $t = $staging->stage('ine', 'temp/d.jpg');
+
+    $this->postJson('/api/registro', [
+        'name' => 'Carlos',
+        'surnames' => 'Mendoza Lopez',
+        'email' => 'carlos.mendoza@siut.org',
+        'birth_date' => '1995-05-15',
+        'curp' => 'CORTA',
+        'password' => 'SecurePassword123!',
+        'password_confirmation' => 'SecurePassword123!',
+        'ine_token' => $t,
+        'nomina_token' => $t,
+        'photo_token' => $t,
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['curp']);
 });
 
 test('registration stores curp in uppercase and the new user can log in', function () {
-    Livewire::test(Register::class)
-        ->fillForm(registrationData(['curp' => 'melc950515hdfrrn09']))
-        ->call('register')
-        ->assertHasNoFormErrors();
+    $staging = app(RegistrationStaging::class);
+    Storage::disk('local')->put('temp/d.jpg', 'content');
+    $t1 = $staging->stage('ine', 'temp/d.jpg');
+    $t2 = $staging->stage('nomina', 'temp/d.jpg');
+    $t3 = $staging->stage('photo', 'temp/d.jpg');
+
+    $this->postJson('/api/registro', [
+        'name' => 'Carlos',
+        'surnames' => 'Mendoza Lopez',
+        'email' => 'carlos.mendoza@siut.org',
+        'birth_date' => '1995-05-15',
+        'curp' => 'melc950515hdfrrn09',
+        'password' => 'SecurePassword123!',
+        'password_confirmation' => 'SecurePassword123!',
+        'ine_token' => $t1,
+        'nomina_token' => $t2,
+        'photo_token' => $t3,
+    ])->assertOk();
 
     expect(User::where('email', 'carlos.mendoza@siut.org')->value('curp'))->toBe('MELC950515HDFRRN09');
 
@@ -124,10 +152,23 @@ test('registration stores curp in uppercase and the new user can log in', functi
 test('registration rejects a duplicated curp regardless of casing', function () {
     User::factory()->create(['curp' => 'MELC950515HDFRRN09']);
 
-    Livewire::test(Register::class)
-        ->fillForm(registrationData(['curp' => 'melc950515hdfrrn09']))
-        ->call('register')
-        ->assertHasFormErrors(['curp']);
+    $staging = app(RegistrationStaging::class);
+    Storage::disk('local')->put('temp/d.jpg', 'content');
+    $t = $staging->stage('ine', 'temp/d.jpg');
+
+    $this->postJson('/api/registro', [
+        'name' => 'Carlos',
+        'surnames' => 'Mendoza Lopez',
+        'email' => 'carlos.mendoza@siut.org',
+        'birth_date' => '1995-05-15',
+        'curp' => 'melc950515hdfrrn09',
+        'password' => 'SecurePassword123!',
+        'password_confirmation' => 'SecurePassword123!',
+        'ine_token' => $t,
+        'nomina_token' => $t,
+        'photo_token' => $t,
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['curp']);
 
     expect(User::where('email', 'carlos.mendoza@siut.org')->exists())->toBeFalse();
 });
@@ -141,7 +182,7 @@ test('model normalizes curp on assignment', function () {
 test('admin user form requires curp', function () {
     $this->actingAs(User::factory()->admin()->create());
 
-    Livewire::test(\App\Filament\Resources\Users\Pages\CreateUser::class)
+    Livewire::test(CreateUser::class)
         ->fillForm([
             'name' => 'Nuevo',
             'surnames' => 'Usuario',
@@ -161,7 +202,7 @@ test('admin can edit a user keeping its own curp', function () {
 
     $this->actingAs($admin);
 
-    Livewire::test(\App\Filament\Resources\Users\Pages\EditUser::class, ['record' => $user->getRouteKey()])
+    Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
         ->call('save')
         ->assertHasNoFormErrors();
 });
