@@ -627,8 +627,8 @@
 
             {{-- Contenido de la consola --}}
             <div class="p-4 max-h-[500px] overflow-y-auto space-y-4 text-xs leading-relaxed">
-                @forelse ($terminalLogs as $log)
-                    <div class="rounded-lg p-3 border {{ $log['status'] === 'success' ? 'bg-emerald-950/20 border-emerald-900/40' : ($log['status'] === 'error' ? 'bg-red-950/20 border-red-900/40' : 'bg-gray-900/50 border-gray-800') }}">
+                @forelse ($terminalLogs as $index => $log)
+                    <div wire:key="terminal-log-{{ $index }}" class="rounded-lg p-3 border {{ $log['status'] === 'success' ? 'bg-emerald-950/20 border-emerald-900/40' : ($log['status'] === 'error' ? 'bg-red-950/20 border-red-900/40' : 'bg-gray-900/50 border-gray-800') }}">
                         <div class="flex items-center justify-between pb-2 border-b border-white/5 text-[11px]">
                             <div class="flex items-center gap-2 text-gray-400">
                                 <span class="text-gray-500">[{{ $log['time'] }}]</span>
@@ -657,7 +657,7 @@
                         </div>
                     </div>
                 @empty
-                    <div class="py-12 text-center text-gray-500">
+                    <div wire:key="terminal-empty-log" class="py-12 text-center text-gray-500">
                         <x-filament::icon icon="heroicon-o-command-line" class="w-10 h-10 mx-auto mb-2 opacity-30 text-gray-400" />
                         <p class="font-medium text-gray-400">Ningún comando ejecutado en esta sesión</p>
                         <p class="text-[11px] text-gray-600 mt-1">

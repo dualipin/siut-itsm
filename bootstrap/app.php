@@ -6,7 +6,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 
 /**
- * Fallback for hosts that list `tmpfile` in `disable_functions`.
+ * Fallback for hosts that list `tmpfile` in `disable_functions` .
  *
  * Disabled functions are removed from the function table, so this declaration
  * does not conflict and unqualified calls inside namespaces still resolve to it.
@@ -57,4 +57,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (ErrorException $e, Request $request) {
+            if (str_contains($e->getMessage(), 'Undefined array key "children"')
+                && ($request->is('livewire/*') || $request->is('livewire-*') || $request->hasHeader('x-livewire'))) {
+                return response()->json([
+                    'message' => 'Desincronización de componentes Livewire.',
+                ], 400);
+            }
+        });
     })->create();
