@@ -8,11 +8,11 @@ use App\Filament\Pages\Profile;
 use App\Filament\Resources\Users\Pages\ReviewDocuments;
 use App\Models\User;
 use Filament\Facades\Filament;
-use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Smalot\PdfParser\Parser;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('portal'));
@@ -33,10 +33,15 @@ test('it generates a valid PDF download response for user with complete data', f
     $action = app(GenerateUserCredentialPdf::class);
     $response = $action->execute($user);
 
-    expect($response)->toBeInstanceOf(Response::class)
+    expect($response)->toBeInstanceOf(StreamedResponse::class)
         ->and($response->headers->get('content-type'))->toBe('application/pdf')
-        ->and($response->headers->get('content-disposition'))->toContain('credencial-PELJ900101HDFRRN01.pdf')
-        ->and(strlen($response->getContent()))->toBeGreaterThan(1000);
+        ->and($response->headers->get('content-disposition'))->toContain('credencial-PELJ900101HDFRRN01.pdf');
+
+    ob_start();
+    $response->sendContent();
+    $content = (string) ob_get_clean();
+
+    expect(strlen($content))->toBeGreaterThan(1000);
 });
 
 test('it generates a valid PDF download response for user with missing optional attributes', function () {
@@ -55,10 +60,15 @@ test('it generates a valid PDF download response for user with missing optional 
     $action = app(GenerateUserCredentialPdf::class);
     $response = $action->execute($user);
 
-    expect($response)->toBeInstanceOf(Response::class)
+    expect($response)->toBeInstanceOf(StreamedResponse::class)
         ->and($response->headers->get('content-type'))->toBe('application/pdf')
-        ->and($response->headers->get('content-disposition'))->toContain("credencial-usuario-{$user->id}.pdf")
-        ->and(strlen($response->getContent()))->toBeGreaterThan(1000);
+        ->and($response->headers->get('content-disposition'))->toContain("credencial-usuario-{$user->id}.pdf");
+
+    ob_start();
+    $response->sendContent();
+    $content = (string) ob_get_clean();
+
+    expect(strlen($content))->toBeGreaterThan(1000);
 });
 
 test('credential pdf front matches the original credential layout', function () {
@@ -76,7 +86,11 @@ test('credential pdf front matches the original credential layout', function () 
     $action = app(GenerateUserCredentialPdf::class);
     $response = $action->execute($user);
 
-    $text = (new Parser)->parseContent($response->getContent())->getText();
+    ob_start();
+    $response->sendContent();
+    $content = (string) ob_get_clean();
+
+    $text = (new Parser)->parseContent($content)->getText();
 
     expect($text)
         ->toContain('ANGEL LEON RAMOS')
@@ -103,11 +117,12 @@ test('downloadCredential action is hidden on profile page when documents are not
         ->assertActionHidden('downloadCredential');
 });
 
-test('downloadCredential action is visible on profile page when all documents are valid', function () {
+test('downloadCredential action is visible and downloadable on profile page when all documents are valid', function () {
     Storage::fake('local');
 
     $user = User::factory()->create([
         'role' => UserRole::Agremiado,
+        'curp' => 'TEST010101HDFRRN01',
     ]);
 
     foreach (UserDocumentType::cases() as $type) {
@@ -122,21 +137,26 @@ test('downloadCredential action is visible on profile page when all documents ar
     expect($user->areAllDocumentsValid())->toBeTrue();
 
     Livewire::test(Profile::class)
-        ->assertActionVisible('downloadCredential');
+        ->assertActionVisible('downloadCredential')
+        ->callAction('downloadCredential')
+        ->assertFileDownloaded('credencial-TEST010101HDFRRN01.pdf');
 });
 
-test('downloadCredential action is visible on review documents page for admin', function () {
+test('downloadCredential action is visible and downloadable on review documents page for admin', function () {
     $admin = User::factory()->create([
         'role' => UserRole::Admin,
     ]);
 
     $user = User::factory()->create([
         'role' => UserRole::Agremiado,
+        'curp' => 'ADMINREV010101HDFR01',
     ]);
 
     $this->actingAs($admin);
 
     Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
         ->assertActionExists('downloadCredential')
-        ->assertActionVisible('downloadCredential');
+        ->assertActionVisible('downloadCredential')
+        ->callAction('downloadCredential')
+        ->assertFileDownloaded('credencial-ADMINREV010101HDFR01.pdf');
 });

@@ -8,15 +8,15 @@ use chillerlan\QRCode\Common\EccLevel;
 use chillerlan\QRCode\Output\QROutputInterface;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class GenerateUserCredentialPdf
 {
     /**
      * Generate the user credential card PDF (front and back).
      */
-    public function execute(User $user): Response
+    public function execute(User $user): StreamedResponse
     {
         $bgPath = public_path('assets/images/background-id.png');
         $backgroundImage = file_exists($bgPath) ? $this->imageToBase64($bgPath) : null;
@@ -64,8 +64,7 @@ class GenerateUserCredentialPdf
         $curpPart = filled($user->curp) ? $user->curp : "usuario-{$user->id}";
         $filename = "credencial-{$curpPart}.pdf";
 
-        /** @var Response $response */
-        $response = DomPdf::loadView('pdf.credential', [
+        $pdf = DomPdf::loadView('pdf.credential', [
             'backgroundImage' => $backgroundImage,
             'logos' => $logos,
             'holder' => $holder,
@@ -76,12 +75,17 @@ class GenerateUserCredentialPdf
             'issuedAt' => now()->format('d/m/Y'),
             'signatory' => $signatory,
             'qrSrc' => $qrSrc,
-        ])->download($filename);
+        ]);
 
-        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
-        $response->headers->set('Pragma', 'no-cache');
-
-        return $response;
+        return response()->streamDownload(
+            fn () => print ($pdf->output()),
+            $filename,
+            [
+                'Content-Type' => 'application/pdf',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate',
+                'Pragma' => 'no-cache',
+            ]
+        );
     }
 
     /**
