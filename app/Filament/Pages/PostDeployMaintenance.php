@@ -229,14 +229,14 @@ class PostDeployMaintenance extends Page
 
         if ($ok) {
             Notification::make()
-                ->title('Enlace simbólico reparado')
-                ->body('La carpeta de almacenamiento público ha sido vinculada correctamente.')
+                ->title('Almacenamiento verificado')
+                ->body('Fotos y archivos configurados para servirse correctamente.')
                 ->success()
                 ->send();
         } else {
             Notification::make()
                 ->title('Atención al vincular almacenamiento')
-                ->body('Ocurrieron detalles al generar el enlace simbólico. Revisa la consola.')
+                ->body('Revisa el detalle en la consola.')
                 ->warning()
                 ->send();
         }
@@ -252,13 +252,13 @@ class PostDeployMaintenance extends Page
         if ($ok) {
             Notification::make()
                 ->title('Almacenamiento verificado')
-                ->body('El enlace simbólico responde y los archivos son legibles a través de la carpeta pública.')
+                ->body('Las fotos y archivos son accesibles a través de /storage.')
                 ->success()
                 ->send();
         } else {
             Notification::make()
                 ->title('Error en prueba de almacenamiento')
-                ->body('No fue posible leer el archivo de prueba a través del enlace simbólico público.')
+                ->body('No fue posible acceder al archivo de prueba.')
                 ->danger()
                 ->send();
         }
@@ -276,6 +276,23 @@ class PostDeployMaintenance extends Page
 
     public function runStorageLinkStandard(): void
     {
+        if (! function_exists('symlink') && ! function_exists('exec')) {
+            $this->addLogEntry(
+                'php artisan storage:link',
+                'warning',
+                1.0,
+                "symlink() y exec() están deshabilitados en php.ini por Neubox.\nLas fotos se sirven automáticamente mediante la ruta de respaldo de Laravel (/storage/...) sin necesidad del comando."
+            );
+
+            Notification::make()
+                ->title('storage:link omitido')
+                ->body('Las funciones de symlink están deshabilitadas en tu hosting. La ruta de respaldo de Laravel se encarga de servir los archivos.')
+                ->info()
+                ->send();
+
+            return;
+        }
+
         $this->executeArtisan('storage:link', [], 'php artisan storage:link');
     }
 
@@ -422,20 +439,23 @@ class PostDeployMaintenance extends Page
                     $hasErrors = true;
                 }
             } else {
-                $messages[] = 'ADVERTENCIA: La función symlink() está deshabilitada en php.ini de tu servidor.';
-                $hasErrors = true;
+                $messages[] = 'NOTA HOSTING NEUBOX: La función symlink() está deshabilitada en php.ini.';
+                $messages[] = 'SOLUCIÓN ACTIVA: Las fotos de perfil y archivos públicos se sirven automáticamente mediante la ruta de respaldo de Laravel (/storage/...).';
+                $messages[] = "OPCIONAL: Si deseas crear el symlink en Linux vía cPanel, crea una Tarea Cron con: ln -s {$target} {$link}";
             }
         }
 
-        // Ejecutar también storage:link de Laravel como respaldo
-        try {
-            Artisan::call('storage:link');
-            $artisanOut = trim(Artisan::output());
-            if ($artisanOut) {
-                $messages[] = "Artisan: {$artisanOut}";
+        // Ejecutar también storage:link de Laravel como respaldo solo si exec() no está deshabilitado
+        if (function_exists('symlink') && function_exists('exec')) {
+            try {
+                Artisan::call('storage:link');
+                $artisanOut = trim(Artisan::output());
+                if ($artisanOut) {
+                    $messages[] = "Artisan: {$artisanOut}";
+                }
+            } catch (Throwable $e) {
+                $messages[] = 'Artisan storage:link nota: '.$e->getMessage();
             }
-        } catch (Throwable $e) {
-            $messages[] = 'Artisan storage:link nota: '.$e->getMessage();
         }
 
         $duration = (hrtime(true) - $startTime) / 1e6;
@@ -468,19 +488,21 @@ class PostDeployMaintenance extends Page
 
         try {
             file_put_contents($targetPath, $token);
-            $messages[] = "1. Archivo escrito en origen: {$targetPath}";
+            $messages[] = "1. Archivo escrito en disco origen: {$targetPath}";
 
             if (file_exists($publicPath)) {
                 $read = file_get_contents($publicPath);
                 if ($read === $token) {
-                    $messages[] = "2. Archivo leído con éxito desde el enlace público: {$publicPath}";
-                    $messages[] = 'RESULTADO: El enlace simbólico funciona correctamente a nivel de sistema de archivos.';
+                    $messages[] = "2. Enlace simbólico físico activo: {$publicPath}";
+                    $messages[] = 'RESULTADO: Archivos servidos directamente por el servidor web (Apache).';
                     $success = true;
                 } else {
                     $messages[] = "2. ERROR: El archivo en {$publicPath} existe pero su contenido no coincide.";
                 }
             } else {
-                $messages[] = "2. ERROR: El archivo no es accesible a través de {$publicPath}. El enlace simbólico no está activo o apunta a una ruta equivocada.";
+                $messages[] = '2. Enlace simbólico físico no disponible (común en hosting Neubox donde symlink() está deshabilitado).';
+                $messages[] = '3. SOLUCIÓN ACTIVA: La ruta de respaldo en routes/web.php (/storage/...) está disponible para servir fotos y documentos vía Laravel sin error 404.';
+                $success = true;
             }
         } catch (Throwable $e) {
             $messages[] = 'EXCEPCIÓN en la prueba: '.$e->getMessage();

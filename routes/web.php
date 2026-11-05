@@ -7,7 +7,7 @@ use App\Http\Controllers\TransparencyDocumentController;
 use App\Http\Controllers\UserDocumentController;
 use Illuminate\Support\Facades\Route;
 
-require __DIR__.'/landing.php';
+require __DIR__ . '/landing.php';
 
 Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/portal/messages/attachments/{media}', [MessageAttachmentController::class, 'download'])

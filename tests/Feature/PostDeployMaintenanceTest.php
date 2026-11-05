@@ -5,6 +5,7 @@ use App\Filament\Pages\PostDeployMaintenance;
 use App\Filament\Resources\Themes\ThemeResource;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -99,4 +100,23 @@ test('admin can run full deploy sequence successfully', function () {
         ->assertSet('terminalLogs', function ($logs) {
             return count($logs) >= 5;
         });
+});
+
+test('storage fallback route serves public files when requested without physical symlink', function () {
+    Storage::disk('public')->put('profile-photos/test-avatar.jpg', 'avatar-binary-content');
+
+    $response = $this->get('/storage/profile-photos/test-avatar.jpg');
+
+    $response->assertSuccessful();
+    expect($response->streamedContent())->toBe('avatar-binary-content');
+
+    Storage::disk('public')->delete('profile-photos/test-avatar.jpg');
+});
+
+test('storage fallback returns 404 for non-existent files or invalid traversal', function () {
+    $this->get('/storage/non-existent-image.jpg')
+        ->assertNotFound();
+
+    $this->get('/storage/../.env')
+        ->assertNotFound();
 });

@@ -83,7 +83,7 @@
                         @elseif ($storage['link_exists'])
                             <x-filament::badge color="danger" size="sm">Enlace Roto</x-filament::badge>
                         @else
-                            <x-filament::badge color="warning" size="sm">Sin Enlace</x-filament::badge>
+                            <x-filament::badge color="info" size="sm">Ruta Respaldo Activa</x-filament::badge>
                         @endif
                     </div>
 
@@ -91,7 +91,7 @@
                         <div class="flex justify-between items-start gap-2">
                             <span class="text-gray-500 dark:text-gray-400">Enlace web:</span>
                             <span class="font-mono text-right {{ $storage['link_is_valid'] ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 font-semibold' }}">
-                                {{ $storage['link_is_valid'] ? 'storage -> app/public' : ($storage['link_exists'] ? 'Inválido / Error' : 'No existe (404)') }}
+                                {{ $storage['link_is_valid'] ? 'storage -> app/public' : ($storage['link_exists'] ? 'Inválido / Error' : 'Ruta /storage (Laravel)') }}
                             </span>
                         </div>
                         @if ($storage['public_html_detected'])
