@@ -6,8 +6,9 @@ use App\Http\Controllers\PublicPetitionController;
 use App\Http\Controllers\TransparencyDocumentController;
 use App\Http\Controllers\UserDocumentController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
-require __DIR__ . '/landing.php';
+require __DIR__.'/landing.php';
 
 Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/portal/messages/attachments/{media}', [MessageAttachmentController::class, 'download'])
@@ -36,6 +37,27 @@ Route::post('/api/simulador-prestamo/simulate', [LoanSimulatorController::class,
 
 Route::get('/api/simulador-prestamo/download/{token}', [LoanSimulatorController::class, 'download'])
     ->name('public.simulator.download');
+
+/**
+ * Ruta para servir archivos de almacenamiento público (/storage/...) en servidores
+ * compartidos (como Neubox / cPanel) donde no se pueden crear enlaces simbólicos físicos.
+ * Si en el servidor web existe un enlace simbólico físico (Apache/Nginx), el servidor web
+ * despacha el archivo directamente sin ejecutar PHP.
+ */
+Route::get('/storage/{path}', function (string $path) {
+    $cleanPath = str_replace(['..', "\0"], '', $path);
+    $cleanPath = ltrim($cleanPath, '/\\');
+
+    if ($cleanPath === '' || ! Storage::disk('public')->exists($cleanPath)) {
+        abort(404);
+    }
+
+    $fullPath = Storage::disk('public')->path($cleanPath);
+
+    return response()->file($fullPath, [
+        'Cache-Control' => 'public, max-age=86400, must-revalidate',
+    ]);
+})->where('path', '.*')->name('public.storage');
 
 Route::fallback(function () {
     return response()->view('errors.404-landing', [], 404);
