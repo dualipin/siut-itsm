@@ -19,6 +19,9 @@ class Benefit extends Model
         'collection_day',
         'collection_month',
         'is_active',
+        'calculation_method',
+        'requires_document',
+        'document_instructions',
     ];
 
     /**
@@ -30,6 +33,7 @@ class Benefit extends Model
             'collection_day' => 'integer',
             'collection_month' => 'integer',
             'is_active' => 'boolean',
+            'requires_document' => 'boolean',
         ];
     }
 

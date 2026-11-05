@@ -25,6 +25,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
 - Check for existing components to reuse before writing a new one.
 - No use emojis
+- In production, the server is a shared hosting environment, no ssh, no shell.
 
 ## Verification Scripts
 
