@@ -70,7 +70,7 @@
                     <line x1="15" x2="3" y1="12" y2="12" />
                 </svg>
             </a>
-            <label for="landing-drawer" class="btn btn-square lg:hidden">
+            <label for="landing-drawer" class="btn btn-square lg:hidden" aria-label="Abrir menú de navegación">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                     class="size-6">
