@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Loans;
 
+use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Filament\Resources\Loans\Pages\ListLoans;
 use App\Filament\Resources\Loans\Pages\ViewLoan;
 use App\Filament\Resources\Loans\Tables\LoansTable;
@@ -62,6 +63,7 @@ class LoanResource extends Resource
     {
         return [
             'index' => ListLoans::route('/'),
+            'apply' => ApplyLoan::route('/solicitud-prestamo'),
             'view' => ViewLoan::route('/{record}'),
         ];
     }

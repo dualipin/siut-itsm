@@ -52,7 +52,7 @@
             </div>
             <div class="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
                 <span class="text-xs text-gray-500 block">Tasa Mensual</span>
-                <span class="text-lg font-bold text-gray-900 dark:text-white">{{ number_format($loan->monthly_rate, 2) }}%</span>
+                <span class="text-lg font-bold text-gray-900 dark:text-white">{{ $loan->monthly_rate !== null ? number_format($loan->monthly_rate, 2)."%" : "Por dictaminar" }}</span>
             </div>
             <div class="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
                 <span class="text-xs text-gray-500 block">Desembolso</span>

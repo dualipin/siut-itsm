@@ -18,7 +18,7 @@ class ListLoans extends ListRecords
                 ->label('Nueva Solicitud')
                 ->icon(Heroicon::Plus)
                 ->color('primary')
-                ->url(fn (): string => route('loans.apply')),
+                ->url(fn (): string => ApplyLoan::getUrl()),
         ];
     }
 }

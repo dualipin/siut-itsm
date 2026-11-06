@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\LoanAiStatus;
 use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
 use App\Exceptions\LoanTransitionException;
@@ -59,7 +58,7 @@ class LoanService
                 'status' => LoanStatus::Borrador,
                 'payment_type' => $paymentType,
                 'requested_amount' => (float) $data['requested_amount'],
-                'monthly_rate' => (float) $data['monthly_rate'],
+                'monthly_rate' => isset($data['monthly_rate']) && $data['monthly_rate'] !== null ? (float) $data['monthly_rate'] : null,
                 'salary_commitment_amount' => isset($data['salary_commitment_amount']) ? (float) $data['salary_commitment_amount'] : null,
                 'nomina_amount' => $paymentType->hasNomina() ? (float) ($data['nomina_amount'] ?? 0) : null,
                 'nomina_fortnights' => $paymentType->hasNomina() ? (int) ($data['nomina_fortnights'] ?? 0) : null,
@@ -123,7 +122,9 @@ class LoanService
             $loan->update([
                 'payment_type' => $paymentType,
                 'requested_amount' => (float) ($data['requested_amount'] ?? $loan->requested_amount),
-                'monthly_rate' => (float) ($data['monthly_rate'] ?? $loan->monthly_rate),
+                'monthly_rate' => array_key_exists('monthly_rate', $data)
+                    ? ($data['monthly_rate'] !== null ? (float) $data['monthly_rate'] : null)
+                    : $loan->monthly_rate,
                 'salary_commitment_amount' => array_key_exists('salary_commitment_amount', $data)
                     ? (float) $data['salary_commitment_amount']
                     : $loan->salary_commitment_amount,
@@ -227,59 +228,70 @@ class LoanService
             }
 
             if ($hasBenefits) {
-                $benefitIds = $locked->loanBenefits()->pluck('benefit_id')->toArray();
-                foreach ($benefitIds as $bId) {
-                    $hasEv = $evidences->first(fn ($e) => $e->source_type === 'benefit' && (int) $e->benefit_id === (int) $bId);
-                    if (! $hasEv) {
-                        throw ValidationException::withMessages([
-                            'evidence' => 'Falta subir el comprobante para una de las prestaciones seleccionadas.',
-                        ]);
-                    }
+                $requiredBenefitIds = $locked->loanBenefits->pluck('benefit_id')->all();
+                $uploadedBenefitIds = $evidences->where('source_type', 'benefit')->pluck('benefit_id')->filter()->all();
+                $missing = array_diff($requiredBenefitIds, $uploadedBenefitIds);
+                if (! empty($missing)) {
+                    throw ValidationException::withMessages([
+                        'evidence' => 'Faltan comprobantes para una o más prestaciones seleccionadas.',
+                    ]);
                 }
             }
 
-            // If any evidence has dudoso, fallo_tecnico or invalido, mark status as en_revision
-            $needsManualVerification = $evidences->contains(
-                fn (LoanEvidence $e) => $e->ai_status !== LoanAiStatus::Valido && $e->manual_review_status !== 'approved'
-            );
-
-            $targetStatus = $needsManualVerification ? LoanStatus::EnRevision : LoanStatus::Enviada;
-
             $locked->update([
-                'status' => $targetStatus,
+                'status' => LoanStatus::Enviada,
                 'submitted_at' => now(),
             ]);
 
             LoanStatusHistory::create([
                 'loan_id' => $locked->id,
                 'from_status' => LoanStatus::Borrador,
-                'to_status' => $targetStatus,
+                'to_status' => LoanStatus::Enviada,
                 'user_id' => $actor->id,
-                'comment' => $needsManualVerification
-                    ? 'Solicitud enviada (con documentos pendientes de revisión manual)'
-                    : 'Solicitud enviada correctamente',
+                'comment' => 'Solicitud enviada a revisión formal',
             ]);
-
-            DB::afterCommit(function () use ($locked) {
-                Notification::make()
-                    ->title('Solicitud de préstamo enviada')
-                    ->body("Tu solicitud {$locked->folio} ha sido enviada y está en proceso de revisión por la administración.")
-                    ->success()
-                    ->sendToDatabase($locked->user);
-            });
 
             return $locked;
         });
     }
 
     /**
-     * Review decision: Approve loan.
-     * Enforces complete evidence dossier and valid decisions for all sources.
-     * Revisor may adjust approved amount, rate, term and benefit amounts.
+     * Transition loan to "En Revisión".
+     */
+    public function markInReview(Loan $loan, User $reviewer): Loan
+    {
+        return DB::transaction(function () use ($loan, $reviewer) {
+            /** @var Loan $locked */
+            $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
+
+            if (! in_array($locked->status, [LoanStatus::Enviada, LoanStatus::ListaEspera], true)) {
+                throw new LoanTransitionException('No se puede pasar a revisión desde el estado: '.$locked->status->getLabel());
+            }
+
+            $fromStatus = $locked->status;
+            $locked->update([
+                'status' => LoanStatus::EnRevision,
+                'reviewed_by' => $reviewer->id,
+            ]);
+
+            LoanStatusHistory::create([
+                'loan_id' => $locked->id,
+                'from_status' => $fromStatus,
+                'to_status' => LoanStatus::EnRevision,
+                'user_id' => $reviewer->id,
+                'comment' => 'Revisión técnica y documental iniciada por administración',
+            ]);
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Approve loan, persist financial corrida, and trigger PDF generation.
      *
-     * @param  array<string, mixed>  $params
+     * @param  array<string, mixed>  $params  May include approved_amount, monthly_rate, nomina_amount, nomina_fortnights, comment, benefits
      *
-     * @throws LoanTransitionException|ValidationException
+     * @throws ValidationException|LoanTransitionException
      */
     public function approve(Loan $loan, User $reviewer, array $params = []): Loan
     {
@@ -302,7 +314,9 @@ class LoanService
 
             // Apply reviewer adjustments
             $approvedAmount = isset($params['approved_amount']) ? (float) $params['approved_amount'] : (float) $locked->requested_amount;
-            $monthlyRate = isset($params['monthly_rate']) ? (float) $params['monthly_rate'] : (float) $locked->monthly_rate;
+            $monthlyRate = isset($params['monthly_rate']) && $params['monthly_rate'] !== null
+                ? (float) $params['monthly_rate']
+                : (float) ($locked->monthly_rate ?? 6.0);
 
             $nominaAmount = $locked->payment_type->hasNomina()
                 ? (isset($params['nomina_amount']) ? (float) $params['nomina_amount'] : (float) ($locked->nomina_amount ?? 0))
@@ -358,8 +372,8 @@ class LoanService
 
             DB::afterCommit(function () use ($locked) {
                 Notification::make()
-                    ->title('¡Préstamo aprobado!')
-                    ->body("Tu solicitud de préstamo {$locked->folio} por $ ".number_format($locked->approved_amount, 2).' ha sido aprobada.')
+                    ->title('¡Solicitud de préstamo aprobada!')
+                    ->body("Tu solicitud {$locked->folio} por un monto de $ ".number_format($locked->approved_amount, 2).' ha sido autorizada.')
                     ->success()
                     ->sendToDatabase($locked->user);
             });
@@ -369,9 +383,48 @@ class LoanService
     }
 
     /**
-     * Reject a loan.
-     *
-     * @throws LoanTransitionException
+     * Put loan on waitlist with mandatory justification.
+     */
+    public function waitlist(Loan $loan, User $reviewer, string $reason): Loan
+    {
+        return DB::transaction(function () use ($loan, $reviewer, $reason) {
+            /** @var Loan $locked */
+            $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
+
+            if (! in_array($locked->status, [LoanStatus::Enviada, LoanStatus::EnRevision], true)) {
+                throw new LoanTransitionException('Solo se pueden poner en lista de espera solicitudes enviadas o en revisión.');
+            }
+
+            $fromStatus = $locked->status;
+            $locked->update([
+                'status' => LoanStatus::ListaEspera,
+                'waitlist_reason' => $reason,
+                'reviewed_by' => $reviewer->id,
+                'reviewed_at' => now(),
+            ]);
+
+            LoanStatusHistory::create([
+                'loan_id' => $locked->id,
+                'from_status' => $fromStatus,
+                'to_status' => LoanStatus::ListaEspera,
+                'user_id' => $reviewer->id,
+                'comment' => $reason,
+            ]);
+
+            DB::afterCommit(function () use ($locked) {
+                Notification::make()
+                    ->title('Solicitud en lista de espera')
+                    ->body("Tu solicitud {$locked->folio} está en lista de espera.")
+                    ->warning()
+                    ->sendToDatabase($locked->user);
+            });
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Reject loan with mandatory justification.
      */
     public function reject(Loan $loan, User $reviewer, string $reason): Loan
     {
@@ -380,11 +433,10 @@ class LoanService
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($locked->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true)) {
-                throw new LoanTransitionException('La solicitud no está disponible para rechazo (estado actual: '.$locked->status->getLabel().').');
+                throw new LoanTransitionException('No se puede rechazar una solicitud en estado: '.$locked->status->getLabel());
             }
 
             $fromStatus = $locked->status;
-
             $locked->update([
                 'status' => LoanStatus::Rechazada,
                 'rejection_reason' => $reason,
@@ -413,56 +465,11 @@ class LoanService
     }
 
     /**
-     * Put loan on waitlist.
+     * Disburse an approved loan.
      *
-     * @throws LoanTransitionException
-     */
-    public function waitlist(Loan $loan, User $reviewer, string $reason): Loan
-    {
-        return DB::transaction(function () use ($loan, $reviewer, $reason) {
-            /** @var Loan $locked */
-            $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
-
-            if (! in_array($locked->status, [LoanStatus::Enviada, LoanStatus::EnRevision], true)) {
-                throw new LoanTransitionException('La solicitud no está disponible para lista de espera (estado actual: '.$locked->status->getLabel().').');
-            }
-
-            $fromStatus = $locked->status;
-
-            $locked->update([
-                'status' => LoanStatus::ListaEspera,
-                'waitlist_reason' => $reason,
-                'reviewed_by' => $reviewer->id,
-                'reviewed_at' => now(),
-            ]);
-
-            LoanStatusHistory::create([
-                'loan_id' => $locked->id,
-                'from_status' => $fromStatus,
-                'to_status' => LoanStatus::ListaEspera,
-                'user_id' => $reviewer->id,
-                'comment' => $reason,
-            ]);
-
-            DB::afterCommit(function () use ($locked) {
-                Notification::make()
-                    ->title('Solicitud en lista de espera')
-                    ->body("Tu solicitud {$locked->folio} fue colocada en lista de espera por la administración.")
-                    ->warning()
-                    ->sendToDatabase($locked->user);
-            });
-
-            return $locked;
-        });
-    }
-
-    /**
-     * Register disbursement.
-     * Only once! Recalculates amortization with real disbursement date and regenerates documents.
+     * @param  array<string, mixed>  $data  Keys: disbursed_amount, disbursement_method, disbursement_reference, disbursed_at, receipt_path
      *
-     * @param  array<string, mixed>  $data
-     *
-     * @throws LoanTransitionException|ValidationException
+     * @throws ValidationException|LoanTransitionException
      */
     public function disburse(Loan $loan, User $reviewer, array $data): Loan
     {
@@ -471,15 +478,12 @@ class LoanService
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->status !== LoanStatus::Aprobada) {
-                throw new LoanTransitionException('Solo es posible desembolsar solicitudes previamente aprobadas (estado actual: '.$locked->status->getLabel().').');
+                throw new LoanTransitionException('Solo se pueden desembolsar préstamos en estado aprobado (actual: '.$locked->status->getLabel().').');
             }
 
-            if ($locked->disbursed_at !== null) {
-                throw new LoanTransitionException('Este préstamo ya fue desembolsado anteriormente.');
-            }
-
-            $disbursedAt = Carbon::parse($data['disbursed_at'])->format('Y-m-d');
+            $disbursedAt = Carbon::parse($data['disbursed_at'] ?? now())->format('Y-m-d');
             $disbursedAmount = isset($data['disbursed_amount']) ? (float) $data['disbursed_amount'] : (float) $locked->approved_amount;
+            $method = LoanPaymentType::from($locked->payment_type->value);
 
             $locked->update([
                 'status' => LoanStatus::Desembolsada,
@@ -491,7 +495,7 @@ class LoanService
                 'disbursement_receipt_path' => $data['receipt_path'] ?? null,
             ]);
 
-            // Recalculate amortization rows and financial summary with actual disbursement date
+            // Recompute amortization from actual disbursement date
             $this->persistAmortizationAndSummary($locked, $disbursedAt);
 
             LoanStatusHistory::create([
@@ -550,8 +554,7 @@ class LoanService
         ];
 
         if ($loan->payment_type->hasNomina()) {
-            $params['payment_methods']['nomina'] = [
-                'amount' => (float) ($loan->nomina_amount ?? $loan->approved_amount ?? $loan->requested_amount),
+            $params['payment_methods']['nomina'] = ['amount' => (float) ($loan->nomina_amount ?? $loan->approved_amount ?? $loan->requested_amount),
                 'fortnights' => (int) ($loan->nomina_fortnights ?? 0),
                 'first_fortnight' => $loan->first_fortnight_date?->format('Y-m-d') ?? now()->addDays(25)->format('Y-m-d'),
             ];

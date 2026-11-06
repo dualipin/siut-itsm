@@ -207,7 +207,7 @@ class Loan extends Model
         $payload = [
             'requested_amount' => (float) $this->requested_amount,
             'payment_type' => $this->payment_type instanceof LoanPaymentType ? $this->payment_type->value : (string) $this->payment_type,
-            'monthly_rate' => (float) $this->monthly_rate,
+            'monthly_rate' => $this->monthly_rate !== null ? (float) $this->monthly_rate : null,
             'nomina_amount' => (float) ($this->nomina_amount ?? 0),
             'nomina_fortnights' => (int) ($this->nomina_fortnights ?? 0),
             'first_fortnight_date' => $this->first_fortnight_date?->format('Y-m-d') ?? (string) $this->first_fortnight_date,

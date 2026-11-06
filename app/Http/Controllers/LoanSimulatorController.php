@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\GenerateLoanSimulationPdf;
+use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Http\Requests\StoreLoanSimulationRequest;
 use App\Models\Benefit;
 use App\Services\LoanSimulationService;
@@ -90,8 +91,16 @@ class LoanSimulatorController extends Controller
             'summary' => $summary,
         ], now()->addMinutes(10));
 
+        Cache::put('loan_application_'.$token, [
+            'payment_type' => $validated['payment_type'],
+            'monthly_rate' => (float) $validated['monthly_rate'],
+            'nomina' => $validated['nomina'] ?? null,
+            'benefits' => $validated['benefits'] ?? [],
+        ], now()->addMinutes(10));
+
         return response()->json([
             'pdf_url' => route('public.simulator.download', ['token' => $token]),
+            'application_url' => ApplyLoan::getUrl(['simulation' => $token], panel: 'portal'),
         ]);
     }
 

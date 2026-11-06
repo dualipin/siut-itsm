@@ -100,10 +100,15 @@ class ViewLoan extends ViewRecord
                         ->numeric()
                         ->default($record->requested_amount)
                         ->required(),
-                    TextInput::make('monthly_rate')
-                        ->label('Tasa de Interés Mensual (%)')
-                        ->numeric()
-                        ->default($record->monthly_rate)
+                    Select::make('monthly_rate')
+                        ->label('Tasa de Interés Mensual')
+                        ->options([
+                            '6.00' => '6.00% mensual — Agremiado y ahorrador',
+                            '7.50' => '7.50% mensual — Agremiado y no ahorrador',
+                            '8.00' => '8.00% mensual — Ahorrador no agremiado',
+                            '9.50' => '9.50% mensual — No ahorrador y no agremiado',
+                        ])
+                        ->default($record->monthly_rate ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00')
                         ->required(),
                     TextInput::make('nomina_amount')
                         ->label('Monto por Nómina')

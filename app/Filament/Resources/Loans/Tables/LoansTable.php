@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Loans\Tables;
 
 use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
+use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
@@ -57,7 +58,8 @@ class LoansTable
 
                 TextColumn::make('monthly_rate')
                     ->label('Tasa Mensual')
-                    ->formatStateUsing(fn ($state) => number_format((float) $state, 2).'%'),
+                    ->formatStateUsing(fn ($state) => $state !== null ? number_format((float) $state, 2).'%' : null)
+                    ->placeholder('Por definir'),
 
                 TextColumn::make('created_at')
                     ->label('Fecha')
@@ -81,7 +83,7 @@ class LoansTable
                     ->label('Nueva Solicitud')
                     ->icon(Heroicon::Plus)
                     ->color('primary')
-                    ->url(fn (): string => route('loans.apply')),
+                    ->url(fn (): string => ApplyLoan::getUrl()),
             ]);
     }
 }

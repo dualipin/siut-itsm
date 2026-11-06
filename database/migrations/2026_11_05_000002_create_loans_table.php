@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('payment_type')->index(); // nomina, benefit, mixed
             $table->decimal('requested_amount', 12, 2);
             $table->decimal('approved_amount', 12, 2)->nullable();
-            $table->decimal('monthly_rate', 5, 2); // e.g. 6.00, 7.50, 8.00, 9.50
+            $table->decimal('monthly_rate', 5, 2)->nullable(); // e.g. 6.00, 7.50, 8.00, 9.50 — defined by admin upon approval
             $table->decimal('salary_commitment_amount', 12, 2)->nullable();
             $table->decimal('nomina_amount', 12, 2)->nullable();
             $table->unsignedInteger('nomina_fortnights')->nullable();

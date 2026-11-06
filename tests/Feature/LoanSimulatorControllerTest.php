@@ -70,7 +70,7 @@ it('POST simulate with valid nomina data returns json with pdf_url', function ()
     ]);
 
     $response->assertOk();
-    $response->assertJsonStructure(['pdf_url']);
+    $response->assertJsonStructure(['pdf_url', 'application_url']);
 });
 
 it('POST simulate with invalid data returns 422', function () {

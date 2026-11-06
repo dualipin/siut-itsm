@@ -22,9 +22,6 @@ Route::middleware(['web', 'auth'])->group(function () {
         ->name('portal.transparency.documents.show');
 
     // Módulo de Préstamos - Solicitud y Documentos
-    Route::get('/portal/solicitud-prestamo', [LoanApplicationController::class, 'create'])
-        ->name('loans.apply');
-
     Route::post('/api/prestamos', [LoanApplicationController::class, 'store'])
         ->name('loans.store');
 

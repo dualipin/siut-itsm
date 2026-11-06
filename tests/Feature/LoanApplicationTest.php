@@ -4,17 +4,22 @@ use App\Enums\LoanAiStatus;
 use App\Enums\LoanGeneratedDocumentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
+use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
 use App\Services\LoanService;
+use Filament\Facades\Filament;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
 
 beforeEach(function () {
     Carbon::setTestNow('2026-06-01');
     Storage::fake('local');
+    Filament::setCurrentPanel(Filament::getPanel('portal'));
 });
 
 afterEach(function () {
@@ -22,17 +27,50 @@ afterEach(function () {
 });
 
 it('redirects unauthenticated guests to login', function () {
-    $response = $this->get('/portal/solicitud-prestamo');
+    $response = $this->get(ApplyLoan::getUrl());
     $response->assertRedirect('/portal/login');
 });
 
 it('allows authenticated users to access the application form', function () {
     $user = User::factory()->create(['role' => UserRole::Agremiado]);
 
-    $response = $this->actingAs($user)->get('/portal/solicitud-prestamo');
+    $response = $this->actingAs($user)->get(ApplyLoan::getUrl());
 
     $response->assertOk();
-    $response->assertSee('loans/application-form');
+    $response->assertSee('Nueva Solicitud de Préstamo');
+});
+
+it('allows an authenticated agremiado to submit the Filament loan wizard', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'monthly_rate' => 6,
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'first_fortnight_date' => '2026-07-15',
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'interbank_clabe' => '012180001234567890',
+            'nomina_evidence' => $file,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'status' => LoanStatus::Enviada->value,
+        'requested_amount' => 15000,
+    ]);
+
+    $this->assertDatabaseHas('loan_evidences', [
+        'source_type' => 'nomina',
+    ]);
 });
 
 it('stores a loan draft and validates financial inputs', function () {
@@ -55,10 +93,35 @@ it('stores a loan draft and validates financial inputs', function () {
     $response->assertJsonPath('loan.status', LoanStatus::Borrador->value);
     $response->assertJsonPath('loan.folio', fn ($folio) => str_starts_with($folio, 'SOL-2026-'));
 
-    $this->assertDatabaseHas('loans', [
-        'user_id' => $user->id,
+    $this->assertDatabaseHas('loans', ['user_id' => $user->id,
         'status' => LoanStatus::Borrador->value,
         'requested_amount' => 15000,
+    ]);
+});
+
+it('allows applicant to store a draft without monthly_rate leaving it for admin decision', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    // Omit monthly_rate entirely
+    $response = $this->actingAs($user)->postJson('/api/prestamos', [
+        'payment_type' => 'nomina',
+        'requested_amount' => 18000,
+        'nomina_amount' => 18000,
+        'nomina_fortnights' => 6,
+        'first_fortnight_date' => '2026-07-15',
+        'bank_name' => 'Santander',
+        'bank_account' => '9876543210',
+        'interbank_clabe' => '014180009876543210',
+    ]);
+
+    $response->assertOk();
+    $response->assertJsonPath('success', true);
+    $response->assertJsonPath('loan.monthly_rate', null);
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'requested_amount' => 18000,
+        'monthly_rate' => null,
     ]);
 });
 
@@ -70,7 +133,6 @@ it('blocks new loan applications when the window deadline of November 30 has pas
     $response = $this->actingAs($user)->postJson('/api/prestamos', [
         'payment_type' => 'nomina',
         'requested_amount' => 10000,
-        'monthly_rate' => 6.0,
         'nomina_amount' => 10000,
         'nomina_fortnights' => 4,
         'first_fortnight_date' => '2026-12-15',
@@ -91,7 +153,6 @@ it('prevents a user from having more than one active loan without an authorized 
     $response = $this->actingAs($user)->postJson('/api/prestamos', [
         'payment_type' => 'nomina',
         'requested_amount' => 5000,
-        'monthly_rate' => 6.0,
         'nomina_amount' => 5000,
         'nomina_fortnights' => 2,
         'first_fortnight_date' => '2026-07-15',
@@ -108,7 +169,6 @@ it('invalidates drawn signature when loan terms change', function () {
     $loan = $loanService->createDraft($user, [
         'payment_type' => 'nomina',
         'requested_amount' => 10000,
-        'monthly_rate' => 6.0,
         'nomina_amount' => 10000,
         'nomina_fortnights' => 4,
         'first_fortnight_date' => '2026-07-15',
@@ -137,7 +197,6 @@ it('submitting a loan requires a valid signature and complete evidence', functio
     $loan = $loanService->createDraft($user, [
         'payment_type' => 'nomina',
         'requested_amount' => 10000,
-        'monthly_rate' => 6.0,
         'nomina_amount' => 10000,
         'nomina_fortnights' => 4,
         'first_fortnight_date' => '2026-07-15',

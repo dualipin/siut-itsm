@@ -75,7 +75,7 @@ const folio = ref<string | null>(props.activeLoan?.folio ?? null)
 // Step 1: Loan Configuration
 const paymentType = ref<'nomina' | 'benefit' | 'mixed'>('nomina')
 const requestedAmount = ref<number>(10000)
-const monthlyRate = ref<number>(6.0)
+const monthlyRate = ref<number | null>(props.activeLoan?.monthly_rate ? Number(props.activeLoan.monthly_rate) : null)
 const salaryCommitment = ref<number | null>(null)
 const bankName = ref<string>('')
 const bankAccount = ref<string>('')
@@ -105,13 +105,6 @@ const isDrawing = ref(false)
 const hasSigned = ref(false)
 const efirmaMode = ref(false)
 
-// Rate options
-const rateOptions = [
-  { rate: 6.0, label: '6.00% mensual — Agremiado y ahorrador' },
-  { rate: 7.5, label: '7.50% mensual — Agremiado y no ahorrador' },
-  { rate: 8.0, label: '8.00% mensual — Ahorrador no agremiado' },
-  { rate: 9.5, label: '9.50% mensual — No ahorrador y no agremiado' },
-]
 
 function getCsrfToken(): string {
   const meta = document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null
@@ -628,12 +621,19 @@ onMounted(() => {
               />
             </div>
 
-            <!-- Tasa de Interés Mensual -->
-            <div class="form-control">
-              <label class="label"><span class="label-text font-semibold">Tasa de Interés Mensual</span></label>
-              <select v-model.number="monthlyRate" class="select select-bordered w-full">
-                <option v-for="opt in rateOptions" :key="opt.rate" :value="opt.rate">{{ opt.label }}</option>
-              </select>
+            <!-- Tasa de Interés (Determinada por administración) -->
+            <div class="form-control justify-end">
+              <div class="p-3 rounded-xl bg-base-200/60 border border-base-300 flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div class="text-xs">
+                  <span class="font-bold text-base-content block">Tasa de Interés</span>
+                  <span class="text-base-content/70">
+                    La tasa aplicable (6.0% a 9.5% mensual) es asignada y dictaminada por la administración del sindicato según reglamento al evaluar tu solicitud.
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -896,7 +896,7 @@ onMounted(() => {
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
               <div><span class="text-base-content/60 block">Solicitante:</span> <strong>{{ user.name }}</strong></div>
               <div><span class="text-base-content/60 block">Monto:</span> <strong>${{ requestedAmount.toLocaleString() }}</strong></div>
-              <div><span class="text-base-content/60 block">Tasa:</span> <strong>{{ monthlyRate }}% mensual</strong></div>
+              <div><span class="text-base-content/60 block">Tasa:</span> <strong>{{ monthlyRate ? monthlyRate + "% mensual" : "Por definir por administración" }}</strong></div>
               <div><span class="text-base-content/60 block">Forma de Pago:</span> <strong>{{ paymentType }}</strong></div>
             </div>
           </div>
