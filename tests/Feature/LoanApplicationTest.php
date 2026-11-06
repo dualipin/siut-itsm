@@ -5,8 +5,10 @@ use App\Enums\LoanGeneratedDocumentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
+use App\Filament\Resources\Loans\Pages\ViewLoan;
 use App\Models\Benefit;
 use App\Models\Loan;
+use App\Models\LoanAmortizationRow;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
@@ -910,4 +912,58 @@ it('persists real drawn signature data on loan and generates pdfs with signature
         ->and($loan->signature_type)->toBe('drawn')
         ->and($loan->isSignatureValid())->toBeTrue()
         ->and($loan->status)->toBe(LoanStatus::Enviada);
+});
+
+it('allows an agremiado to view their submitted loan detail page without error', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $loan = Loan::factory()->for($user)->submitted()->create();
+
+    $this->actingAs($user)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee($loan->folio);
+
+    Livewire::actingAs($user)
+        ->test(ViewLoan::class, ['record' => $loan->getKey()])
+        ->assertOk()
+        ->assertSee($loan->folio);
+});
+
+it('correctly loads and displays amortization rows on the loan detail page', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $loan = Loan::factory()->for($user)->approved()->create();
+
+    LoanAmortizationRow::create([
+        'loan_id' => $loan->id,
+        'period' => 2,
+        'type' => 'nomina',
+        'label' => 'Quincena 1',
+        'date' => '2026-07-15',
+        'opening_balance' => 5000,
+        'principal' => 2500,
+        'interest' => 150,
+        'payment' => 2650,
+        'closing_balance' => 2500,
+    ]);
+
+    LoanAmortizationRow::create([
+        'loan_id' => $loan->id,
+        'period' => 1,
+        'type' => 'extra_days',
+        'label' => 'Días adicionales',
+        'date' => '2026-06-30',
+        'opening_balance' => 5000,
+        'principal' => 0,
+        'interest' => 50,
+        'payment' => 50,
+        'closing_balance' => 5000,
+    ]);
+
+    expect($loan->amortizationRows->pluck('period')->all())->toBe([1, 2]);
+
+    $this->actingAs($user)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Días adicionales')
+        ->assertSee('Quincena 1');
 });

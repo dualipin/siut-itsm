@@ -140,7 +140,7 @@ class Loan extends Model
 
     public function amortizationRows(): HasMany
     {
-        return $this->hasMany(LoanAmortizationRow::class)->orderBy('row_number');
+        return $this->hasMany(LoanAmortizationRow::class)->orderBy('period');
     }
 
     public function financialSummary(): HasOne

@@ -92,7 +92,9 @@ it('allows leader or admin to approve a submitted loan with complete valid evide
 
     // Verify amortization rows were created (1 extra_days + 4 fortnights = 5)
     expect($approved->amortizationRows()->count())->toBe(5)
-        ->and($approved->amortizationRows()->where('type', 'nomina')->count())->toBe(4);
+        ->and($approved->amortizationRows()->where('type', 'nomina')->count())->toBe(4)
+        ->and($approved->amortizationRows)->toHaveCount(5)
+        ->and($approved->amortizationRows->pluck('period')->all())->toBe([1, 2, 3, 4, 5]);
 
     // Verify financial summary was created
     expect($approved->financialSummary)->not->toBeNull()
