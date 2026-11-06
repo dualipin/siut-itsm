@@ -35,7 +35,7 @@ class LoanInfolist
                         'evidences' => $record->evidences,
                         'amortizationRows' => $record->amortizationRows,
                         'financialSummary' => $record->financialSummary,
-                        'generatedDocs' => $record->generatedDocuments->groupBy(fn ($d) => $d->document_type->value),
+                        'generatedDocs' => $record->generatedDocuments->sortByDesc('version')->groupBy(fn ($d) => $d->document_type->value),
                         'statusHistories' => $record->statusHistories,
                         'canReview' => $isLeaderOrAdmin,
                         'isLeaderOrAdmin' => $isLeaderOrAdmin,

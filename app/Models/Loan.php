@@ -150,7 +150,7 @@ class Loan extends Model
 
     public function generatedDocuments(): HasMany
     {
-        return $this->hasMany(LoanGeneratedDocument::class);
+        return $this->hasMany(LoanGeneratedDocument::class)->orderBy('version', 'desc');
     }
 
     public function statusHistories(): HasMany

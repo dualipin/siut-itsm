@@ -347,29 +347,50 @@
 
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-5">
             @foreach($docTypes as $key => $title)
-                @php $doc = $generatedDocs->get($key)?->first(); @endphp
-                <div class="rounded-lg border border-gray-200/70 bg-gray-50/50 p-4 dark:border-gray-800 dark:bg-gray-800/40 flex flex-col justify-between">
+                @php
+                    $docsForType = $generatedDocs->get($key);
+                    $doc = $docsForType?->sortByDesc('version')->first();
+                @endphp
+                <div class="flex flex-col justify-between rounded-lg bg-gray-50/75 p-4 dark:bg-white/[0.03]">
                     <div>
-                        <span class="text-xs font-medium text-gray-700 dark:text-gray-300 block">{{ $title }}</span>
+                        <span class="text-xs font-semibold text-gray-900 dark:text-gray-100 block">{{ $title }}</span>
                         <div class="mt-2 text-xs">
                             @if($doc)
-                                <span class="font-semibold text-emerald-600 dark:text-emerald-400 block tabular-nums">v{{ $doc->version }} generada</span>
-                                <span class="text-gray-500 dark:text-gray-400 text-xs tabular-nums">{{ $doc->generated_at?->format('d/m/Y H:i') }}</span>
+                                <span class="font-semibold text-success-600 dark:text-success-400 block tabular-nums">v{{ $doc->version }} generada</span>
+                                <span class="text-gray-500 dark:text-gray-400 text-xs tabular-nums block mt-0.5">{{ $doc->generated_at?->format('d/m/Y H:i') }}</span>
+                                @if($docsForType && $docsForType->count() > 1)
+                                    <div class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                                        <span class="text-xs text-gray-500 dark:text-gray-400">Historial:</span>
+                                        @foreach($docsForType->sortByDesc('version') as $historyDoc)
+                                            <a href="{{ route('loans.documents.download', ['loan' => $loan->id, 'document' => $historyDoc->id]) }}" target="_blank" class="tabular-nums px-1.5 py-0.5 rounded text-xs {{ $historyDoc->id === $doc->id ? 'font-semibold text-success-700 bg-success-50 dark:bg-success-950/40 dark:text-success-300' : 'text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-300' }}" title="Descargar v{{ $historyDoc->version }}">
+                                                v{{ $historyDoc->version }}
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             @else
-                                <span class="text-gray-400 dark:text-gray-500 italic">No generado</span>
+                                <span class="text-gray-500 dark:text-gray-400 italic">No generado</span>
                             @endif
                         </div>
                     </div>
 
-                    <div class="mt-4 pt-3 border-t border-gray-200/60 dark:border-gray-700/60">
+                    <div class="mt-4 pt-3 border-t border-gray-200/60 dark:border-white/10">
                         @if($doc)
-                            <a href="{{ route('loans.documents.download', ['loan' => $loan->id, 'document' => $doc->id]) }}" target="_blank" class="w-full text-center block text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md py-1.5 transition-colors">
+                            <x-filament::button
+                                :href="route('loans.documents.download', ['loan' => $loan->id, 'document' => $doc->id])"
+                                tag="a"
+                                target="_blank"
+                                size="xs"
+                                color="primary"
+                                icon="heroicon-m-arrow-down-tray"
+                                class="w-full justify-center"
+                            >
                                 Descargar PDF
-                            </a>
+                            </x-filament::button>
                         @else
-                            <button disabled type="button" class="w-full text-center block text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 rounded-md py-1.5 cursor-not-allowed">
+                            <span class="w-full text-center block text-xs text-gray-400 dark:text-gray-500 py-1.5">
                                 Pendiente
-                            </button>
+                            </span>
                         @endif
                     </div>
                 </div>

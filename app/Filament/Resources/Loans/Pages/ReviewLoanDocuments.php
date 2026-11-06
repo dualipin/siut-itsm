@@ -54,7 +54,9 @@ class ReviewLoanDocuments extends ViewRecord
         /** @var Loan $record */
         $record = $this->getRecord();
 
-        return "Revisión de Evidencias — {$record->folio}";
+        $folio = str_replace('-', "\u{2011}", (string) $record->folio);
+
+        return "Revisión de Evidencias — {$folio}";
     }
 
     public function infolist(Schema $schema): Schema

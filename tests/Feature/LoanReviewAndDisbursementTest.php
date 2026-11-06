@@ -317,6 +317,32 @@ it('allows manual document regeneration', function () {
 
     $v2Count = LoanGeneratedDocument::where('loan_id', $loan->id)->where('version', 2)->count();
     expect($v2Count)->toBe(4);
+
+    // Latest documents relation and infolist view pick v2 over v1
+    $loan->refresh();
+    $latestDoc = $loan->generatedDocuments()->where('document_type', LoanGeneratedDocumentType::Solicitud)->first();
+    expect($latestDoc->version)->toBe(2);
+
+    $v2Doc = LoanGeneratedDocument::where('loan_id', $loan->id)
+        ->where('document_type', LoanGeneratedDocumentType::Solicitud)
+        ->where('version', 2)
+        ->firstOrFail();
+
+    $viewData = [
+        'loan' => $loan,
+        'user' => $loan->user,
+        'evidences' => $loan->evidences,
+        'amortizationRows' => $loan->amortizationRows,
+        'financialSummary' => $loan->financialSummary,
+        'generatedDocs' => $loan->generatedDocuments->groupBy(fn ($d) => $d->document_type->value),
+        'statusHistories' => $loan->statusHistories,
+        'canReview' => true,
+        'isLeaderOrAdmin' => true,
+    ];
+    $html = view('filament.loans.loan-detail-view', $viewData)->render();
+    expect($html)->toContain('v2 generada')
+        ->and($html)->toContain(route('loans.documents.download', ['loan' => $loan->id, 'document' => $v2Doc->id]))
+        ->and($html)->toContain('Historial:');
 });
 
 it('enforces authorization on private document download routes', function () {
