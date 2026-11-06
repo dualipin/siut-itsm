@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Loans;
 
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Filament\Resources\Loans\Pages\ListLoans;
+use App\Filament\Resources\Loans\Pages\ReviewLoanDocuments;
 use App\Filament\Resources\Loans\Pages\ViewLoan;
 use App\Filament\Resources\Loans\Tables\LoansTable;
 use App\Models\Loan;
@@ -65,6 +66,7 @@ class LoanResource extends Resource
             'index' => ListLoans::route('/'),
             'apply' => ApplyLoan::route('/solicitud-prestamo'),
             'view' => ViewLoan::route('/{record}'),
+            'review-documents' => ReviewLoanDocuments::route('/{record}/review-documents'),
         ];
     }
 

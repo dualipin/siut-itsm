@@ -1,3 +1,7 @@
+@php
+    $canReview = $canReview ?? (auth()->user()?->isLeaderOrAdmin() ?? false);
+@endphp
+
 <div class="space-y-6">
     <!-- Header & Resumen Financiero -->
     <div class="rounded-xl border border-gray-200/80 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
@@ -176,12 +180,25 @@
         <div class="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-4">
             <div>
                 <h3 class="text-base font-semibold text-gray-950 dark:text-white text-wrap-balance">
-                    Expediente documental y verificación IA
+                    Expediente documental
                 </h3>
             </div>
-            <x-filament::badge :color="$loan->hasCompleteEvidence() ? 'success' : 'warning'" size="sm">
-                {{ $loan->hasCompleteEvidence() ? 'Expediente completo' : 'Expediente incompleto' }}
-            </x-filament::badge>
+            <div class="flex items-center gap-2">
+                @if($canReview && $evidences->isNotEmpty())
+                    <x-filament::button
+                        :href="\App\Filament\Resources\Loans\LoanResource::getUrl('review-documents', ['record' => $loan])"
+                        tag="a"
+                        size="xs"
+                        color="info"
+                        icon="heroicon-m-document-check"
+                    >
+                        Validar Evidencias
+                    </x-filament::button>
+                @endif
+                <x-filament::badge :color="$loan->hasCompleteEvidence() ? 'success' : 'warning'" size="sm">
+                    {{ $loan->hasCompleteEvidence() ? 'Expediente completo' : 'Expediente incompleto' }}
+                </x-filament::badge>
+            </div>
         </div>
 
         @if($evidences->isEmpty())
@@ -204,32 +221,56 @@
                             </div>
 
                             <div class="flex items-center gap-2">
-                                <x-filament::badge :color="$ev->ai_status->getColor()" size="sm">
-                                    IA: {{ $ev->ai_status->getLabel() }}
-                                </x-filament::badge>
+                                @if($canReview)
+                                    <x-filament::badge :color="$ev->ai_status->getColor()" size="sm">
+                                        IA: {{ $ev->ai_status->getLabel() }}
+                                    </x-filament::badge>
 
-                                @if($ev->manual_review_status === 'approved')
-                                    <x-filament::badge color="success" size="sm">
-                                        Manual: Aprobado
-                                    </x-filament::badge>
-                                @elseif($ev->manual_review_status === 'rejected')
-                                    <x-filament::badge color="danger" size="sm">
-                                        Manual: Rechazado
-                                    </x-filament::badge>
+                                    @if($ev->manual_review_status === 'approved')
+                                        <x-filament::badge color="success" size="sm">
+                                            Manual: Aprobado
+                                        </x-filament::badge>
+                                    @elseif($ev->manual_review_status === 'rejected')
+                                        <x-filament::badge color="danger" size="sm">
+                                            Manual: Rechazado
+                                        </x-filament::badge>
+                                    @endif
+                                @else
+                                    @if($ev->isValidOrApproved())
+                                        <x-filament::badge color="success" size="sm">
+                                            Aprobado
+                                        </x-filament::badge>
+                                    @elseif($ev->manual_review_status === 'rejected')
+                                        <x-filament::badge color="danger" size="sm">
+                                            Rechazado
+                                        </x-filament::badge>
+                                    @else
+                                        <x-filament::badge color="warning" size="sm">
+                                            En revisión
+                                        </x-filament::badge>
+                                    @endif
                                 @endif
 
-                                <a href="{{ route('loans.evidences.download', ['loan' => $loan->id, 'evidence' => $ev->id]) }}" target="_blank" class="text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline-offset-2 hover:underline ml-1">
+                                @if($canReview)
+                                    <a href="{{ \App\Filament\Resources\Loans\LoanResource::getUrl('review-documents', ['record' => $loan, 'evidence' => $ev->id]) }}" class="text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline-offset-2 hover:underline ml-1">
+                                        Validar
+                                    </a>
+                                @endif
+
+                                <a href="{{ route('loans.evidences.download', ['loan' => $loan->id, 'evidence' => $ev->id]) }}" target="_blank" class="text-xs font-semibold text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 underline-offset-2 hover:underline ml-1">
                                     Descargar
                                 </a>
                             </div>
                         </div>
 
-                        <!-- Metadatos extraídos por IA (diseño limpio y plano) -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 pt-1">
-                            <div><span class="text-gray-500 dark:text-gray-400">Clasificación IA:</span> <span class="font-medium text-gray-900 dark:text-gray-200">{{ $ev->ai_classification ?? 'N/A' }}</span></div>
-                            <div><span class="text-gray-500 dark:text-gray-400">Confianza:</span> <span class="font-medium tabular-nums text-gray-900 dark:text-gray-200">{{ $ev->ai_confidence ? number_format($ev->ai_confidence * 100, 1).'%' : 'N/A' }}</span></div>
-                            <div><span class="text-gray-500 dark:text-gray-400">Nombre detectado:</span> <span class="font-medium text-gray-900 dark:text-gray-200">{{ $ev->extracted_data['nombre_trabajador'] ?? 'N/A' }}</span></div>
-                        </div>
+                        @if($canReview)
+                            <!-- Metadatos extraídos por IA (diseño limpio y plano) -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 pt-1">
+                                <div><span class="text-gray-500 dark:text-gray-400">Clasificación IA:</span> <span class="font-medium text-gray-900 dark:text-gray-200">{{ $ev->ai_classification ?? 'N/A' }}</span></div>
+                                <div><span class="text-gray-500 dark:text-gray-400">Confianza:</span> <span class="font-medium tabular-nums text-gray-900 dark:text-gray-200">{{ $ev->ai_confidence ? number_format($ev->ai_confidence * 100, 1).'%' : 'N/A' }}</span></div>
+                                <div><span class="text-gray-500 dark:text-gray-400">Nombre detectado:</span> <span class="font-medium text-gray-900 dark:text-gray-200">{{ $ev->extracted_data['nombre_trabajador'] ?? 'N/A' }}</span></div>
+                            </div>
+                        @endif
 
                         @if($ev->manual_review_notes)
                             <div class="text-xs text-gray-600 dark:text-gray-400 text-wrap-pretty pt-1">
@@ -355,6 +396,40 @@
                     <div class="py-2.5 flex items-start justify-between gap-4 text-xs first:pt-3 last:pb-0">
                         <div>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
+                                {{ $h->from_status ? $h->from_status->getLabel().' → ' : '' }}{{ $h->to_status->getLabel() }}
+                            </span>
+                            @if($h->comment)
+                                <p class="text-gray-500 dark:text-gray-400 mt-0.5 text-wrap-pretty">{{ $h->comment }}</p>
+                            @endif
+                        </div>
+                        <div class="text-right text-gray-500 dark:text-gray-400 shrink-0">
+                            <div>{{ $h->user->full_name ?? 'Sistema' }}</div>
+                            <div class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+</div>
+
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                                {{ $h->from_status ? $h->from_status->getLabel().' → ' : '' }}{{ $h->to_status->getLabel() }}
+                            </span>
+                            @if($h->comment)
+                                <p class="text-gray-500 dark:text-gray-400 mt-0.5 text-wrap-pretty">{{ $h->comment }}</p>
+                            @endif
+                        </div>
+                        <div class="text-right text-gray-500 dark:text-gray-400 shrink-0">
+                            <div>{{ $h->user->full_name ?? 'Sistema' }}</div>
+                            <div class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+</div>
                                 {{ $h->from_status ? $h->from_status->getLabel().' → ' : '' }}{{ $h->to_status->getLabel() }}
                             </span>
                             @if($h->comment)

@@ -27,6 +27,8 @@ class LoanInfolist
                         'statusHistories.user',
                     ]);
 
+                    $isLeaderOrAdmin = auth()->user()?->isLeaderOrAdmin() ?? false;
+
                     return [
                         'loan' => $record,
                         'user' => $record->user,
@@ -35,7 +37,8 @@ class LoanInfolist
                         'financialSummary' => $record->financialSummary,
                         'generatedDocs' => $record->generatedDocuments->groupBy(fn ($d) => $d->document_type->value),
                         'statusHistories' => $record->statusHistories,
-                        'canReview' => auth()->user()?->isLeaderOrAdmin() ?? false,
+                        'canReview' => $isLeaderOrAdmin,
+                        'isLeaderOrAdmin' => $isLeaderOrAdmin,
                     ];
                 }),
         ]);

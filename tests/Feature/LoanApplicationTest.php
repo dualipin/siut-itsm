@@ -967,3 +967,93 @@ it('correctly loads and displays amortization rows on the loan detail page', fun
         ->assertSee('Días adicionales')
         ->assertSee('Quincena 1');
 });
+
+it('shows AI details on loan view only to administrators and leaders, hiding them from agremiados', function () {
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $lider = User::factory()->create(['role' => UserRole::Lider]);
+
+    $loan = Loan::factory()->for($agremiado)->submitted()->create();
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 2048,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_classification' => 'recibo_nomina',
+        'ai_confidence' => 0.95,
+        'extracted_data' => ['nombre_trabajador' => 'Juan Pérez'],
+        'manual_review_status' => 'pending',
+    ]);
+
+    // As agremiado: AI details must NOT be visible
+    $this->actingAs($agremiado)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Comprobante de Nómina')
+        ->assertSee('Aprobado')
+        ->assertDontSee('Clasificación IA:')
+        ->assertDontSee('Confianza:')
+        ->assertDontSee('Nombre detectado:')
+        ->assertDontSee('IA: Válido');
+
+    Livewire::actingAs($agremiado)
+        ->test(ViewLoan::class, ['record' => $loan->getKey()])
+        ->assertOk()
+        ->assertSee('Comprobante de Nómina')
+        ->assertSee('Aprobado')
+        ->assertDontSee('Clasificación IA:')
+        ->assertDontSee('Confianza:')
+        ->assertDontSee('Nombre detectado:')
+        ->assertDontSee('IA: Válido');
+
+    // As admin: AI details must be visible
+    $this->actingAs($admin)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Clasificación IA:')
+        ->assertSee('recibo_nomina')
+        ->assertSee('Confianza:')
+        ->assertSee('95.0%')
+        ->assertSee('Nombre detectado:')
+        ->assertSee('Juan Pérez')
+        ->assertSee('IA: Válido');
+
+    Livewire::actingAs($admin)
+        ->test(ViewLoan::class, ['record' => $loan->getKey()])
+        ->assertOk()
+        ->assertSee('Clasificación IA:')
+        ->assertSee('recibo_nomina')
+        ->assertSee('Confianza:')
+        ->assertSee('95.0%')
+        ->assertSee('Nombre detectado:')
+        ->assertSee('Juan Pérez')
+        ->assertSee('IA: Válido');
+
+    // As leader: AI details must be visible
+    $this->actingAs($lider)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Clasificación IA:')
+        ->assertSee('recibo_nomina')
+        ->assertSee('Confianza:')
+        ->assertSee('95.0%')
+        ->assertSee('Nombre detectado:')
+        ->assertSee('Juan Pérez')
+        ->assertSee('IA: Válido');
+
+    Livewire::actingAs($lider)
+        ->test(ViewLoan::class, ['record' => $loan->getKey()])
+        ->assertOk()
+        ->assertSee('Clasificación IA:')
+        ->assertSee('recibo_nomina')
+        ->assertSee('Confianza:')
+        ->assertSee('95.0%')
+        ->assertSee('Nombre detectado:')
+        ->assertSee('Juan Pérez')
+        ->assertSee('IA: Válido');
+});

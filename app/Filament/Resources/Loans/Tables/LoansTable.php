@@ -4,7 +4,9 @@ namespace App\Filament\Resources\Loans\Tables;
 
 use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
+use App\Filament\Resources\Loans\LoanResource;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
+use App\Models\Loan;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
@@ -77,6 +79,12 @@ class LoansTable
             ])
             ->recordActions([
                 ViewAction::make()->label('Ver Detalle'),
+                Action::make('reviewDocuments')
+                    ->label('Validar Evidencias')
+                    ->icon(Heroicon::DocumentCheck)
+                    ->color('info')
+                    ->visible(fn (Loan $record): bool => (auth()->user()?->isLeaderOrAdmin() ?? false) && $record->evidences()->exists())
+                    ->url(fn (Loan $record): string => LoanResource::getUrl('review-documents', ['record' => $record])),
             ])
             ->headerActions([
                 Action::make('createLoan')
