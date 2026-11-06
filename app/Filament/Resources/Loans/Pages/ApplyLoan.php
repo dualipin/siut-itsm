@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Loans\Pages;
 
 use App\Enums\LoanPaymentType;
+use App\Filament\Forms\Components\SignaturePad;
 use App\Filament\Resources\Loans\LoanResource;
 use App\Models\Benefit;
 use App\Models\Loan;
@@ -13,6 +14,7 @@ use App\Services\LoanDocumentAIService;
 use App\Services\LoanService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -58,7 +60,13 @@ class ApplyLoan extends CreateRecord
         $user = auth()->user();
         $bankDetails = app(LoanService::class)->latestBankDetails($user);
 
-        $fillData = $bankDetails;
+        $fillData = [
+            ...$bankDetails,
+            'signature_type' => 'drawn',
+            'signature_data' => null,
+            'signed_terms_hash' => null,
+            'accept_terms' => false,
+        ];
 
         $token = request()->query('simulation');
         if (is_string($token)) {
@@ -100,8 +108,9 @@ class ApplyLoan extends CreateRecord
                             fn (LoanPaymentType $type): array => [$type->value => $type->getLabel()]
                         ))
                         ->live()
-                        ->afterStateUpdated(function (): void {
+                        ->afterStateUpdated(function (Set $set): void {
                             $this->syncBenefitEvidenceRows();
+                            $this->invalidateSignature($set);
                         })
                         ->required(),
                     Grid::make(2)
@@ -110,6 +119,10 @@ class ApplyLoan extends CreateRecord
                                 ->label('Monto por Nómina')
                                 ->numeric()
                                 ->minValue(1)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
                                 ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
                             Select::make('nomina_fortnights')
@@ -120,6 +133,10 @@ class ApplyLoan extends CreateRecord
                                         $index + 1 => ($index + 1).' '.($index === 0 ? 'quincena' : 'quincenas'),
                                     ])
                                     ->all())
+                                ->live()
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
                                 ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
                         ]),
@@ -131,21 +148,27 @@ class ApplyLoan extends CreateRecord
                                 ->options($benefits)
                                 ->disableOptionsWhenSelectedInSiblingRepeaterItems()
                                 ->live()
-                                ->afterStateUpdated(function (): void {
+                                ->afterStateUpdated(function (Set $set): void {
                                     $this->syncBenefitEvidenceRows();
+                                    $this->invalidateSignature($set);
                                 })
                                 ->required(),
                             TextInput::make('amount')
                                 ->label('Monto')
                                 ->numeric()
                                 ->minValue(1)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->required(),
                         ])
                         ->columns(2)
                         ->live()
                         ->minItems(fn (callable $get): int => in_array($get('payment_type'), ['benefit', 'mixed'], true) ? 1 : 0)
-                        ->afterStateUpdated(function (): void {
+                        ->afterStateUpdated(function (Set $set): void {
                             $this->syncBenefitEvidenceRows();
+                            $this->invalidateSignature($set);
                         })
                         ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['benefit', 'mixed'], true)),
                 ]),
@@ -158,14 +181,26 @@ class ApplyLoan extends CreateRecord
                             TextInput::make('bank_name')
                                 ->label('Banco')
                                 ->maxLength(100)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->required(),
                             TextInput::make('bank_account')
                                 ->label('Cuenta')
                                 ->maxLength(50)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->requiredWithout('interbank_clabe'),
                             TextInput::make('interbank_clabe')
                                 ->label('CLABE Interbancaria')
                                 ->maxLength(18)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $this->invalidateSignature($set);
+                                })
                                 ->requiredWithout('bank_account')
                                 ->regex('/^\d{1,18}$/')
                                 ->extraInputAttributes([
@@ -257,10 +292,76 @@ class ApplyLoan extends CreateRecord
                     Section::make('Confirmación')
                         ->description('La aceptación se registra contra los términos capturados y queda invalidada si cambian.')
                         ->schema([
+                            Html::make(fn (Get $get): HtmlString => $this->renderTermsSummary($get)),
+                            Radio::make('signature_type')
+                                ->label('Modalidad de Firma')
+                                ->options([
+                                    'drawn' => 'Firma autógrafa digitalizada (trazo manuscrito)',
+                                    'efirma' => 'e.firma del SAT (Firma electrónica avanzada)',
+                                ])
+                                ->descriptions([
+                                    'drawn' => 'Dibuje su firma en el recuadro digital tal como aparece en su credencial de elector (INE/IFE).',
+                                    'efirma' => 'Identificación mediante certificados digitales del SAT (mecanismo preparado para Fase 2).',
+                                ])
+                                ->default('drawn')
+                                ->live()
+                                ->required()
+                                ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                    if ($value === 'efirma') {
+                                        $fail('La modalidad con e.firma está en preparación para la Fase 2. Selecciona firma autógrafa digitalizada para poder enviar tu solicitud en esta fase.');
+                                    }
+                                }),
+                            SignaturePad::make('signature_data')
+                                ->label('Trazo de la Firma')
+                                ->helperText('Realice su firma dentro del recuadro usando su ratón, lápiz óptico o pantalla táctil. Este trazo se estampará en su solicitud, pagaré y anuencia de descuento.')
+                                ->required(fn (callable $get): bool => ($get('signature_type') ?? 'drawn') === 'drawn')
+                                ->visible(fn (callable $get): bool => ($get('signature_type') ?? 'drawn') === 'drawn'),
+                            Section::make('Mecanismo de e.firma (SAT)')
+                                ->icon(Heroicon::ShieldCheck)
+                                ->description('Estructura para la recepción y verificación de certificados digitales del SAT.')
+                                ->visible(fn (callable $get): bool => $get('signature_type') === 'efirma')
+                                ->schema([
+                                    Html::make(fn (): HtmlString => new HtmlString(
+                                        '<div class="flex items-start gap-3 rounded-xl border border-info-200 bg-info-50 p-4 text-info-800 dark:border-info-900/50 dark:bg-info-950/20 dark:text-info-200">'
+                                        .'<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/80 font-bold dark:bg-info-900">i</div>'
+                                        .'<div>'
+                                        .'<p class="font-semibold">Mecanismo preparado para adopción (Fase 2)</p>'
+                                        .'<p class="mt-1 text-sm leading-5">La infraestructura para recepción y validación de e.firma (.cer, .key y contraseña del SAT) se encuentra preparada. De conformidad con las políticas de la Fase 1, el trazo de firma autógrafa digitalizada es obligatorio para tramitar y enviar su solicitud en este momento.</p>'
+                                        .'</div>'
+                                        .'</div>'
+                                    )),
+                                    Grid::make(2)
+                                        ->schema([
+                                            TextInput::make('efirma_cert_mock')
+                                                ->label('Certificado (.cer)')
+                                                ->placeholder('ejemplo_rfc.cer')
+                                                ->disabled()
+                                                ->helperText('Archivo de certificado digital expedido por el SAT (mecanismo preparado)'),
+                                            TextInput::make('efirma_key_mock')
+                                                ->label('Clave privada (.key)')
+                                                ->placeholder('ejemplo_rfc.key')
+                                                ->disabled()
+                                                ->helperText('Archivo de clave privada protegida (mecanismo preparado)'),
+                                        ]),
+                                    TextInput::make('efirma_password_mock')
+                                        ->label('Contraseña de clave privada')
+                                        ->password()
+                                        ->placeholder('••••••••••••')
+                                        ->disabled()
+                                        ->helperText('Contraseña de acceso a su clave privada'),
+                                    Html::make(fn (): HtmlString => new HtmlString(
+                                        '<div class="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-200 border border-amber-200 dark:border-amber-900/50">'
+                                        .'<strong>Nota:</strong> Para completar y enviar esta solicitud ahora, por favor seleccione arriba la opción <em>"Firma autógrafa digitalizada"</em>.'
+                                        .'</div>'
+                                    )),
+                                ]),
                             Toggle::make('accept_terms')
                                 ->label('Acepto los términos, importes y condiciones de esta solicitud')
+                                ->helperText('Al marcar esta casilla y firmar, autorizo de forma voluntaria e irrevocable los descuentos correspondientes.')
                                 ->accepted()
                                 ->required(),
+                            Hidden::make('signed_terms_hash')
+                                ->dehydrated(),
                         ]),
                 ]),
         ];
@@ -271,6 +372,49 @@ class ApplyLoan extends CreateRecord
         /** @var User $user */
         $user = auth()->user();
         $this->ensureEvidenceCanProceed($data);
+
+        if (($data['signature_type'] ?? 'drawn') === 'efirma') {
+            Notification::make()
+                ->title('Modalidad no disponible para envío')
+                ->body('La modalidad con e.firma está en preparación para la Fase 2. Selecciona firma autógrafa digitalizada para enviar tu solicitud.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw ValidationException::withMessages([
+                'signature_type' => 'Selecciona firma autógrafa digitalizada para poder enviar tu solicitud en esta fase.',
+            ]);
+        }
+
+        if (empty($data['signature_data']) || ! str_starts_with((string) $data['signature_data'], 'data:image/')) {
+            Notification::make()
+                ->title('Firma obligatoria')
+                ->body('Debes plasmar tu firma en el recuadro para poder enviar la solicitud.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw ValidationException::withMessages([
+                'signature_data' => 'Debes plasmar tu firma en el recuadro para poder enviar la solicitud.',
+            ]);
+        }
+
+        $currentTermsHash = $this->calculateFormTermsHash($data);
+        if (! empty($data['signed_terms_hash']) && ! hash_equals($data['signed_terms_hash'], $currentTermsHash)) {
+            $this->invalidateSignature();
+
+            Notification::make()
+                ->title('Términos modificados')
+                ->body('Los términos de la solicitud cambiaron después de haber firmado. Debes firmar nuevamente.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw ValidationException::withMessages([
+                'signature_data' => 'Los términos de la solicitud cambiaron después de haber firmado. Debes firmar nuevamente.',
+            ]);
+        }
+
         $paymentType = LoanPaymentType::from((string) $data['payment_type']);
         $benefits = $data['benefits'] ?? [];
 
@@ -286,7 +430,7 @@ class ApplyLoan extends CreateRecord
         ]);
 
         $this->persistEvidence($loan, $data);
-        app(LoanService::class)->signLoan($loan, 'filament-accepted-'.now()->toIso8601String());
+        app(LoanService::class)->signLoan($loan, (string) $data['signature_data'], 'drawn');
         app(LoanService::class)->submitLoan($loan, $user);
 
         Notification::make()
@@ -296,6 +440,108 @@ class ApplyLoan extends CreateRecord
             ->send();
 
         return $loan->fresh();
+    }
+
+    public function invalidateSignature(?Set $set = null): void
+    {
+        $hadSignature = ! empty(data_get($this->data, 'signature_data')) || ! empty(data_get($this->data, 'accept_terms'));
+
+        if ($set) {
+            $set('signature_data', null);
+            $set('signed_terms_hash', null);
+            $set('accept_terms', false);
+        }
+
+        data_set($this, 'data.signature_data', null);
+        data_set($this, 'data.signed_terms_hash', null);
+        data_set($this, 'data.accept_terms', false);
+
+        if ($hadSignature) {
+            Notification::make()
+                ->title('Firma invalidada')
+                ->body('Los términos de la solicitud fueron modificados. Deberás firmar nuevamente la solicitud con los importes actualizados.')
+                ->warning()
+                ->send();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function calculateFormTermsHash(array $data): string
+    {
+        $benefits = collect($data['benefits'] ?? [])
+            ->filter(fn (array $b): bool => ! empty($b['benefit_id']))
+            ->sortBy('benefit_id')
+            ->map(fn (array $b): array => [
+                'benefit_id' => (int) $b['benefit_id'],
+                'amount' => (float) ($b['amount'] ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $payload = [
+            'payment_type' => (string) ($data['payment_type'] ?? ''),
+            'nomina_amount' => (float) ($data['nomina_amount'] ?? 0),
+            'nomina_fortnights' => (int) ($data['nomina_fortnights'] ?? 0),
+            'bank_name' => (string) ($data['bank_name'] ?? ''),
+            'bank_account' => (string) ($data['bank_account'] ?? ''),
+            'interbank_clabe' => (string) ($data['interbank_clabe'] ?? ''),
+            'benefits' => $benefits,
+        ];
+
+        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    protected function renderTermsSummary(callable $get): HtmlString
+    {
+        $paymentType = $get('payment_type');
+        $nominaAmount = (float) ($get('nomina_amount') ?? 0);
+        $nominaFortnights = (int) ($get('nomina_fortnights') ?? 0);
+        $benefits = collect($get('benefits') ?? [])->filter(fn (array $b): bool => ! empty($b['benefit_id']));
+        $bankName = $get('bank_name') ?: 'No especificado';
+        $accountOrClabe = $get('bank_account') ?: ($get('interbank_clabe') ?: 'No especificado');
+
+        $totalRequested = 0.0;
+        if (in_array($paymentType, ['nomina', 'mixed'], true)) {
+            $totalRequested += $nominaAmount;
+        }
+        if (in_array($paymentType, ['benefit', 'mixed'], true)) {
+            $totalRequested += $benefits->sum(fn (array $b): float => (float) ($b['amount'] ?? 0));
+        }
+
+        $typeLabel = match ($paymentType) {
+            'nomina' => 'Vía Nómina Quincenal',
+            'benefit' => 'Vía Prestación',
+            'mixed' => 'Mixta (Nómina y Prestaciones)',
+            default => 'Por definir',
+        };
+
+        $html = '<div class="rounded-xl border border-gray-200 bg-gray-50/60 p-4 text-xs dark:border-gray-800 dark:bg-gray-800/30 space-y-2.5">';
+        $html .= '<div class="flex items-center justify-between border-b border-gray-200/80 pb-2 dark:border-gray-700/60">';
+        $html .= '<span class="font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider text-[11px]">Resumen de Términos a Aceptar</span>';
+        $html .= '<span class="font-bold text-sm text-gray-900 dark:text-white">$ '.number_format($totalRequested, 2).'</span>';
+        $html .= '</div>';
+
+        $html .= '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-600 dark:text-gray-400">';
+        $html .= '<div>Modalidad: <strong class="text-gray-900 dark:text-white">'.$typeLabel.'</strong></div>';
+        $html .= '<div>Depósito: <strong class="text-gray-900 dark:text-white">'.$bankName.' ('.$accountOrClabe.')</strong></div>';
+
+        if (in_array($paymentType, ['nomina', 'mixed'], true)) {
+            $html .= '<div class="sm:col-span-2">Descuento nómina: <strong class="text-gray-900 dark:text-white">$ '.number_format($nominaAmount, 2).'</strong> en <strong class="text-gray-900 dark:text-white">'.$nominaFortnights.' quincenas</strong></div>';
+        }
+
+        if (in_array($paymentType, ['benefit', 'mixed'], true) && $benefits->isNotEmpty()) {
+            $benefitNames = Benefit::whereIn('id', $benefits->pluck('benefit_id'))->pluck('name', 'id');
+            $html .= '<div class="sm:col-span-2">Prestaciones comprometidas: ';
+            $items = $benefits->map(fn ($b) => ($benefitNames->get((int) $b['benefit_id'], 'Prestación')).': $'.number_format((float) ($b['amount'] ?? 0), 2))->join(', ');
+            $html .= '<strong class="text-gray-900 dark:text-white">'.$items.'</strong></div>';
+        }
+
+        $html .= '</div>';
+        $html .= '</div>';
+
+        return new HtmlString($html);
     }
 
     /**

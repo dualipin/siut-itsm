@@ -221,9 +221,9 @@ class LoanService
     }
 
     /**
-     * Sign loan with drawn signature.
+     * Sign loan with drawn signature or prepared efirma mechanism.
      */
-    public function signLoan(Loan $loan, string $signatureData): Loan
+    public function signLoan(Loan $loan, string $signatureData, string $signatureType = 'drawn'): Loan
     {
         if ($loan->status !== LoanStatus::Borrador) {
             throw new LoanTransitionException('Solo es posible firmar una solicitud en borrador.', 422);
@@ -233,7 +233,7 @@ class LoanService
 
         $loan->update([
             'signature_data' => $signatureData,
-            'signature_type' => 'drawn',
+            'signature_type' => $signatureType,
             'signature_hash' => $hash,
             'signed_at' => now(),
         ]);

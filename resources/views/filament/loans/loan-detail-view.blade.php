@@ -115,6 +115,15 @@
                         {{ $loan->isSignatureValid() ? '✓ Firma válida y verificada' : 'Pendiente / Invalidada' }}
                     </strong>
                 </div>
+
+                @if($loan->signature_data)
+                    <div class="flex items-center justify-between pt-1">
+                        <span class="text-xs text-gray-500">Trazo registrado:</span>
+                        <div class="rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700">
+                            <img src="{{ $loan->signature_data }}" class="max-h-10 max-w-[130px] object-contain" alt="Firma registrada">
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
     </div>

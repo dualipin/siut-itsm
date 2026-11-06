@@ -137,6 +137,8 @@ it('allows an authenticated agremiado to submit mixed loan wizard with automatic
 
     $this->actingAs($user);
 
+    $dummySignatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     $component = Livewire::test(ApplyLoan::class)
         ->fillForm([
             'payment_type' => 'mixed',
@@ -146,7 +148,6 @@ it('allows an authenticated agremiado to submit mixed loan wizard with automatic
             'bank_account' => '1234567890',
             'interbank_clabe' => '012180001234567890',
             'nomina_evidence' => $nominaFile,
-            'accept_terms' => true,
         ])
         ->set('data.benefits', [
             'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
@@ -159,6 +160,8 @@ it('allows an authenticated agremiado to submit mixed loan wizard with automatic
         ->and($benefitEvidences[$evidenceKey]['benefit_name'])->toBe('Aguinaldo');
 
     $component->set("data.benefit_evidences.{$evidenceKey}.file", [$benefitFile])
+        ->set('data.signature_data', $dummySignatureData)
+        ->set('data.accept_terms', true)
         ->call('create')
         ->assertHasNoFormErrors();
 
@@ -271,6 +274,8 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
 
     $this->actingAs($user);
 
+    $dummySignatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     Livewire::test(ApplyLoan::class)
         ->fillForm([
             'payment_type' => 'nomina',
@@ -280,6 +285,7 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
             'bank_account' => '1234567890',
             'interbank_clabe' => '012180001234567890',
             'nomina_evidence' => $file,
+            'signature_data' => $dummySignatureData,
             'accept_terms' => true,
         ])
         ->assertFormSet(['nomina_ai_status' => LoanAiStatus::Valido->value])
@@ -328,6 +334,8 @@ it('blocks submission when the evidence is invalid and explains how to replace i
 
     $this->actingAs($user);
 
+    $dummySignatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     Livewire::test(ApplyLoan::class)
         ->fillForm([
             'payment_type' => 'nomina',
@@ -336,6 +344,7 @@ it('blocks submission when the evidence is invalid and explains how to replace i
             'bank_name' => 'BBVA',
             'bank_account' => '1234567890',
             'nomina_evidence' => $file,
+            'signature_data' => $dummySignatureData,
             'accept_terms' => true,
         ])
         ->call('create')
@@ -352,6 +361,8 @@ it('allows submission for manual review when automatic document review is unavai
 
     $this->actingAs($user);
 
+    $dummySignatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     Livewire::test(ApplyLoan::class)
         ->fillForm([
             'payment_type' => 'nomina',
@@ -360,6 +371,7 @@ it('allows submission for manual review when automatic document review is unavai
             'bank_name' => 'BBVA',
             'bank_account' => '1234567890',
             'nomina_evidence' => $file,
+            'signature_data' => $dummySignatureData,
             'accept_terms' => true,
         ])
         ->assertFormSet(['nomina_ai_status' => LoanAiStatus::FalloTecnico->value])
@@ -785,4 +797,117 @@ it('blocks advancing from evidence step to final step when evidence is invalid',
     $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [2])
         ->assertNotified()
         ->assertNotDispatched('next-wizard-step');
+});
+
+it('requires drawn signature in final wizard step to submit loan', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_type' => 'drawn',
+            'signature_data' => null,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['signature_data']);
+});
+
+it('blocks submission and requires drawn signature when efirma is selected', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_type' => 'efirma',
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['signature_type']);
+});
+
+it('invalidates drawn signature and acceptance when loan simulation terms are changed', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 10000,
+            'nomina_fortnights' => 4,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_data' => $dummySig,
+            'accept_terms' => true,
+        ]);
+
+    expect($component->get('data.signature_data'))->toBe($dummySig)
+        ->and($component->get('data.accept_terms'))->toBeTrue();
+
+    // Now user changes nomina amount in simulation step
+    $component->fillForm([
+        'nomina_amount' => 15000,
+    ]);
+
+    expect($component->get('data.signature_data'))->toBeNull()
+        ->and($component->get('data.accept_terms'))->toBeFalse();
+});
+
+it('persists real drawn signature data on loan and generates pdfs with signature', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_type' => 'drawn',
+            'signature_data' => $dummySig,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    /** @var Loan $loan */
+    $loan = Loan::where('user_id', $user->id)->firstOrFail();
+
+    expect($loan->signature_data)->toBe($dummySig)
+        ->and($loan->signature_type)->toBe('drawn')
+        ->and($loan->isSignatureValid())->toBeTrue()
+        ->and($loan->status)->toBe(LoanStatus::Enviada);
 });
