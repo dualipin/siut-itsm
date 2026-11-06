@@ -38,6 +38,8 @@ it('allows authenticated users to access the application form', function () {
 
     $response->assertOk();
     $response->assertSee('Nueva Solicitud de Préstamo');
+    $response->assertDontSee('Tasa de Interés Mensual');
+    $response->assertDontSee('Primera Quincena');
 });
 
 it('allows an authenticated agremiado to submit the Filament loan wizard', function () {
@@ -49,10 +51,8 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
     Livewire::test(ApplyLoan::class)
         ->fillForm([
             'payment_type' => 'nomina',
-            'monthly_rate' => 6,
             'nomina_amount' => 15000,
             'nomina_fortnights' => 6,
-            'first_fortnight_date' => '2026-07-15',
             'bank_name' => 'BBVA',
             'bank_account' => '1234567890',
             'interbank_clabe' => '012180001234567890',
@@ -66,6 +66,8 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
         'user_id' => $user->id,
         'status' => LoanStatus::Enviada->value,
         'requested_amount' => 15000,
+        'monthly_rate' => null,
+        'first_fortnight_date' => '2026-06-30 00:00:00',
     ]);
 
     $this->assertDatabaseHas('loan_evidences', [
@@ -79,7 +81,6 @@ it('stores a loan draft and validates financial inputs', function () {
     $response = $this->actingAs($user)->postJson('/api/prestamos', [
         'payment_type' => 'nomina',
         'requested_amount' => 15000,
-        'monthly_rate' => 6.0,
         'nomina_amount' => 15000,
         'nomina_fortnights' => 6,
         'first_fortnight_date' => '2026-07-15',
@@ -96,6 +97,7 @@ it('stores a loan draft and validates financial inputs', function () {
     $this->assertDatabaseHas('loans', ['user_id' => $user->id,
         'status' => LoanStatus::Borrador->value,
         'requested_amount' => 15000,
+        'first_fortnight_date' => '2026-06-30 00:00:00',
     ]);
 });
 

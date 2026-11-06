@@ -51,6 +51,9 @@ class LoanService
 
         return DB::transaction(function () use ($user, $data) {
             $paymentType = LoanPaymentType::from($data['payment_type']);
+            $nominaSchedule = $paymentType->hasNomina()
+                ? $this->resolveNominaSchedule((int) ($data['nomina_fortnights'] ?? 0))
+                : null;
 
             $loan = Loan::create([
                 'folio' => Loan::generateFolio(),
@@ -61,10 +64,8 @@ class LoanService
                 'monthly_rate' => isset($data['monthly_rate']) && $data['monthly_rate'] !== null ? (float) $data['monthly_rate'] : null,
                 'salary_commitment_amount' => isset($data['salary_commitment_amount']) ? (float) $data['salary_commitment_amount'] : null,
                 'nomina_amount' => $paymentType->hasNomina() ? (float) ($data['nomina_amount'] ?? 0) : null,
-                'nomina_fortnights' => $paymentType->hasNomina() ? (int) ($data['nomina_fortnights'] ?? 0) : null,
-                'first_fortnight_date' => $paymentType->hasNomina() && ! empty($data['first_fortnight_date'])
-                    ? Carbon::parse($data['first_fortnight_date'])->format('Y-m-d')
-                    : null,
+                'nomina_fortnights' => $nominaSchedule['fortnights'] ?? null,
+                'first_fortnight_date' => $nominaSchedule['first_fortnight'] ?? null,
                 'bank_name' => $data['bank_name'] ?? null,
                 'bank_account' => $data['bank_account'] ?? null,
                 'interbank_clabe' => $data['interbank_clabe'] ?? null,
@@ -118,6 +119,9 @@ class LoanService
             $paymentType = isset($data['payment_type'])
                 ? LoanPaymentType::from($data['payment_type'])
                 : $loan->payment_type;
+            $nominaSchedule = $paymentType->hasNomina()
+                ? $this->resolveNominaSchedule((int) ($data['nomina_fortnights'] ?? $loan->nomina_fortnights ?? 0))
+                : null;
 
             $loan->update([
                 'payment_type' => $paymentType,
@@ -131,12 +135,8 @@ class LoanService
                 'nomina_amount' => $paymentType->hasNomina()
                     ? (float) ($data['nomina_amount'] ?? $loan->nomina_amount)
                     : null,
-                'nomina_fortnights' => $paymentType->hasNomina()
-                    ? (int) ($data['nomina_fortnights'] ?? $loan->nomina_fortnights)
-                    : null,
-                'first_fortnight_date' => $paymentType->hasNomina() && ! empty($data['first_fortnight_date'])
-                    ? Carbon::parse($data['first_fortnight_date'])->format('Y-m-d')
-                    : null,
+                'nomina_fortnights' => $nominaSchedule['fortnights'] ?? null,
+                'first_fortnight_date' => $nominaSchedule['first_fortnight'] ?? null,
                 'bank_name' => $data['bank_name'] ?? $loan->bank_name,
                 'bank_account' => $data['bank_account'] ?? $loan->bank_account,
                 'interbank_clabe' => $data['interbank_clabe'] ?? $loan->interbank_clabe,
@@ -155,6 +155,7 @@ class LoanService
                         'collection_date' => $collectionDate->format('Y-m-d'),
                     ]);
                 }
+
             } elseif (! $paymentType->hasBenefits()) {
                 $loan->loanBenefits()->delete();
             }
@@ -164,6 +165,34 @@ class LoanService
 
             return $loan;
         });
+    }
+
+    /**
+     * @return array{fortnights: int, first_fortnight: string}
+     *
+     * @throws ValidationException
+     */
+    private function resolveNominaSchedule(int $fortnights): array
+    {
+        $eligibleFortnights = $this->calendarService->getEligibleFortnights();
+        $firstFortnight = $eligibleFortnights[0]['date'] ?? null;
+
+        if ($firstFortnight === null) {
+            throw ValidationException::withMessages([
+                'nomina_fortnights' => 'No hay quincenas disponibles para este año.',
+            ]);
+        }
+
+        if ($fortnights < 1 || $fortnights > count($eligibleFortnights)) {
+            throw ValidationException::withMessages([
+                'nomina_fortnights' => 'El número de quincenas seleccionado no está disponible para este año.',
+            ]);
+        }
+
+        return [
+            'fortnights' => $fortnights,
+            'first_fortnight' => $firstFortnight,
+        ];
     }
 
     /**

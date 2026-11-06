@@ -75,7 +75,6 @@ const folio = ref<string | null>(props.activeLoan?.folio ?? null)
 // Step 1: Loan Configuration
 const paymentType = ref<'nomina' | 'benefit' | 'mixed'>('nomina')
 const requestedAmount = ref<number>(10000)
-const monthlyRate = ref<number | null>(props.activeLoan?.monthly_rate ? Number(props.activeLoan.monthly_rate) : null)
 const salaryCommitment = ref<number | null>(null)
 const bankName = ref<string>('')
 const bankAccount = ref<string>('')
@@ -245,7 +244,6 @@ async function saveDraft(): Promise<boolean> {
     loan_id: loanId.value,
     payment_type: paymentType.value,
     requested_amount: requestedAmount.value,
-    monthly_rate: monthlyRate.value,
     salary_commitment_amount: salaryCommitment.value,
     bank_name: bankName.value,
     bank_account: bankAccount.value,

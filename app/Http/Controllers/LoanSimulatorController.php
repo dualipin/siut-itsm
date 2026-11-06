@@ -93,8 +93,10 @@ class LoanSimulatorController extends Controller
 
         Cache::put('loan_application_'.$token, [
             'payment_type' => $validated['payment_type'],
-            'monthly_rate' => (float) $validated['monthly_rate'],
-            'nomina' => $validated['nomina'] ?? null,
+            'nomina' => isset($validated['nomina']) ? [
+                'amount' => $validated['nomina']['amount'],
+                'fortnights' => $validated['nomina']['fortnights'],
+            ] : null,
             'benefits' => $validated['benefits'] ?? [],
         ], now()->addMinutes(10));
 

@@ -10,7 +10,6 @@ use App\Models\LoanEvidence;
 use App\Models\User;
 use App\Services\LoanCalendarService;
 use App\Services\LoanService;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -49,7 +48,7 @@ class ApplyLoan extends CreateRecord
             return;
         }
 
-        /** @var array{payment_type: string, monthly_rate: float, nomina?: array{amount: float, fortnights: int, first_fortnight: string}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
+        /** @var array{payment_type: string, nomina?: array{amount: float, fortnights: int}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
         $simulation = Cache::get('loan_application_'.$token);
         if ($simulation === null) {
             return;
@@ -57,10 +56,8 @@ class ApplyLoan extends CreateRecord
 
         $this->form->fill([
             'payment_type' => $simulation['payment_type'],
-            'monthly_rate' => $simulation['monthly_rate'],
             'nomina_amount' => $simulation['nomina']['amount'] ?? null,
             'nomina_fortnights' => $simulation['nomina']['fortnights'] ?? null,
-            'first_fortnight_date' => $simulation['nomina']['first_fortnight'] ?? null,
             'benefits' => $simulation['benefits'] ?? [],
         ]);
     }
@@ -84,16 +81,7 @@ class ApplyLoan extends CreateRecord
                         ))
                         ->live()
                         ->required(),
-                    Select::make('monthly_rate')
-                        ->label('Tasa de Interés Mensual')
-                        ->options([
-                            6 => '6.00%',
-                            7.5 => '7.50%',
-                            8 => '8.00%',
-                            9.5 => '9.50%',
-                        ])
-                        ->required(),
-                    Grid::make(3)
+                    Grid::make(2)
                         ->schema([
                             TextInput::make('nomina_amount')
                                 ->label('Monto por Nómina')
@@ -101,17 +89,14 @@ class ApplyLoan extends CreateRecord
                                 ->minValue(1)
                                 ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
                                 ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
-                            TextInput::make('nomina_fortnights')
+                            Select::make('nomina_fortnights')
                                 ->label('Número de Quincenas')
-                                ->numeric()
-                                ->integer()
-                                ->minValue(1)
-                                ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
-                                ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
-                            DatePicker::make('first_fortnight_date')
-                                ->label('Primera Quincena')
-                                ->minDate(now()->addDays(20))
-                                ->maxDate(now()->setMonth(11)->setDay(30))
+                                ->options(fn (): array => collect($calendar->getEligibleFortnights())
+                                    ->keys()
+                                    ->mapWithKeys(fn (int $index): array => [
+                                        $index + 1 => ($index + 1).' '.($index === 0 ? 'quincena' : 'quincenas'),
+                                    ])
+                                    ->all())
                                 ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
                                 ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
                         ]),
@@ -210,10 +195,8 @@ class ApplyLoan extends CreateRecord
         $loan = app(LoanService::class)->createDraft($user, [
             'payment_type' => $paymentType->value,
             'requested_amount' => $this->calculateRequestedAmount($data),
-            'monthly_rate' => (float) $data['monthly_rate'],
             'nomina_amount' => $data['nomina_amount'] ?? null,
             'nomina_fortnights' => $data['nomina_fortnights'] ?? null,
-            'first_fortnight_date' => $data['first_fortnight_date'] ?? null,
             'bank_name' => $data['bank_name'] ?? null,
             'bank_account' => $data['bank_account'] ?? null,
             'interbank_clabe' => $data['interbank_clabe'] ?? null,
