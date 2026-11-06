@@ -15,31 +15,43 @@
                 <x-filament::badge :color="$loan->status->getColor()" size="sm">
                     {{ $loan->status->getLabel() }}
                 </x-filament::badge>
-                <x-filament::badge color="gray" size="sm">
+                <x-filament::badge :color="$loan->payment_type->getColor()" size="sm">
                     {{ $loan->payment_type->getLabel() }}
                 </x-filament::badge>
             </div>
         </div>
 
         @if($loan->status->value === 'rechazada' && $loan->rejection_reason)
-            <div class="mt-4 rounded-lg border border-red-200 bg-red-50/70 p-4 text-sm text-red-900 text-wrap-pretty dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-                <strong class="font-semibold">Motivo del rechazo:</strong> {{ $loan->rejection_reason }}
+            <div class="mt-4 flex items-start gap-3 rounded-lg border border-danger-200 bg-danger-50/70 p-4 text-sm text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-200">
+                <x-filament::icon icon="heroicon-m-x-circle" class="h-5 w-5 shrink-0 text-danger-600 dark:text-danger-400 mt-0.5" />
+                <div class="min-w-0">
+                    <strong class="font-semibold">Motivo del rechazo:</strong>
+                    <p class="mt-0.5 text-wrap-pretty">{{ $loan->rejection_reason }}</p>
+                </div>
             </div>
         @endif
 
         @if($loan->status->value === 'lista_espera' && $loan->waitlist_reason)
-            <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 text-wrap-pretty dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                <strong class="font-semibold">Motivo de lista de espera:</strong> {{ $loan->waitlist_reason }}
+            <div class="mt-4 flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50/70 p-4 text-sm text-warning-900 dark:border-warning-900/50 dark:bg-warning-950/30 dark:text-warning-200">
+                <x-filament::icon icon="heroicon-m-clock" class="h-5 w-5 shrink-0 text-warning-600 dark:text-warning-400 mt-0.5" />
+                <div class="min-w-0">
+                    <strong class="font-semibold">Motivo de lista de espera:</strong>
+                    <p class="mt-0.5 text-wrap-pretty">{{ $loan->waitlist_reason }}</p>
+                </div>
             </div>
         @endif
 
         @if(!$loan->documents_generated && in_array($loan->status->value, ['aprobada', 'desembolsada']))
-            <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 text-wrap-pretty dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                <strong class="font-semibold">Documentos pendientes:</strong> La solicitud fue aprobada pero hubo un inconveniente al generar los archivos PDF automáticos. Puedes regenerarlos usando la acción del menú superior.
+            <div class="mt-4 flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50/70 p-4 text-sm text-warning-900 dark:border-warning-900/50 dark:bg-warning-950/30 dark:text-warning-200">
+                <x-filament::icon icon="heroicon-m-exclamation-triangle" class="h-5 w-5 shrink-0 text-warning-600 dark:text-warning-400 mt-0.5" />
+                <div class="min-w-0">
+                    <strong class="font-semibold">Documentos pendientes:</strong>
+                    <p class="mt-0.5 text-wrap-pretty">La solicitud fue aprobada pero hubo un inconveniente al generar los archivos PDF automáticos. Puedes regenerarlos usando la acción del menú superior.</p>
+                </div>
             </div>
         @endif
 
-        <!-- Métricas Financieras Principales (sin tarjetas anidadas) -->
+        <!-- Métricas Financieras Principales -->
         <div class="grid grid-cols-2 gap-4 pt-5 sm:grid-cols-4 sm:gap-6">
             <div>
                 <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Monto solicitado</dt>
@@ -49,7 +61,7 @@
             </div>
             <div>
                 <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Monto aprobado</dt>
-                <dd class="mt-1 text-xl font-semibold tracking-tight tabular-nums {{ $loan->approved_amount ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500 text-base font-normal' }}">
+                <dd class="mt-1 text-xl font-semibold tracking-tight tabular-nums {{ $loan->approved_amount ? 'text-success-600 dark:text-success-400' : 'text-gray-500 dark:text-gray-400 text-base font-normal' }}">
                     {{ $loan->approved_amount ? '$'.number_format($loan->approved_amount, 2) : 'Por dictaminar' }}
                 </dd>
             </div>
@@ -161,7 +173,7 @@
                         <dd class="space-y-1">
                             @foreach($loan->loanBenefits as $lb)
                                 <div class="flex justify-between items-center text-xs text-gray-700 dark:text-gray-300">
-                                    <span>{{ $lb->benefit->name ?? 'Prestación' }} <span class="text-gray-400 tabular-nums">({{ $lb->collection_date?->format('d/m/Y') }})</span></span>
+                                    <span>{{ $lb->benefit->name ?? 'Prestación' }} <span class="text-gray-500 dark:text-gray-400 tabular-nums">({{ $lb->collection_date?->format('d/m/Y') }})</span></span>
                                     <span class="font-semibold tabular-nums text-gray-900 dark:text-white">${{ number_format($lb->approved_amount ?? $lb->requested_amount, 2) }}</span>
                                 </div>
                             @endforeach
@@ -249,7 +261,7 @@
                                 <span class="text-sm font-medium text-gray-900 dark:text-white">
                                     {{ $ev->source_type === 'nomina' ? 'Comprobante de Nómina' : ($ev->benefit->name ?? 'Prestación') }}
                                 </span>
-                                <span class="text-xs text-gray-500 tabular-nums">({{ round($ev->file_size / 1024) }} KB)</span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums">({{ round($ev->file_size / 1024) }} KB)</span>
                             </div>
 
                             <div class="flex items-center gap-2">
@@ -289,14 +301,14 @@
                                     </a>
                                 @endif
 
-                                <a href="{{ route('loans.evidences.download', ['loan' => $loan->id, 'evidence' => $ev->id]) }}" target="_blank" class="text-xs font-semibold text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 underline-offset-2 hover:underline ml-1">
+                                <a href="{{ route('loans.evidences.download', ['loan' => $loan->id, 'evidence' => $ev->id]) }}" target="_blank" class="text-xs font-semibold text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 underline-offset-2 hover:underline ml-1">
                                     Descargar
                                 </a>
                             </div>
                         </div>
 
                         @if($canReview)
-                            <!-- Metadatos extraídos por IA (diseño limpio y plano) -->
+                            <!-- Metadatos extraídos por IA -->
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400 pt-1">
                                 <div><span class="text-gray-500 dark:text-gray-400">Clasificación IA:</span> <span class="font-medium text-gray-900 dark:text-gray-200">{{ $ev->ai_classification ?? 'N/A' }}</span></div>
                                 <div><span class="text-gray-500 dark:text-gray-400">Confianza:</span> <span class="font-medium tabular-nums text-gray-900 dark:text-gray-200">{{ $ev->ai_confidence ? number_format($ev->ai_confidence * 100, 1).'%' : 'N/A' }}</span></div>
@@ -307,7 +319,7 @@
                         @if($ev->manual_review_notes)
                             <div class="text-xs text-gray-600 dark:text-gray-400 text-wrap-pretty pt-1">
                                 <span class="font-semibold text-gray-700 dark:text-gray-300">Nota del revisor:</span> {{ $ev->manual_review_notes }}
-                                <span class="text-gray-400">({{ $ev->reviewer->full_name ?? 'Revisor' }})</span>
+                                <span class="text-gray-500 dark:text-gray-400">({{ $ev->reviewer->full_name ?? 'Revisor' }})</span>
                             </div>
                         @endif
                     </div>
@@ -436,7 +448,7 @@
                         </div>
                         <div class="text-right text-gray-500 dark:text-gray-400 shrink-0">
                             <div>{{ $h->user->full_name ?? 'Sistema' }}</div>
-                            <div class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
+                            <div class="text-xs tabular-nums text-gray-500 dark:text-gray-400">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
                         </div>
                     </div>
                 @endforeach
