@@ -161,6 +161,15 @@ class LoanPdfGenerationService
             'type' => $r->type,
         ])->toArray();
 
+        $installmentAmount = ($loan->payment_type->hasNomina() && ($loan->nomina_fortnights ?? 0) > 0)
+            ? round(($loan->nomina_amount ?? $amount) / (int) $loan->nomina_fortnights, 2)
+            : $amount;
+
+        $firstFortnightDate = $loan->first_fortnight_date?->format('Y-m-d')
+            ?? now()->addDays(15)->format('Y-m-d');
+
+        $termFortnights = (int) ($loan->nomina_fortnights ?? 0);
+
         return [
             'loan' => $loan,
             'user' => $user,
@@ -170,6 +179,10 @@ class LoanPdfGenerationService
             'summary' => $summary,
             'amortizationTable' => $amortizationTable,
             'documentColors' => $this->documentThemePalette->resolve(),
+            'logoSrc' => public_path('assets/images/logo.webp'),
+            'installmentAmount' => $installmentAmount,
+            'firstFortnightDate' => $firstFortnightDate,
+            'termFortnights' => $termFortnights,
         ];
     }
 }
