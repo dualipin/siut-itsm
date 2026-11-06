@@ -672,3 +672,117 @@ it('disallows selecting the same benefit more than once and disables it in sibli
         ->call('callSchemaComponentMethod', $wizard->getKey(), 'nextStep', [0])
         ->assertHasFormErrors(['benefits.item-2.benefit_id']);
 });
+
+it('advances from evidence step to final step when evidence is valid and in array form', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->image('recibo.png', 200, 200);
+
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'clasificacion' => 'recibo_nomina',
+                            'campos' => ['nombre_trabajador' => $user->full_name],
+                            'confianza' => 0.95,
+                            'observaciones' => 'Recibo válido.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'interbank_clabe' => '012180001234567890',
+            'nomina_evidence' => $file,
+        ]);
+
+    $getWizard = fn () => $component->instance()->form->getComponent(
+        fn ($c): bool => $c instanceof Wizard,
+    );
+
+    // Step 0 (Simulación) -> Step 1 (Datos Bancarios)
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [0]);
+    $component->assertHasNoFormErrors();
+    expect($getWizard()->getCurrentStepIndex())->toBe(1);
+
+    // Step 1 (Datos Bancarios) -> Step 2 (Evidencias)
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [1]);
+    $component->assertHasNoFormErrors();
+    expect($getWizard()->getCurrentStepIndex())->toBe(2);
+
+    // Step 2 (Evidencias) -> Step 3 (Firma y Envío)
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [2]);
+    $component->assertHasNoFormErrors();
+    expect($getWizard()->getCurrentStepIndex())->toBe(3);
+});
+
+it('blocks advancing from evidence step to final step when evidence is invalid', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->image('recibo_ajeno.png', 200, 200);
+
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'clasificacion' => 'invalido',
+                            'campos' => [],
+                            'confianza' => 0.99,
+                            'observaciones' => 'No corresponde.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'interbank_clabe' => '012180001234567890',
+            'nomina_evidence' => $file,
+        ]);
+
+    $getWizard = fn () => $component->instance()->form->getComponent(
+        fn ($c): bool => $c instanceof Wizard,
+    );
+
+    // Step 0 -> Step 1
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [0]);
+    expect($getWizard()->getCurrentStepIndex())->toBe(1);
+
+    // Step 1 -> Step 2
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [1]);
+    expect($getWizard()->getCurrentStepIndex())->toBe(2);
+
+    // Step 2 -> Step 3 should be blocked because evidence is invalid
+    $component->call('callSchemaComponentMethod', $getWizard()->getKey(), 'nextStep', [2])
+        ->assertNotified()
+        ->assertNotDispatched('next-wizard-step');
+});

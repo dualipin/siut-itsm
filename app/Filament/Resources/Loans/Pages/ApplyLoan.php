@@ -29,6 +29,8 @@ use Filament\Schemas\Components\Wizard\Step;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
@@ -182,7 +184,7 @@ class ApplyLoan extends CreateRecord
                     $this->syncBenefitEvidenceRows();
                 })
                 ->afterValidation(function (): void {
-                    $this->ensureEvidenceCanProceed($this->form->getState());
+                    $this->ensureEvidenceCanProceed($this->form->getRawState());
                 })
                 ->schema([
                     Section::make('Comprobante de Nómina')
@@ -314,17 +316,25 @@ class ApplyLoan extends CreateRecord
     private function persistEvidence(Loan $loan, array $data): void
     {
         if (! empty($data['nomina_evidence'])) {
-            $this->createEvidence($loan, (string) $data['nomina_evidence'], 'nomina');
+            $file = $this->extractEvidenceFile($data['nomina_evidence']);
+            $path = is_string($file) ? $file : $this->prepareEvidencePath($file);
+            if ($path) {
+                $this->createEvidence($loan, $path, 'nomina');
+            }
         }
 
         foreach ($data['benefit_evidences'] ?? [] as $evidenceData) {
             if (! empty($evidenceData['file']) && ! empty($evidenceData['benefit_id'])) {
-                $this->createEvidence(
-                    $loan,
-                    (string) $evidenceData['file'],
-                    'benefit',
-                    (int) $evidenceData['benefit_id'],
-                );
+                $file = $this->extractEvidenceFile($evidenceData['file']);
+                $path = is_string($file) ? $file : $this->prepareEvidencePath($file);
+                if ($path) {
+                    $this->createEvidence(
+                        $loan,
+                        $path,
+                        'benefit',
+                        (int) $evidenceData['benefit_id'],
+                    );
+                }
             }
         }
     }
@@ -409,14 +419,15 @@ class ApplyLoan extends CreateRecord
 
     private function evaluateEvidenceState(mixed $state, string $sourceType, ?int $benefitId = null): string
     {
-        $path = $this->prepareEvidencePath($state);
+        $rawFile = $this->extractEvidenceFile($state);
+        $path = $this->prepareEvidencePath($rawFile);
         if (! $path) {
             return 'Pendiente de análisis';
         }
 
         $status = $this->evaluateEvidenceForForm($path, $sourceType, $benefitId);
 
-        if ($state instanceof TemporaryUploadedFile) {
+        if ($rawFile instanceof TemporaryUploadedFile || $rawFile instanceof UploadedFile) {
             Storage::disk('local')->delete($path);
         }
 
@@ -432,7 +443,7 @@ class ApplyLoan extends CreateRecord
 
         if (! empty($data['nomina_evidence'])) {
             $evidences[] = [
-                'path' => (string) $data['nomina_evidence'],
+                'file' => $data['nomina_evidence'],
                 'source_type' => 'nomina',
                 'field' => 'nomina_evidence',
                 'status' => (string) ($data['nomina_ai_status'] ?? 'pendiente'),
@@ -442,7 +453,7 @@ class ApplyLoan extends CreateRecord
         foreach ($data['benefit_evidences'] ?? [] as $index => $evidenceData) {
             if (! empty($evidenceData['file']) && ! empty($evidenceData['benefit_id'])) {
                 $evidences[] = [
-                    'path' => (string) $evidenceData['file'],
+                    'file' => $evidenceData['file'],
                     'source_type' => 'benefit',
                     'benefit_id' => (int) $evidenceData['benefit_id'],
                     'field' => "benefit_evidences.{$index}.file",
@@ -452,15 +463,39 @@ class ApplyLoan extends CreateRecord
         }
 
         foreach ($evidences as $evidence) {
-            if ($evidence['status'] === 'fallo_tecnico') {
+            $status = $evidence['status'];
+
+            if (in_array($status, ['valido', 'fallo_tecnico'], true)) {
+                continue;
+            }
+
+            if (in_array($status, ['invalido', 'dudoso'], true)) {
+                Notification::make()
+                    ->title('No puedes continuar todavía')
+                    ->body($this->evidenceBlockingMessage($status))
+                    ->danger()
+                    ->persistent()
+                    ->send();
+
+                throw new Halt;
+            }
+
+            $rawFile = $this->extractEvidenceFile($evidence['file']);
+            $path = $this->prepareEvidencePath($rawFile);
+
+            if (! $path) {
                 continue;
             }
 
             $result = $this->evaluateEvidenceForPersistence(
-                $evidence['path'],
+                $path,
                 $evidence['source_type'],
                 $evidence['benefit_id'] ?? null,
             );
+
+            if ($rawFile instanceof TemporaryUploadedFile || $rawFile instanceof UploadedFile) {
+                Storage::disk('local')->delete($path);
+            }
 
             if (in_array($result['ai_status']->value, ['valido', 'fallo_tecnico'], true)) {
                 continue;
@@ -529,14 +564,25 @@ class ApplyLoan extends CreateRecord
         );
     }
 
-    private function prepareEvidencePath(mixed $state): ?string
+    private function extractEvidenceFile(mixed $state): mixed
     {
-        if (is_string($state) && $state !== '') {
-            return $state;
+        if (is_array($state)) {
+            return Arr::first($state);
         }
 
-        if ($state instanceof TemporaryUploadedFile) {
-            return $state->store('loan-evidence-poc', 'local');
+        return $state;
+    }
+
+    private function prepareEvidencePath(mixed $state): ?string
+    {
+        $file = $this->extractEvidenceFile($state);
+
+        if (is_string($file) && $file !== '') {
+            return $file;
+        }
+
+        if ($file instanceof TemporaryUploadedFile || $file instanceof UploadedFile) {
+            return $file->store('loan-evidence-poc', 'local');
         }
 
         return null;
