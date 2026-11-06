@@ -71,3 +71,25 @@ it('returns eligible benefits whose collection date has not passed in current ye
     expect($names)->toContain('Aguinaldo Diciembre')
         ->not->toContain('Prestación Pasada');
 });
+
+it('calculates the completion date for k fortnights correctly', function () {
+    // 1 quincena on 2026-11-30 completes on 2026-11-30
+    $end1 = $this->calendar->calculateFortnightDate('2026-11-30', 1);
+    expect($end1->format('Y-m-d'))->toBe('2026-11-30');
+
+    // 2 quincenas on 2026-11-30 completes on 2026-12-15
+    $end2 = $this->calendar->calculateFortnightDate('2026-11-30', 2);
+    expect($end2->format('Y-m-d'))->toBe('2026-12-15');
+
+    // 3 quincenas on 2026-11-30 completes on 2026-12-31
+    $end3 = $this->calendar->calculateFortnightDate('2026-11-30', 3);
+    expect($end3->format('Y-m-d'))->toBe('2026-12-31');
+
+    // 1 quincena starting 2026-06-15 completes on 2026-06-15
+    $endMid1 = $this->calendar->calculateFortnightDate('2026-06-15', 1);
+    expect($endMid1->format('Y-m-d'))->toBe('2026-06-15');
+
+    // 2 quincenas starting 2026-06-15 completes on 2026-06-30
+    $endMid2 = $this->calendar->calculateFortnightDate('2026-06-15', 2);
+    expect($endMid2->format('Y-m-d'))->toBe('2026-06-30');
+});

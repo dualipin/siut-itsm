@@ -123,4 +123,40 @@ class LoanCalendarService
             'year' => $date->year,
         ];
     }
+
+    /**
+     * Compute the next chronological fortnight date.
+     * If day < 15, goes to 15th of current month.
+     * If day == 15, goes to end of current month.
+     * If day is end of month, goes to 15th of next month.
+     */
+    public function nextFortnight(Carbon $date): Carbon
+    {
+        $day = $date->day;
+
+        if ($day < 15) {
+            return $date->copy()->setDay(15);
+        }
+
+        if ($day === 15) {
+            return $date->copy()->endOfMonth()->startOfDay();
+        }
+
+        return $date->copy()->addMonthNoOverflow()->setDay(15);
+    }
+
+    /**
+     * Calculate the date on which the k-th fortnight falls, starting from $firstFortnight.
+     * For k=1, this is $firstFortnight itself.
+     * For k=2, this is the next fortnight after $firstFortnight, and so forth.
+     */
+    public function calculateFortnightDate(Carbon|string $firstFortnight, int $fortnights): Carbon
+    {
+        $current = Carbon::parse($firstFortnight)->copy();
+        for ($i = 1; $i < $fortnights; $i++) {
+            $current = $this->nextFortnight($current);
+        }
+
+        return $current;
+    }
 }
