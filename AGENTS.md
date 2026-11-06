@@ -24,6 +24,8 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
 - Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
 - Check for existing components to reuse before writing a new one.
+- No use emojis
+- In production, the server is a shared hosting environment, no ssh, no shell.
 
 ## Verification Scripts
 
@@ -441,5 +443,5 @@ livewire(ListUsers::class)
 - `spatie/laravel-medialibrary` associates files with Eloquent models, with support for collections, conversions, and responsive images.
 - Always activate the `medialibrary-development` skill when working with media uploads, conversions, collections, responsive images, or any code that uses the `HasMedia` interface or `InteractsWithMedia` trait.
 
-</laravel-boost-guidelines>
 
+</laravel-boost-guidelines>

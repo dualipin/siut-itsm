@@ -38,14 +38,14 @@
             {{ $name }}
         </h3>
 
-        <span class="badge badge-xs badge-soft badge-primary font-medium tracking-wide -mt-1">
-            ¡Cumpleaños Hoy! 🎈
+        <span class="badge badge-sm badge-soft badge-primary text-xs font-semibold tracking-wide -mt-0.5">
+            ¡Cumpleaños Hoy!
         </span>
 
-        <div class="divider divider-primary my-1 w-16 mx-auto opacity-30"></div>
+        <div class="divider divider-primary my-1.5 w-16 mx-auto opacity-25"></div>
 
-        <p class="text-xs italic text-base-content/80 leading-relaxed font-serif max-w-xs">
-            “{{ $message }}”
+        <p class="text-xs italic text-base-content/85 leading-relaxed font-serif max-w-xs text-pretty">
+            «{{ $message }}»
         </p>
 
         <!-- Etiquetas de deseos con card-actions y badges DaisyUI -->

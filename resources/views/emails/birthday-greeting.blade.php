@@ -1,29 +1,25 @@
 <x-mail::message>
-# 🎂 ¡Feliz Cumpleaños, {{ $user->name }}! 🎉
+# ¡Feliz Cumpleaños, {{ $user->name }}!
 
-En este día tan especial, todo el equipo de **{{ config('syndicate.name') }} ({{ config('syndicate.acronym') }})** queremos hacerte llegar nuestras más sinceras felicitaciones y mejores deseos.
+En este día tan especial, quienes integramos el **{{ config('syndicate.name') }} ({{ config('syndicate.acronym') }})** nos unimos para hacerle llegar nuestras más sinceras felicitaciones y mejores augurios.
 
 <x-mail::panel>
-"{{ $messageContent }}"
+*«{{ $messageContent }}»*
 </x-mail::panel>
 
 @if(!empty($greetingTags))
-**Nuestros mejores deseos para ti en este nuevo ciclo:**
-
-@foreach($greetingTags as $tag)
-`{{ $tag }}` &nbsp;
-@endforeach
+**Deseos para este nuevo ciclo:**  
+{{ implode(' • ', $greetingTags) }}
 @endif
 
-<br>
-
-Gracias por formar parte de nuestra comunidad sindical. Que este nuevo año de vida esté colmado de salud, bendiciones, metas cumplidas y momentos memorables junto a quienes más quieres.
+Agradecemos profundamente su valiosa labor y compromiso diario como parte fundamental de nuestra comunidad gremial. Que este nuevo año de vida le depare plena salud, bienestar, metas consolidadas y gratos momentos junto a su apreciable familia.
 
 <x-mail::button :url="config('app.url')">
-Ir al Portal Sindical
+Acceder al Portal Sindical
 </x-mail::button>
 
-Con aprecio y fraternidad,<br>
-**{{ config('syndicate.name') }} ({{ config('syndicate.acronym') }})**<br>
-_{{ config('syndicate.slogan', 'En unidad permanente, TODOS SOMOS LA FUERZA') }}_
+Fraternalmente,<br>
+**Comité Ejecutivo**<br>
+{{ config('syndicate.name') }} ({{ config('syndicate.acronym') }})<br>
+*«{{ config('syndicate.slogan', 'En unidad permanente, TODOS SOMOS LA FUERZA') }}»*
 </x-mail::message>

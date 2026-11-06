@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\MessageAttachmentController;
 use App\Http\Controllers\PublicPetitionController;
@@ -19,6 +20,25 @@ Route::middleware(['web', 'auth'])->group(function () {
 
     Route::get('/portal/transparency-documents/{document}', [TransparencyDocumentController::class, 'show'])
         ->name('portal.transparency.documents.show');
+
+    // Módulo de Préstamos - Solicitud y Documentos
+    Route::post('/api/prestamos', [LoanApplicationController::class, 'store'])
+        ->name('loans.store');
+
+    Route::post('/api/prestamos/evidencias', [LoanApplicationController::class, 'uploadEvidence'])
+        ->name('loans.evidences.upload');
+
+    Route::post('/api/prestamos/{loan}/firmar', [LoanApplicationController::class, 'sign'])
+        ->name('loans.sign');
+
+    Route::post('/api/prestamos/{loan}/enviar', [LoanApplicationController::class, 'submit'])
+        ->name('loans.submit');
+
+    Route::get('/portal/prestamos/{loan}/documentos/{document}', [LoanApplicationController::class, 'downloadDocument'])
+        ->name('loans.documents.download');
+
+    Route::get('/portal/prestamos/{loan}/evidencias/{evidence}', [LoanApplicationController::class, 'downloadEvidence'])
+        ->name('loans.evidences.download');
 });
 
 Route::post('/api/petitions/{annualPetition}/submit', [PublicPetitionController::class, 'store'])

@@ -490,50 +490,76 @@ class ReviewDocuments extends ViewRecord
 
     // ── Navigation helpers ────────────────────────────────────────────────────
 
+    private ?User $cachedPreviousRecord = null;
+
+    private bool $hasCheckedPreviousRecord = false;
+
+    private ?User $cachedNextRecord = null;
+
+    private bool $hasCheckedNextRecord = false;
+
     private function getPreviousRecord(): ?User
     {
+        if ($this->hasCheckedPreviousRecord) {
+            return $this->cachedPreviousRecord;
+        }
+
+        $this->hasCheckedPreviousRecord = true;
+
         /** @var User $current */
         $current = $this->getRecord();
+        $surnames = (string) ($current->surnames ?? '');
+        $name = (string) ($current->name ?? '');
+        $id = $current->getKey();
 
-        return User::query()
-            ->where(function ($query) use ($current): void {
-                $query->where('surnames', '<', $current->surnames)
-                    ->orWhere(function ($query) use ($current): void {
-                        $query->where('surnames', '=', $current->surnames)
-                            ->where('name', '<', $current->name);
+        return $this->cachedPreviousRecord = User::query()
+            ->where(function ($query) use ($name, $surnames, $id): void {
+                $query->where('name', '<', $name)
+                    ->orWhere(function ($query) use ($name, $surnames): void {
+                        $query->where('name', '=', $name)
+                            ->whereRaw("COALESCE(surnames, '') < ?", [$surnames]);
                     })
-                    ->orWhere(function ($query) use ($current): void {
-                        $query->where('surnames', '=', $current->surnames)
-                            ->where('name', '=', $current->name)
-                            ->where('id', '<', $current->id);
+                    ->orWhere(function ($query) use ($name, $surnames, $id): void {
+                        $query->where('name', '=', $name)
+                            ->whereRaw("COALESCE(surnames, '') = ?", [$surnames])
+                            ->where('id', '<', $id);
                     });
             })
-            ->orderBy('surnames', 'desc')
             ->orderBy('name', 'desc')
+            ->orderByRaw("COALESCE(surnames, '') DESC")
             ->orderBy('id', 'desc')
             ->first();
     }
 
     private function getNextRecord(): ?User
     {
+        if ($this->hasCheckedNextRecord) {
+            return $this->cachedNextRecord;
+        }
+
+        $this->hasCheckedNextRecord = true;
+
         /** @var User $current */
         $current = $this->getRecord();
+        $name = (string) ($current->name ?? '');
+        $surnames = (string) ($current->surnames ?? '');
+        $id = $current->getKey();
 
-        return User::query()
-            ->where(function ($query) use ($current): void {
-                $query->where('surnames', '>', $current->surnames)
-                    ->orWhere(function ($query) use ($current): void {
-                        $query->where('surnames', '=', $current->surnames)
-                            ->where('name', '>', $current->name);
+        return $this->cachedNextRecord = User::query()
+            ->where(function ($query) use ($name, $surnames, $id): void {
+                $query->where('name', '>', $name)
+                    ->orWhere(function ($query) use ($name, $surnames): void {
+                        $query->where('name', '=', $name)
+                            ->whereRaw("COALESCE(surnames, '') > ?", [$surnames]);
                     })
-                    ->orWhere(function ($query) use ($current): void {
-                        $query->where('surnames', '=', $current->surnames)
-                            ->where('name', '=', $current->name)
-                            ->where('id', '>', $current->id);
+                    ->orWhere(function ($query) use ($name, $surnames, $id): void {
+                        $query->where('name', '=', $name)
+                            ->whereRaw("COALESCE(surnames, '') = ?", [$surnames])
+                            ->where('id', '>', $id);
                     });
             })
-            ->orderBy('surnames')
             ->orderBy('name')
+            ->orderByRaw("COALESCE(surnames, '') ASC")
             ->orderBy('id')
             ->first();
     }

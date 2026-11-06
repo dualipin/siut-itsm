@@ -4,6 +4,7 @@ use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
 use App\Enums\UserRole;
 use App\Filament\Resources\Users\Pages\ReviewDocuments;
+use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Http\UploadedFile;
@@ -129,4 +130,36 @@ test('admin can approve all documents at once', function () {
 
     $user->refresh();
     expect($user->areAllDocumentsValid())->toBeTrue();
+});
+
+test('review documents page orders navigation by name and handles null surnames', function () {
+    $firstUser = User::factory()->create([
+        'name' => '111 Primero',
+        'surnames' => null,
+        'role' => UserRole::Admin,
+    ]);
+
+    $secondUser = User::factory()->create([
+        'name' => '222 Segundo',
+        'surnames' => 'Perez',
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $thirdUser = User::factory()->create([
+        'name' => '333 Tercero',
+        'surnames' => 'Alvarez',
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $this->get(route('filament.portal.resources.users.review-documents', ['record' => $firstUser]))
+        ->assertSuccessful()
+        ->assertSee('Revisión de Documentos');
+
+    // Ordered by name: 111 Primero -> 222 Segundo (Perez) -> 333 Tercero (Alvarez)
+    // If it were ordered by surname, Alvarez (333) would come before Perez (222).
+    Livewire::test(ReviewDocuments::class, ['record' => $secondUser->getRouteKey()])
+        ->assertActionEnabled('previousRecord')
+        ->assertActionEnabled('nextRecord')
+        ->assertSeeHtml(UserResource::getUrl('review-documents', ['record' => $firstUser]))
+        ->assertSeeHtml(UserResource::getUrl('review-documents', ['record' => $thirdUser]));
 });

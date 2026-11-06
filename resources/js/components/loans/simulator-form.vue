@@ -205,16 +205,18 @@ const loanTotalFormatted = computed(() =>
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 const pdfOpened = ref(false)
+const applicationUrl = ref('')
 
 const submit = async () => {
     pdfOpened.value = false
 
     await form.post('/api/simulador-prestamo/simulate', {
-        onSuccess: (data: { pdf_url?: string }) => {
+        onSuccess: (data: { pdf_url?: string; application_url?: string }) => {
             if (data.pdf_url) {
                 window.open(data.pdf_url, '_blank', 'noopener')
                 pdfOpened.value = true
             }
+            applicationUrl.value = data.application_url ?? ''
         },
     })
 }
@@ -273,6 +275,9 @@ function fieldError(key: string): string | undefined {
                         <path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/>
                     </svg>
                     <span class="text-sm">Simulación completada. El PDF se abrió en una pestaña nueva.</span>
+                    <a v-if="applicationUrl" :href="applicationUrl" class="btn btn-primary btn-sm ml-auto">
+                        Continuar solicitud
+                    </a>
                 </div>
 
                 <div v-if="form.statusType === 'error'" role="alert" class="alert alert-error rounded-box flex items-center gap-3">

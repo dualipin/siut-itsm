@@ -205,6 +205,16 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
     }
 
     /**
+     * Get the loans requested by the user.
+     *
+     * @return HasMany<Loan, $this>
+     */
+    public function loans(): HasMany
+    {
+        return $this->hasMany(Loan::class, 'user_id');
+    }
+
+    /**
      * Determine if the user has the admin role.
      */
     public function isAdmin(): bool

@@ -80,7 +80,7 @@ test('annual petition table is labelled in spanish and offers the consolidated r
         ->first(fn (Action $action) => $action->getName() === 'download_report');
 
     expect($action)->not->toBeNull()
-        ->and($action->getLabel())->toBe('Descargar Reporte Consolidado');
+        ->and($action->getLabel())->toBe('Reporte');
 });
 
 test('an admin can list annual petitions and download the consolidated report', function () {

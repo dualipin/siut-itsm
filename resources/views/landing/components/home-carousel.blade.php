@@ -35,8 +35,8 @@
 
         @if ($slides->count() > 1)
           <div class="absolute left-5 right-5 top-1/2 flex -translate-y-1/2 transform justify-between">
-            <button type="button" class="btn btn-circle btn-prev">❮</button>
-            <button type="button" class="btn btn-circle btn-next">❯</button>
+            <button type="button" class="btn btn-circle btn-prev" aria-label="Publicación anterior">❮</button>
+            <button type="button" class="btn btn-circle btn-next" aria-label="Siguiente publicación">❯</button>
           </div>
         @endif
       </div>
@@ -95,10 +95,31 @@
     button.addEventListener('click', nextSlide);
   });
 
-  // Auto-slide every 5 seconds if there are multiple slides
-  if (slides.length > 1) {
-    setInterval(nextSlide, 5000);
+  let autoSlideTimer = null;
+
+  function startAutoSlide() {
+    if (slides.length > 1 && !autoSlideTimer) {
+      autoSlideTimer = setInterval(nextSlide, 5000);
+    }
   }
+
+  function stopAutoSlide() {
+    if (autoSlideTimer) {
+      clearInterval(autoSlideTimer);
+      autoSlideTimer = null;
+    }
+  }
+
+  const carouselContainer = document.querySelector('.carousel');
+  if (carouselContainer) {
+    carouselContainer.addEventListener('mouseenter', stopAutoSlide);
+    carouselContainer.addEventListener('mouseleave', startAutoSlide);
+    carouselContainer.addEventListener('focusin', stopAutoSlide);
+    carouselContainer.addEventListener('focusout', startAutoSlide);
+  }
+
+  // Auto-slide every 5 seconds if there are multiple slides
+  startAutoSlide();
 
   // Initialize the carousel
   showSlide(currentSlide);

@@ -19,6 +19,9 @@ class BenefitFactory extends Factory
             'name' => fake()->words(3, true),
             'collection_day' => fake()->numberBetween(1, 28),
             'collection_month' => fake()->numberBetween(1, 12),
+            'calculation_method' => 'compound_interest',
+            'requires_document' => true,
+            'document_instructions' => null,
             'is_active' => true,
         ];
     }
