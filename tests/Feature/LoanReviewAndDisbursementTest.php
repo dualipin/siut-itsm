@@ -7,7 +7,9 @@ use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Exceptions\LoanTransitionException;
+use App\Models\Benefit;
 use App\Models\Loan;
+use App\Models\LoanBenefit;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\LoanStatusHistory;
@@ -353,4 +355,186 @@ it('enforces authorization on private document download routes', function () {
     $this->actingAs($admin)
         ->get("/portal/prestamos/{$loan->id}/documentos/{$doc->id}")
         ->assertOk();
+});
+
+it('approves a loan with a custom interest rate', function () {
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 5000,
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => '2026-06-30',
+        'monthly_rate' => 6.0,
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'pending',
+    ]);
+
+    /** @var LoanService $service */
+    $service = app(LoanService::class);
+
+    $approved = $service->approve($loan, $admin, [
+        'approved_amount' => 5000,
+        'monthly_rate' => 5.25, // Custom rate
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 2,
+        'comment' => 'Tasa personalizada del 5.25% acordada.',
+    ]);
+
+    expect($approved->status)->toBe(LoanStatus::Aprobada)
+        ->and((float) $approved->monthly_rate)->toBe(5.25);
+});
+
+it('calculates approved amount as the sum of nomina and benefit payment methods', function () {
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'payment_type' => LoanPaymentType::Mixed,
+        'requested_amount' => 15000,
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => '2026-06-30',
+        'monthly_rate' => 6.0,
+    ]);
+
+    $benefit = Benefit::factory()->create([
+        'collection_month' => 12,
+        'collection_day' => 15,
+        'is_active' => true,
+    ]);
+
+    $loanBenefit = LoanBenefit::create([
+        'loan_id' => $loan->id,
+        'benefit_id' => $benefit->id,
+        'requested_amount' => 10000,
+        'approved_amount' => 10000,
+        'collection_date' => '2026-12-15',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy1'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'benefit',
+        'benefit_id' => $benefit->id,
+        'file_path' => 'loans/1/prestacion.pdf',
+        'file_hash' => hash('sha256', 'dummy2'),
+        'file_name' => 'prestacion.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    /** @var LoanService $service */
+    $service = app(LoanService::class);
+
+    $nominaApproved = 4000;
+    $benefitApproved = 8000;
+    $totalApproved = $nominaApproved + $benefitApproved;
+
+    $approved = $service->approve($loan, $admin, [
+        'approved_amount' => $totalApproved,
+        'monthly_rate' => 6.0,
+        'nomina_amount' => $nominaApproved,
+        'nomina_fortnights' => 2,
+        'benefits' => [
+            [
+                'benefit_id' => $benefit->id,
+                'approved_amount' => $benefitApproved,
+            ],
+        ],
+    ]);
+
+    expect($approved->status)->toBe(LoanStatus::Aprobada)
+        ->and((float) $approved->approved_amount)->toBe((float) $totalApproved)
+        ->and((float) $approved->nomina_amount)->toBe((float) $nominaApproved);
+
+    $loanBenefit->refresh();
+    expect((float) $loanBenefit->approved_amount)->toBe((float) $benefitApproved);
+});
+
+it('renders the admin view page without errors and includes completion date info and verified signature', function () {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 1000,
+        'nomina_amount' => 1000,
+        'nomina_fortnights' => 1,
+        'first_fortnight_date' => '2026-11-30',
+    ]);
+
+    $this->actingAs($admin)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Término de pago nómina')
+        ->assertSee('30/11/2026')
+        ->assertSee('Firma verificada')
+        ->assertDontSee('Pendiente / Invalidada');
+});
+
+it('keeps signature verified on detail view even after admin modifies terms and rate upon approval', function () {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 1000,
+        'nomina_amount' => 1000,
+        'nomina_fortnights' => 1,
+        'first_fortnight_date' => '2026-11-30',
+        'monthly_rate' => null,
+    ]);
+
+    // Admin adjusts terms to $500 approved and sets 3.00% monthly rate
+    $loan->update([
+        'status' => LoanStatus::Aprobada,
+        'approved_amount' => 500,
+        'nomina_amount' => 500,
+        'monthly_rate' => 3.00,
+        'reviewed_by' => $admin->id,
+        'reviewed_at' => now(),
+    ]);
+
+    expect($loan->isSignatureValid())->toBeTrue();
+
+    $this->actingAs($admin)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Firma verificada')
+        ->assertDontSee('Pendiente / Invalidada')
+        ->assertSee('Fecha de firma');
+});
+ Invalidada')
+        ->assertSee('Fecha de firma');
 });

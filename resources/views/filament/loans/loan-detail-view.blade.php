@@ -132,6 +132,21 @@
                         <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Primera quincena</dt>
                         <dd class="text-xs font-mono tabular-nums text-gray-900 dark:text-gray-100">{{ $loan->first_fortnight_date?->format('d/m/Y') ?? 'N/A' }}</dd>
                     </div>
+                    @php
+                        $nominaEndDate = null;
+                        if ($loan->first_fortnight_date && $loan->nomina_fortnights) {
+                            $nominaEndDate = app(\App\Services\LoanCalendarService::class)->calculateFortnightDate(
+                                $loan->first_fortnight_date,
+                                (int) $loan->nomina_fortnights
+                            );
+                        }
+                    @endphp
+                    @if($nominaEndDate)
+                        <div class="py-2.5 flex justify-between items-center gap-4">
+                            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Término de pago nómina</dt>
+                            <dd class="text-xs font-mono tabular-nums text-gray-900 dark:text-gray-100">{{ $nominaEndDate->format('d/m/Y') }}</dd>
+                        </div>
+                    @endif
                     @if($loan->salary_commitment_amount)
                         <div class="py-2.5 flex justify-between items-center gap-4">
                             <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Compromiso salarial</dt>

@@ -7,25 +7,32 @@ use App\Enums\LoanStatus;
 use App\Filament\Resources\Loans\LoanResource;
 use App\Filament\Resources\Loans\Schemas\LoanInfolist;
 use App\Models\Loan;
-use App\Models\LoanEvidence;
+use App\Services\LoanCalendarService;
 use App\Services\LoanPdfGenerationService;
 use App\Services\LoanService;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Carbon;
 use Throwable;
 
 class ViewLoan extends ViewRecord
 {
     protected static string $resource = LoanResource::class;
 
-    protected static ?string $title = 'Detalle de Solicitud de Préstamo';
+    protected static ?string $title = 'Detalle de Solicitud';
 
     public function infolist(Schema $schema): Schema
     {
@@ -42,50 +49,20 @@ class ViewLoan extends ViewRecord
             return [];
         }
 
+        $calendarService = app(LoanCalendarService::class);
+
         return [
-            // Manual Evidence Validation Action
+            // Manual Evidence Validation Action (navigates to split-view review-documents)
             Action::make('validateEvidence')
                 ->label('Validar Evidencia Manual')
                 ->icon(Heroicon::DocumentCheck)
                 ->color('info')
-                ->visible(fn (): bool => $record->evidences()->where('manual_review_status', 'pending')->exists())
-                ->form([
-                    Select::make('evidence_id')
-                        ->label('Seleccionar Evidencia a Dictaminar')
-                        ->options(function () use ($record) {
-                            return $record->evidences()
-                                ->get()
-                                ->mapWithKeys(fn (LoanEvidence $e) => [
-                                    $e->id => "{$e->source_type}: ".($e->source_type === 'nomina' ? 'Recibo Nómina' : ($e->benefit?->name ?? 'Prestación'))." ({$e->ai_status->getLabel()})",
-                                ]);
-                        })
-                        ->required(),
-                    Select::make('decision')
-                        ->label('Decisión del Revisor')
-                        ->options([
-                            'approved' => 'Aprobar Documento',
-                            'rejected' => 'Rechazar Documento',
-                        ])
-                        ->required(),
-                    Textarea::make('notes')
-                        ->label('Notas de Revisión')
-                        ->placeholder('Justificación de la validación manual')
-                        ->required(),
-                ])
-                ->action(function (array $data, LoanService $loanService): void {
-                    $evidence = LoanEvidence::findOrFail((int) $data['evidence_id']);
-                    $loanService->reviewEvidence($evidence, auth()->user(), $data['decision'], $data['notes']);
+                ->visible(fn (): bool => $record->evidences()->exists())
+                ->badge(fn (): ?string => ($count = $record->evidences()->where('manual_review_status', 'pending')->count()) > 0 ? (string) $count : null)
+                ->badgeColor('warning')
+                ->url(fn (): string => LoanResource::getUrl('review-documents', ['record' => $record])),
 
-                    Notification::make()
-                        ->title('Evidencia dictaminada')
-                        ->body("La evidencia fue marcada como {$data['decision']}.")
-                        ->success()
-                        ->send();
-
-                    $this->refreshFormData(['status', 'evidences']);
-                }),
-
-            // Approve Action
+            // Approve Action (Primary CTA)
             Action::make('approveLoan')
                 ->label('Aprobar Préstamo')
                 ->icon(Heroicon::CheckCircle)
@@ -94,38 +71,213 @@ class ViewLoan extends ViewRecord
                 ->requiresConfirmation()
                 ->modalHeading(fn (): string => "¿Aprobar la solicitud {$record->folio}?")
                 ->modalDescription('Esta acción autorizará el préstamo, persistirá la corrida financiera y generará el expediente privado de PDFs.')
+                ->modalWidth('2xl')
                 ->form([
-                    TextInput::make('approved_amount')
-                        ->label('Monto Aprobado ($ MXN)')
-                        ->numeric()
-                        ->default($record->requested_amount)
-                        ->required(),
-                    Select::make('monthly_rate')
-                        ->label('Tasa de Interés Mensual')
-                        ->options([
-                            '6.00' => '6.00% mensual — Agremiado y ahorrador',
-                            '7.50' => '7.50% mensual — Agremiado y no ahorrador',
-                            '8.00' => '8.00% mensual — Ahorrador no agremiado',
-                            '9.50' => '9.50% mensual — No ahorrador y no agremiado',
-                        ])
-                        ->default($record->monthly_rate ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00')
-                        ->required(),
-                    TextInput::make('nomina_amount')
-                        ->label('Monto por Nómina')
-                        ->numeric()
-                        ->default($record->nomina_amount)
-                        ->visible($record->payment_type->hasNomina()),
-                    TextInput::make('nomina_fortnights')
-                        ->label('Quincenas de Nómina')
-                        ->numeric()
-                        ->default($record->nomina_fortnights)
-                        ->visible($record->payment_type->hasNomina()),
+                    Section::make('Condiciones de la Tasa y Monto Total')
+                        ->schema([
+                            Grid::make(2)->schema([
+                                Select::make('monthly_rate')
+                                    ->label('Tasa de Interés Mensual')
+                                    ->options([
+                                        '6.00' => '6.00% mensual — Agremiado y ahorrador',
+                                        '7.50' => '7.50% mensual — Agremiado y no ahorrador',
+                                        '8.00' => '8.00% mensual — Ahorrador no agremiado',
+                                        '9.50' => '9.50% mensual — No ahorrador y no agremiado',
+                                        'custom' => 'Tasa personalizada...',
+                                    ])
+                                    ->default(function () use ($record): string {
+                                        $standard = ['6.00', '7.50', '8.00', '9.50'];
+                                        $rate = $record->monthly_rate !== null ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00';
+
+                                        return in_array($rate, $standard, true) ? $rate : 'custom';
+                                    })
+                                    ->live()
+                                    ->required()
+                                    ->columnSpan(fn (Get $get): int => $get('monthly_rate') === 'custom' ? 1 : 2),
+
+                                TextInput::make('custom_monthly_rate')
+                                    ->label('Tasa Personalizada (% mensual)')
+                                    ->numeric()
+                                    ->suffix('% mensual')
+                                    ->minValue(0.01)
+                                    ->maxValue(100.0)
+                                    ->step(0.01)
+                                    ->default(function () use ($record): ?float {
+                                        $standard = ['6.00', '7.50', '8.00', '9.50'];
+                                        $rate = $record->monthly_rate !== null ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00';
+
+                                        return ! in_array($rate, $standard, true) && $record->monthly_rate !== null ? (float) $record->monthly_rate : null;
+                                    })
+                                    ->visible(fn (Get $get): bool => $get('monthly_rate') === 'custom')
+                                    ->required(fn (Get $get): bool => $get('monthly_rate') === 'custom')
+                                    ->columnSpan(1),
+                            ]),
+
+                            TextInput::make('approved_amount')
+                                ->label('Monto Aprobado Total ($ MXN)')
+                                ->numeric()
+                                ->prefix('$')
+                                ->readOnly()
+                                ->dehydrated()
+                                ->default(function () use ($record): string {
+                                    $total = 0.0;
+                                    if ($record->payment_type->hasNomina()) {
+                                        $total += (float) ($record->nomina_amount ?? 0);
+                                    }
+                                    if ($record->payment_type->hasBenefits()) {
+                                        foreach ($record->loanBenefits as $lb) {
+                                            $total += (float) ($lb->approved_amount ?? $lb->requested_amount ?? 0);
+                                        }
+                                    }
+
+                                    return number_format($total > 0 ? $total : (float) $record->requested_amount, 2, '.', '');
+                                })
+                                ->helperText('Calculado automáticamente como la sumatoria del monto por cada forma de pago.')
+                                ->required(),
+                        ]),
+
+                    Section::make('Forma de Pago: Nómina')
+                        ->description('Descuento quincenal vía nómina')
+                        ->visible($record->payment_type->hasNomina())
+                        ->schema([
+                            Grid::make(2)->schema([
+                                TextInput::make('nomina_amount')
+                                    ->label('Monto por Nómina ($ MXN)')
+                                    ->numeric()
+                                    ->prefix('$')
+                                    ->default($record->nomina_amount)
+                                    ->required($record->payment_type->hasNomina())
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function (Get $get, Set $set) use ($record): void {
+                                        $total = (float) ($get('nomina_amount') ?? 0);
+                                        if ($record->payment_type->hasBenefits()) {
+                                            foreach ($record->loanBenefits as $lb) {
+                                                $total += (float) ($get("benefit_amount_{$lb->benefit_id}") ?? 0);
+                                            }
+                                        }
+                                        $set('approved_amount', number_format($total, 2, '.', ''));
+                                    }),
+
+                                Select::make('nomina_fortnights')
+                                    ->label('Plazo en Quincenas')
+                                    ->options(function () use ($record, $calendarService): array {
+                                        $firstDate = $record->first_fortnight_date
+                                            ? Carbon::parse($record->first_fortnight_date)
+                                            : ($calendarService->getFirstEligibleFortnight() ?? now()->addDays(20));
+
+                                        $options = [];
+                                        $year = $firstDate->year;
+                                        $deadline = Carbon::create($year, 11, 30)->endOfDay();
+                                        $current = $firstDate->copy();
+                                        $i = 1;
+                                        while ($current->lte($deadline) && $i <= 24) {
+                                            $monthName = $current->translatedFormat('F');
+                                            $dateLabel = "{$current->day} de ".ucfirst($monthName)." de {$current->year}";
+                                            $options[$i] = "{$i} ".($i === 1 ? 'quincena' : 'quincenas')." (Termina: {$dateLabel})";
+                                            $current = $calendarService->nextFortnight($current);
+                                            $i++;
+                                        }
+                                        if ($record->nomina_fortnights && ! isset($options[$record->nomina_fortnights])) {
+                                            $options[$record->nomina_fortnights] = "{$record->nomina_fortnights} quincenas";
+                                        }
+
+                                        return $options;
+                                    })
+                                    ->default($record->nomina_fortnights ?? 1)
+                                    ->live()
+                                    ->required($record->payment_type->hasNomina()),
+                            ]),
+
+                            Placeholder::make('nomina_completion_date')
+                                ->label('Fecha en que se terminará de pagar por nómina')
+                                ->content(function (Get $get) use ($record, $calendarService): string {
+                                    $fortnights = (int) ($get('nomina_fortnights') ?? $record->nomina_fortnights ?? 1);
+                                    if ($fortnights <= 0) {
+                                        return 'No especificado';
+                                    }
+                                    $firstDate = $record->first_fortnight_date
+                                        ? Carbon::parse($record->first_fortnight_date)
+                                        : ($calendarService->getFirstEligibleFortnight() ?? now()->addDays(20));
+
+                                    $endDate = $calendarService->calculateFortnightDate($firstDate, $fortnights);
+                                    $monthName = $endDate->translatedFormat('F');
+
+                                    return "{$endDate->day} de ".ucfirst($monthName)." de {$endDate->year} (Quincena {$fortnights} de {$fortnights})";
+                                }),
+                        ]),
+
+                    Section::make('Forma de Pago: Prestación(es)')
+                        ->description('Descuento programado sobre prestaciones laborales')
+                        ->visible($record->payment_type->hasBenefits() && $record->loanBenefits->isNotEmpty())
+                        ->schema(function () use ($record): array {
+                            $components = [];
+                            foreach ($record->loanBenefits as $lb) {
+                                $benefitName = $lb->benefit?->name ?? 'Prestación';
+                                $collectionDate = $lb->collection_date ? Carbon::parse($lb->collection_date) : null;
+                                $collectionLabel = $collectionDate
+                                    ? "{$collectionDate->day} de ".ucfirst($collectionDate->translatedFormat('F'))." de {$collectionDate->year}"
+                                    : 'Fecha no registrada';
+
+                                $components[] = Grid::make(2)->schema([
+                                    TextInput::make("benefit_amount_{$lb->benefit_id}")
+                                        ->label("Monto por {$benefitName} ($ MXN)")
+                                        ->numeric()
+                                        ->prefix('$')
+                                        ->default($lb->approved_amount ?? $lb->requested_amount)
+                                        ->required()
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function (Get $get, Set $set) use ($record): void {
+                                            $total = 0.0;
+                                            if ($record->payment_type->hasNomina()) {
+                                                $total += (float) ($get('nomina_amount') ?? 0);
+                                            }
+                                            foreach ($record->loanBenefits as $otherLb) {
+                                                $total += (float) ($get("benefit_amount_{$otherLb->benefit_id}") ?? 0);
+                                            }
+                                            $set('approved_amount', number_format($total, 2, '.', ''));
+                                        }),
+
+                                    Placeholder::make("benefit_date_{$lb->benefit_id}")
+                                        ->label("Fecha de cobro / liquidación ({$benefitName})")
+                                        ->content($collectionLabel),
+                                ]);
+                            }
+
+                            return $components;
+                        }),
+
                     Textarea::make('comment')
                         ->label('Observaciones de Aprobación')
-                        ->placeholder('Comentario del revisor'),
+                        ->placeholder('Comentario del revisor (opcional)'),
                 ])
-                ->action(function (array $data, LoanService $loanService): void {
+                ->action(function (array $data, LoanService $loanService) use ($record): void {
                     try {
+                        $monthlyRate = ($data['monthly_rate'] ?? null) === 'custom'
+                            ? (float) ($data['custom_monthly_rate'] ?? 0)
+                            : (float) ($data['monthly_rate'] ?? 6.0);
+                        $data['monthly_rate'] = $monthlyRate;
+
+                        $benefitsTotal = 0.0;
+                        if ($record->payment_type->hasBenefits()) {
+                            $benefitsData = [];
+                            foreach ($record->loanBenefits as $lb) {
+                                $amount = (float) ($data["benefit_amount_{$lb->benefit_id}"] ?? $lb->approved_amount ?? $lb->requested_amount);
+                                $benefitsTotal += $amount;
+                                $benefitsData[] = [
+                                    'benefit_id' => $lb->benefit_id,
+                                    'approved_amount' => $amount,
+                                ];
+                            }
+                            $data['benefits'] = $benefitsData;
+                        }
+
+                        $nominaTotal = $record->payment_type->hasNomina() ? (float) ($data['nomina_amount'] ?? 0) : 0.0;
+                        $calculatedApprovedAmount = $nominaTotal + $benefitsTotal;
+
+                        if ($calculatedApprovedAmount > 0) {
+                            $data['approved_amount'] = $calculatedApprovedAmount;
+                        }
+
                         $loanService->approve($this->getRecord(), auth()->user(), $data);
                         Notification::make()
                             ->title('Préstamo Aprobado')
@@ -143,70 +295,76 @@ class ViewLoan extends ViewRecord
                     }
                 }),
 
-            // Reject Action
-            Action::make('rejectLoan')
-                ->label('Rechazar')
-                ->icon(Heroicon::XCircle)
-                ->color('danger')
-                ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true))
-                ->requiresConfirmation()
-                ->modalHeading('Rechazar Solicitud de Préstamo')
-                ->form([
-                    Textarea::make('reason')
-                        ->label('Motivo del Rechazo')
-                        ->required()
-                        ->minLength(5),
-                ])
-                ->action(function (array $data, LoanService $loanService): void {
-                    try {
-                        $loanService->reject($this->getRecord(), auth()->user(), $data['reason']);
-                        Notification::make()
-                            ->title('Solicitud Rechazada')
-                            ->body('Se ha registrado el rechazo y se notificó al solicitante.')
-                            ->warning()
-                            ->send();
+            // ActionGroup for Secondary Actions (Rechazar, Lista de Espera)
+            ActionGroup::make([
+                Action::make('waitlistLoan')
+                    ->label('Lista de Espera')
+                    ->icon(Heroicon::Clock)
+                    ->color('warning')
+                    ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision], true))
+                    ->requiresConfirmation()
+                    ->modalHeading('Colocar en Lista de Espera')
+                    ->form([
+                        Textarea::make('reason')
+                            ->label('Motivo / Justificación de la Espera')
+                            ->required(),
+                    ])
+                    ->action(function (array $data, LoanService $loanService): void {
+                        try {
+                            $loanService->waitlist($this->getRecord(), auth()->user(), $data['reason']);
+                            Notification::make()
+                                ->title('Solicitud en Lista de Espera')
+                                ->body('El estado fue actualizado a Lista de Espera.')
+                                ->warning()
+                                ->send();
 
-                        $this->redirect(LoanResource::getUrl('view', ['record' => $this->getRecord()]));
-                    } catch (Throwable $e) {
-                        Notification::make()
-                            ->title('Error al rechazar')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
-                }),
+                            $this->redirect(LoanResource::getUrl('view', ['record' => $this->getRecord()]));
+                        } catch (Throwable $e) {
+                            Notification::make()
+                                ->title('Error al cambiar estado')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
 
-            // Waitlist Action
-            Action::make('waitlistLoan')
-                ->label('Lista de Espera')
-                ->icon(Heroicon::Clock)
-                ->color('warning')
-                ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision], true))
-                ->requiresConfirmation()
-                ->modalHeading('Colocar en Lista de Espera')
-                ->form([
-                    Textarea::make('reason')
-                        ->label('Motivo / Justificación de la Espera')
-                        ->required(),
-                ])
-                ->action(function (array $data, LoanService $loanService): void {
-                    try {
-                        $loanService->waitlist($this->getRecord(), auth()->user(), $data['reason']);
-                        Notification::make()
-                            ->title('Solicitud en Lista de Espera')
-                            ->body('El estado fue actualizado a Lista de Espera.')
-                            ->warning()
-                            ->send();
+                Action::make('rejectLoan')
+                    ->label('Rechazar')
+                    ->icon(Heroicon::XCircle)
+                    ->color('danger')
+                    ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true))
+                    ->requiresConfirmation()
+                    ->modalHeading('Rechazar Solicitud de Préstamo')
+                    ->form([
+                        Textarea::make('reason')
+                            ->label('Motivo del Rechazo')
+                            ->required()
+                            ->minLength(5),
+                    ])
+                    ->action(function (array $data, LoanService $loanService): void {
+                        try {
+                            $loanService->reject($this->getRecord(), auth()->user(), $data['reason']);
+                            Notification::make()
+                                ->title('Solicitud Rechazada')
+                                ->body('Se ha registrado el rechazo y se notificó al solicitante.')
+                                ->warning()
+                                ->send();
 
-                        $this->redirect(LoanResource::getUrl('view', ['record' => $this->getRecord()]));
-                    } catch (Throwable $e) {
-                        Notification::make()
-                            ->title('Error al cambiar estado')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
-                }),
+                            $this->redirect(LoanResource::getUrl('view', ['record' => $this->getRecord()]));
+                        } catch (Throwable $e) {
+                            Notification::make()
+                                ->title('Error al rechazar')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+            ])
+                ->label('Más opciones')
+                ->icon(Heroicon::ChevronDown)
+                ->color('gray')
+                ->button()
+                ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true)),
 
             // Disburse Action
             Action::make('disburseLoan')
