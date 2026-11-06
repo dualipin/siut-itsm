@@ -172,11 +172,28 @@
                 <div class="py-2.5 flex justify-between items-center gap-4">
                     <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Firma del solicitante</dt>
                     <dd>
-                        <x-filament::badge :color="$loan->isSignatureValid() ? 'success' : 'warning'" size="sm">
-                            {{ $loan->isSignatureValid() ? 'Firma verificada' : 'Pendiente / Invalidada' }}
-                        </x-filament::badge>
+                        @if($loan->isSignatureValid())
+                            <x-filament::badge color="success" size="sm">
+                                Firma verificada
+                            </x-filament::badge>
+                        @elseif($loan->signature_data)
+                            <x-filament::badge color="warning" size="sm">
+                                Requiere refirma
+                            </x-filament::badge>
+                        @else
+                            <x-filament::badge color="gray" size="sm">
+                                Pendiente de firma
+                            </x-filament::badge>
+                        @endif
                     </dd>
                 </div>
+
+                @if($loan->signed_at)
+                    <div class="py-2.5 flex justify-between items-center gap-4">
+                        <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Fecha de firma</dt>
+                        <dd class="text-xs font-mono tabular-nums text-gray-900 dark:text-gray-100">{{ $loan->signed_at->format('d/m/Y H:i') }}</dd>
+                    </div>
+                @endif
 
                 @if($loan->signature_data)
                     <div class="py-2.5 flex items-center justify-between gap-4">

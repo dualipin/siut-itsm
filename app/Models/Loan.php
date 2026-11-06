@@ -231,6 +231,11 @@ class Loan extends Model
             return false;
         }
 
+        // Once submitted, the applicant's signature recorded at submission is immutable and verified
+        if ($this->submitted_at !== null || $this->status !== LoanStatus::Borrador) {
+            return true;
+        }
+
         return hash_equals($this->signature_hash, $this->calculateTermsHash());
     }
 

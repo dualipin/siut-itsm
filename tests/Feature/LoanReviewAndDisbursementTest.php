@@ -90,7 +90,8 @@ it('allows leader or admin to approve a submitted loan with complete valid evide
     expect($approved->status)->toBe(LoanStatus::Aprobada)
         ->and($approved->approved_amount)->toEqual(10000)
         ->and($approved->reviewed_by)->toBe($admin->id)
-        ->and($approved->reviewed_at)->not->toBeNull();
+        ->and($approved->reviewed_at)->not->toBeNull()
+        ->and($approved->isSignatureValid())->toBeTrue();
 
     // Verify amortization rows were created (1 extra_days + 4 fortnights = 5)
     expect($approved->amortizationRows()->count())->toBe(5)
