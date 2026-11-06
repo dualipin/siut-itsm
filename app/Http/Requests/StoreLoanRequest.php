@@ -22,9 +22,9 @@ class StoreLoanRequest extends FormRequest
             'payment_type' => ['required', Rule::in(['nomina', 'benefit', 'mixed'])],
             'requested_amount' => ['required', 'numeric', 'min:100'],
             'salary_commitment_amount' => ['nullable', 'numeric', 'min:0'],
-            'bank_name' => ['nullable', 'string', 'max:100'],
-            'bank_account' => ['nullable', 'string', 'max:50'],
-            'interbank_clabe' => ['nullable', 'string', 'size:18'],
+            'bank_name' => ['required', 'string', 'max:100'],
+            'bank_account' => ['nullable', 'string', 'max:50', 'required_without:interbank_clabe'],
+            'interbank_clabe' => ['nullable', 'string', 'max:18', 'regex:/^\d{1,18}$/', 'required_without:bank_account'],
             'signature_data' => ['nullable', 'string'],
 
             // Nómina
@@ -55,6 +55,11 @@ class StoreLoanRequest extends FormRequest
             'benefits.required' => 'Debe seleccionar al menos una prestación para este tipo de pago.',
             'benefits.*.benefit_id.exists' => 'La prestación seleccionada no es válida o no está activa.',
             'benefits.*.amount.required' => 'El monto por prestación es obligatorio.',
+            'bank_name.required' => 'El banco es obligatorio.',
+            'bank_account.required_without' => 'Debes capturar la cuenta o la CLABE interbancaria.',
+            'interbank_clabe.required_without' => 'Debes capturar la cuenta o la CLABE interbancaria.',
+            'interbank_clabe.max' => 'La CLABE interbancaria no puede tener más de 18 dígitos.',
+            'interbank_clabe.regex' => 'La CLABE interbancaria solo debe contener dígitos.',
             'interbank_clabe.size' => 'La CLABE interbancaria debe tener exactamente 18 dígitos.',
         ];
     }

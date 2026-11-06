@@ -55,7 +55,7 @@ it('evaluates matching payslip as valido when AI responds with high confidence a
         'curp' => 'MEPC850101HTNRR01',
     ]);
 
-    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $file = UploadedFile::fake()->image('recibo.png', 200, 200);
     $stored = $this->aiService->storePrivatelyAndHash($file);
 
     Http::fake([
@@ -100,7 +100,7 @@ it('evaluates evidence as dudoso when worker name does not match user profile', 
         'surnames' => 'Lopez Hernandez',
     ]);
 
-    $file = UploadedFile::fake()->create('recibo_ajeno.pdf', 100, 'application/pdf');
+    $file = UploadedFile::fake()->image('recibo_ajeno.png', 200, 200);
     $stored = $this->aiService->storePrivatelyAndHash($file);
 
     Http::fake([
@@ -137,7 +137,7 @@ it('gracefully returns fallo_tecnico on connection failure without breaking exec
     Config::set('services.document_ai.model', 'gpt-4o-mini');
 
     $user = User::factory()->create();
-    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $file = UploadedFile::fake()->image('recibo.png', 200, 200);
     $stored = $this->aiService->storePrivatelyAndHash($file);
 
     Http::fake([
@@ -148,4 +148,77 @@ it('gracefully returns fallo_tecnico on connection failure without breaking exec
 
     expect($evaluation->aiStatus)->toBe(LoanAiStatus::FalloTecnico)
         ->and($evaluation->observations)->toContain('fallo técnico');
+});
+
+it('returns fallo_tecnico instead of invalido when the AI response is empty or truncated', function () {
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+
+    $user = User::factory()->create();
+    $file = UploadedFile::fake()->image('recibo.png', 200, 200);
+    $stored = $this->aiService->storePrivatelyAndHash($file);
+
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [['message' => ['content' => '{"clasificacion": "recibo_nom']]],
+        ], 200),
+    ]);
+
+    $evaluation = $this->aiService->evaluate($stored['path'], 'nomina', $user);
+
+    expect($evaluation->aiStatus)->toBe(LoanAiStatus::FalloTecnico);
+});
+
+it('calls the provider only once for the same file, user and expectation', function () {
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+
+    $user = User::factory()->create(['name' => 'Ana', 'surnames' => 'Lopez']);
+    $stored = $this->aiService->storePrivatelyAndHash(UploadedFile::fake()->image('recibo.png', 200, 200));
+
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [['message' => ['content' => json_encode([
+                'clasificacion' => 'recibo_nomina',
+                'campos' => ['nombre_trabajador' => 'ANA LOPEZ'],
+                'confianza' => 0.95,
+            ])]]],
+        ], 200),
+    ]);
+
+    $first = $this->aiService->evaluate($stored['path'], 'nomina', $user);
+    $second = $this->aiService->evaluate($stored['path'], 'nomina', $user);
+
+    expect($first->aiStatus)->toBe(LoanAiStatus::Valido)
+        ->and($second->aiStatus)->toBe(LoanAiStatus::Valido);
+    Http::assertSentCount(1);
+});
+
+it('sends a PDF without extractable text natively to the provider', function () {
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+
+    $user = User::factory()->create(['name' => 'Ana', 'surnames' => 'Lopez']);
+    $stored = $this->aiService->storePrivatelyAndHash(UploadedFile::fake()->createWithContent('escaneado.pdf', "%PDF-1.4\n%%EOF"));
+
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [['message' => ['content' => json_encode([
+                'clasificacion' => 'recibo_nomina',
+                'campos' => ['nombre_trabajador' => 'ANA LOPEZ'],
+                'confianza' => 0.95,
+            ])]]],
+        ], 200),
+    ]);
+
+    $evaluation = $this->aiService->evaluate($stored['path'], 'nomina', $user);
+
+    expect($evaluation->aiStatus)->toBe(LoanAiStatus::Valido);
+    Http::assertSent(fn ($request) => str_contains(json_encode($request->data()), 'data:application\/pdf;base64,'));
 });

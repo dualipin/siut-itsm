@@ -5,14 +5,20 @@ use App\Enums\LoanGeneratedDocumentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
+use App\Models\Benefit;
 use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
 use App\Services\LoanService;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Wizard;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -42,9 +48,226 @@ it('allows authenticated users to access the application form', function () {
     $response->assertDontSee('Primera Quincena');
 });
 
+it('prefills the latest bank details for a returning applicant', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    Loan::factory()->for($user)->create([
+        'bank_name' => 'Santander',
+        'bank_account' => '9876543210',
+        'interbank_clabe' => '014180009876543210',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->assertFormSet([
+            'bank_name' => 'Santander',
+            'bank_account' => '9876543210',
+            'interbank_clabe' => '014180009876543210',
+        ]);
+});
+
+it('advances from the simulation step after synchronizing benefit evidence', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefit = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'is_active' => true,
+        'collection_month' => 12,
+        'collection_day' => 15,
+    ]);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'mixed',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
+        ]);
+
+    $initialEvidences = $component->get('data.benefit_evidences');
+    expect($initialEvidences)->toHaveCount(1);
+    $initialKey = array_key_first($initialEvidences);
+    expect($initialEvidences[$initialKey]['benefit_id'])->toBe($benefit->id)
+        ->and($initialEvidences[$initialKey]['benefit_name'])->toBe('Aguinaldo')
+        ->and($initialEvidences[$initialKey]['ai_status'])->toBe('pendiente');
+
+    $wizard = $component->instance()->form->getComponent(
+        fn ($component): bool => $component instanceof Wizard,
+    );
+
+    $component
+        ->call('callSchemaComponentMethod', $wizard->getKey(), 'nextStep', [0]);
+
+    $component->assertHasNoFormErrors();
+
+    $syncedEvidences = $component->get('data.benefit_evidences');
+    expect($syncedEvidences)->toHaveCount(1);
+    $syncedKey = array_key_first($syncedEvidences);
+    expect($syncedKey)->toBe($initialKey)
+        ->and($syncedEvidences[$syncedKey]['benefit_id'])->toBe($benefit->id)
+        ->and($syncedEvidences[$syncedKey]['benefit_name'])->toBe('Aguinaldo');
+
+    $repeater = $component->instance()->form->getComponent(
+        fn ($c): bool => $c instanceof Repeater && $c->getName() === 'benefit_evidences',
+    );
+    expect($repeater->getItemLabel($initialKey))->toBe('Comprobante de Prestación: Aguinaldo');
+
+    $currentWizard = $component->instance()->form->getComponent(
+        fn ($component): bool => $component instanceof Wizard,
+    );
+
+    expect($currentWizard->getCurrentStepIndex())->toBe(1);
+});
+
+it('allows an authenticated agremiado to submit mixed loan wizard with automatically populated benefit evidence', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefit = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'is_active' => true,
+        'collection_month' => 12,
+        'collection_day' => 15,
+    ]);
+    $nominaFile = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $benefitFile = UploadedFile::fake()->create('aguinaldo.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'mixed',
+            'nomina_amount' => 10000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'interbank_clabe' => '012180001234567890',
+            'nomina_evidence' => $nominaFile,
+            'accept_terms' => true,
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
+        ]);
+
+    $benefitEvidences = $component->get('data.benefit_evidences');
+    expect($benefitEvidences)->toHaveCount(1);
+    $evidenceKey = array_key_first($benefitEvidences);
+    expect($benefitEvidences[$evidenceKey]['benefit_id'])->toBe($benefit->id)
+        ->and($benefitEvidences[$evidenceKey]['benefit_name'])->toBe('Aguinaldo');
+
+    $component->set("data.benefit_evidences.{$evidenceKey}.file", [$benefitFile])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'status' => LoanStatus::Enviada->value,
+        'requested_amount' => 15000,
+        'payment_type' => 'mixed',
+    ]);
+
+    $this->assertDatabaseHas('loan_evidences', [
+        'source_type' => 'nomina',
+    ]);
+
+    $this->assertDatabaseHas('loan_evidences', [
+        'source_type' => 'benefit',
+        'benefit_id' => $benefit->id,
+    ]);
+});
+
+it('updates benefit evidence rows dynamically when benefits change or payment type switches', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefit1 = Benefit::factory()->create(['name' => 'Aguinaldo', 'is_active' => true]);
+    $benefit2 = Benefit::factory()->create(['name' => 'Prima Vacacional', 'is_active' => true]);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'mixed',
+            'nomina_amount' => 5000,
+            'nomina_fortnights' => 2,
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit1->id, 'amount' => 3000],
+        ]);
+
+    $evidences = $component->get('data.benefit_evidences');
+    expect($evidences)->toHaveCount(1);
+    $itemKey1 = array_key_first($evidences);
+    expect($evidences[$itemKey1]['benefit_id'])->toBe($benefit1->id);
+
+    // Add second benefit
+    $component->set('data.benefits', [
+        'item-1' => ['benefit_id' => (string) $benefit1->id, 'amount' => 3000],
+        'item-2' => ['benefit_id' => (string) $benefit2->id, 'amount' => 2000],
+    ]);
+
+    $evidencesAfterAdd = $component->get('data.benefit_evidences');
+    expect($evidencesAfterAdd)->toHaveCount(2)
+        ->and($evidencesAfterAdd[$itemKey1]['benefit_id'])->toBe($benefit1->id);
+
+    // Switch payment type to nomina
+    $component->fillForm([
+        'payment_type' => 'nomina',
+    ]);
+
+    expect($component->get('data.benefit_evidences'))->toBeEmpty();
+});
+
+it('uses the most recent bank details without changing previous applications', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $previousLoan = Loan::factory()->for($user)->create([
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+        'interbank_clabe' => '012180001234567890',
+    ]);
+    $latestLoan = Loan::factory()->for($user)->create([
+        'bank_name' => 'Santander',
+        'bank_account' => '9876543210',
+        'interbank_clabe' => '014180009876543210',
+    ]);
+
+    expect(app(LoanService::class)->latestBankDetails($user))->toBe([
+        'bank_name' => $latestLoan->bank_name,
+        'bank_account' => $latestLoan->bank_account,
+        'interbank_clabe' => $latestLoan->interbank_clabe,
+    ]);
+
+    expect($previousLoan->fresh()->bank_name)->toBe('BBVA');
+});
+
 it('allows an authenticated agremiado to submit the Filament loan wizard', function () {
     $user = User::factory()->create(['role' => UserRole::Agremiado]);
     $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'clasificacion' => 'recibo_nomina',
+                            'campos' => [
+                                'nombre_trabajador' => $user->full_name,
+                                'confianza' => 0.95,
+                            ],
+                            'confianza' => 0.95,
+                            'observaciones' => 'Recibo de nómina válido.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
 
     $this->actingAs($user);
 
@@ -59,6 +282,7 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
             'nomina_evidence' => $file,
             'accept_terms' => true,
         ])
+        ->assertFormSet(['nomina_ai_status' => LoanAiStatus::Valido->value])
         ->call('create')
         ->assertHasNoFormErrors();
 
@@ -72,6 +296,84 @@ it('allows an authenticated agremiado to submit the Filament loan wizard', funct
 
     $this->assertDatabaseHas('loan_evidences', [
         'source_type' => 'nomina',
+        'ai_status' => LoanAiStatus::Valido->value,
+        'ai_classification' => 'recibo_nomina',
+    ]);
+});
+
+it('blocks submission when the evidence is invalid and explains how to replace it', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('documento-ajeno.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', true);
+    Config::set('services.document_ai.api_key', 'test-api-key');
+    Config::set('services.document_ai.base_url', 'https://api.openai.com/v1');
+    Config::set('services.document_ai.model', 'gpt-4o-mini');
+    Http::fake([
+        '*' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'clasificacion' => 'invalido',
+                            'campos' => [],
+                            'confianza' => 0.99,
+                            'observaciones' => 'El documento no corresponde.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertNotified();
+
+    expect(Loan::query()->where('user_id', $user->id)->exists())->toBeFalse();
+});
+
+it('allows submission for manual review when automatic document review is unavailable', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'accept_terms' => true,
+        ])
+        ->assertFormSet(['nomina_ai_status' => LoanAiStatus::FalloTecnico->value])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'status' => LoanStatus::Enviada->value,
+    ]);
+
+    $this->assertDatabaseHas('loan_evidences', [
+        'ai_status' => LoanAiStatus::FalloTecnico->value,
+        'manual_review_status' => 'pending',
     ]);
 });
 
@@ -99,6 +401,48 @@ it('stores a loan draft and validates financial inputs', function () {
         'requested_amount' => 15000,
         'first_fortnight_date' => '2026-06-30 00:00:00',
     ]);
+});
+
+it('requires a bank and at least one account identifier', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $response = $this->actingAs($user)->postJson('/api/prestamos', [
+        'payment_type' => 'nomina',
+        'requested_amount' => 15000,
+        'nomina_amount' => 15000,
+        'nomina_fortnights' => 6,
+    ]);
+
+    $response
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['bank_name', 'bank_account', 'interbank_clabe']);
+});
+
+it('accepts either account or clabe and validates clabe as up to 18 digits', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $payload = [
+        'payment_type' => 'nomina',
+        'requested_amount' => 15000,
+        'nomina_amount' => 15000,
+        'nomina_fortnights' => 6,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+    ];
+
+    $this->actingAs($user)
+        ->postJson('/api/prestamos', $payload)
+        ->assertOk();
+
+    $response = $this->actingAs(User::factory()->create(['role' => UserRole::Agremiado]))
+        ->postJson('/api/prestamos', [
+            ...$payload,
+            'bank_account' => null,
+            'interbank_clabe' => '1234567890123456789',
+        ]);
+
+    $response
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['interbank_clabe']);
 });
 
 it('allows applicant to store a draft without monthly_rate leaving it for admin decision', function () {
@@ -138,6 +482,8 @@ it('blocks new loan applications when the window deadline of November 30 has pas
         'nomina_amount' => 10000,
         'nomina_fortnights' => 4,
         'first_fortnight_date' => '2026-12-15',
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
     ]);
 
     $response->assertStatus(422);
@@ -158,6 +504,8 @@ it('prevents a user from having more than one active loan without an authorized 
         'nomina_amount' => 5000,
         'nomina_fortnights' => 2,
         'first_fortnight_date' => '2026-07-15',
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
     ]);
 
     $response->assertStatus(422);
@@ -275,4 +623,52 @@ it('protects private document downloads with policy authorization', function () 
     $this->actingAs($admin)
         ->get("/portal/prestamos/{$loan->id}/documentos/{$document->id}")
         ->assertOk();
+});
+
+it('disallows selecting the same benefit more than once and disables it in sibling repeater items', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefit = Benefit::factory()->create([
+        'is_active' => true,
+        'collection_month' => 12,
+        'collection_day' => 15,
+    ]);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'benefit',
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
+            'item-2' => ['benefit_id' => null, 'amount' => 3000],
+        ]);
+
+    $repeater = $component->instance()->form->getComponent(
+        fn ($component): bool => $component instanceof Repeater,
+    );
+
+    $containers = $repeater->getChildComponentContainers();
+    $secondItemSelect = $containers['item-2']->getComponent(
+        fn ($c): bool => $c instanceof Select,
+    );
+
+    expect($secondItemSelect->isOptionDisabled((string) $benefit->id, $benefit->name))->toBeTrue();
+
+    $duplicateComponent = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'benefit',
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
+            'item-2' => ['benefit_id' => (string) $benefit->id, 'amount' => 3000],
+        ]);
+
+    $wizard = $duplicateComponent->instance()->form->getComponent(
+        fn ($component): bool => $component instanceof Wizard,
+    );
+
+    $duplicateComponent
+        ->call('callSchemaComponentMethod', $wizard->getKey(), 'nextStep', [0])
+        ->assertHasFormErrors(['benefits.item-2.benefit_id']);
 });

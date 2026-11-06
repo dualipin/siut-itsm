@@ -9,14 +9,12 @@ use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
-use App\Services\LoanCalendarService;
 use App\Services\LoanDocumentAIService;
 use App\Services\LoanService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class LoanApplicationController extends Controller
@@ -25,42 +23,8 @@ class LoanApplicationController extends Controller
 
     public function __construct(
         protected readonly LoanService $loanService,
-        protected readonly LoanCalendarService $calendarService,
         protected readonly LoanDocumentAIService $aiService,
     ) {}
-
-    /**
-     * Show the loan application form (Vue 3 island mounted in Blade).
-     */
-    public function create(Request $request): View
-    {
-        $this->authorize('create', Loan::class);
-
-        /** @var User $user */
-        $user = $request->user();
-
-        $activeLoan = Loan::forUser($user)->active()->with(['loanBenefits', 'evidences'])->first();
-        $isWindowOpen = $this->calendarService->isApplicationWindowOpen();
-        $fortnights = $this->calendarService->getEligibleFortnights();
-        $benefits = $this->calendarService->getEligibleBenefits();
-
-        return view('loans.create', [
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->full_name,
-                'curp' => $user->curp,
-                'category' => $user->category,
-                'phone' => $user->phone,
-                'address' => $user->address,
-                'role' => $user->role->value,
-                'is_active' => $user->is_active,
-            ],
-            'isWindowOpen' => $isWindowOpen,
-            'activeLoan' => $activeLoan,
-            'fortnights' => $fortnights,
-            'benefits' => $benefits,
-        ]);
-    }
 
     /**
      * Store or update draft loan.

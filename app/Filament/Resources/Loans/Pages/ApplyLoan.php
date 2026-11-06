@@ -2,15 +2,17 @@
 
 namespace App\Filament\Resources\Loans\Pages;
 
-use App\Enums\LoanAiStatus;
 use App\Enums\LoanPaymentType;
 use App\Filament\Resources\Loans\LoanResource;
+use App\Models\Benefit;
 use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\User;
 use App\Services\LoanCalendarService;
+use App\Services\LoanDocumentAIService;
 use App\Services\LoanService;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -19,13 +21,20 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\HasWizard;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Wizard\Step;
+use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class ApplyLoan extends CreateRecord
 {
@@ -43,23 +52,29 @@ class ApplyLoan extends CreateRecord
     {
         parent::mount();
 
+        /** @var User $user */
+        $user = auth()->user();
+        $bankDetails = app(LoanService::class)->latestBankDetails($user);
+
+        $fillData = $bankDetails;
+
         $token = request()->query('simulation');
-        if (! is_string($token)) {
-            return;
+        if (is_string($token)) {
+            /** @var array{payment_type: string, nomina?: array{amount: float, fortnights: int}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
+            $simulation = Cache::get('loan_application_'.$token);
+            if ($simulation !== null) {
+                $fillData = [
+                    ...$fillData,
+                    'payment_type' => $simulation['payment_type'],
+                    'nomina_amount' => $simulation['nomina']['amount'] ?? null,
+                    'nomina_fortnights' => $simulation['nomina']['fortnights'] ?? null,
+                    'benefits' => $simulation['benefits'] ?? [],
+                ];
+            }
         }
 
-        /** @var array{payment_type: string, nomina?: array{amount: float, fortnights: int}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
-        $simulation = Cache::get('loan_application_'.$token);
-        if ($simulation === null) {
-            return;
-        }
-
-        $this->form->fill([
-            'payment_type' => $simulation['payment_type'],
-            'nomina_amount' => $simulation['nomina']['amount'] ?? null,
-            'nomina_fortnights' => $simulation['nomina']['fortnights'] ?? null,
-            'benefits' => $simulation['benefits'] ?? [],
-        ]);
+        $this->form->fill($fillData);
+        $this->syncBenefitEvidenceRows();
     }
 
     public function getSteps(): array
@@ -73,6 +88,9 @@ class ApplyLoan extends CreateRecord
             Step::make('Simulación')
                 ->icon(Heroicon::Calculator)
                 ->description('Captura los mismos parámetros del simulador')
+                ->afterValidation(function (): void {
+                    $this->syncBenefitEvidenceRows();
+                })
                 ->schema([
                     Select::make('payment_type')
                         ->label('Forma de Pago')
@@ -80,6 +98,9 @@ class ApplyLoan extends CreateRecord
                             fn (LoanPaymentType $type): array => [$type->value => $type->getLabel()]
                         ))
                         ->live()
+                        ->afterStateUpdated(function (): void {
+                            $this->syncBenefitEvidenceRows();
+                        })
                         ->required(),
                     Grid::make(2)
                         ->schema([
@@ -106,7 +127,11 @@ class ApplyLoan extends CreateRecord
                             Select::make('benefit_id')
                                 ->label('Prestación')
                                 ->options($benefits)
-                                ->distinct()
+                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                ->live()
+                                ->afterStateUpdated(function (): void {
+                                    $this->syncBenefitEvidenceRows();
+                                })
                                 ->required(),
                             TextInput::make('amount')
                                 ->label('Monto')
@@ -115,7 +140,11 @@ class ApplyLoan extends CreateRecord
                                 ->required(),
                         ])
                         ->columns(2)
+                        ->live()
                         ->minItems(fn (callable $get): int => in_array($get('payment_type'), ['benefit', 'mixed'], true) ? 1 : 0)
+                        ->afterStateUpdated(function (): void {
+                            $this->syncBenefitEvidenceRows();
+                        })
                         ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['benefit', 'mixed'], true)),
                 ]),
             Step::make('Datos Bancarios')
@@ -126,46 +155,96 @@ class ApplyLoan extends CreateRecord
                         ->schema([
                             TextInput::make('bank_name')
                                 ->label('Banco')
-                                ->maxLength(100),
+                                ->maxLength(100)
+                                ->required(),
                             TextInput::make('bank_account')
                                 ->label('Cuenta')
-                                ->maxLength(50),
+                                ->maxLength(50)
+                                ->requiredWithout('interbank_clabe'),
                             TextInput::make('interbank_clabe')
                                 ->label('CLABE Interbancaria')
-                                ->length(18)
-                                ->numeric(),
+                                ->maxLength(18)
+                                ->requiredWithout('bank_account')
+                                ->regex('/^\d{1,18}$/')
+                                ->extraInputAttributes([
+                                    'maxlength' => '18',
+                                    'inputmode' => 'numeric',
+                                    'pattern' => '[0-9]{1,18}',
+                                    'oninput' => "this.value = this.value.replace(/\\D/g, '').slice(0, 18)",
+                                ])
+                                ->helperText('Captura la cuenta o la CLABE; la CLABE admite hasta 18 dígitos.'),
                         ]),
                 ]),
             Step::make('Evidencias')
                 ->icon(Heroicon::DocumentArrowUp)
                 ->description('Archivos privados requeridos por el flujo')
+                ->beforeValidation(function (): void {
+                    $this->syncBenefitEvidenceRows();
+                })
+                ->afterValidation(function (): void {
+                    $this->ensureEvidenceCanProceed($this->form->getState());
+                })
                 ->schema([
-                    FileUpload::make('nomina_evidence')
-                        ->label('Comprobante de Nómina')
-                        ->disk('local')
-                        ->directory('loan-evidence-poc')
-                        ->visibility('private')
-                        ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
-                        ->maxSize(5120)
-                        ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true))
-                        ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
-                    Repeater::make('benefit_evidences')
-                        ->label('Comprobantes de Prestaciones')
+                    Section::make('Comprobante de Nómina')
+                        ->icon(Heroicon::DocumentText)
                         ->schema([
-                            Select::make('benefit_id')
-                                ->label('Prestación')
-                                ->options($benefits)
-                                ->required(),
-                            FileUpload::make('file')
-                                ->label('Comprobante')
+                            FileUpload::make('nomina_evidence')
+                                ->label('Archivo del Comprobante')
                                 ->disk('local')
                                 ->directory('loan-evidence-poc')
                                 ->visibility('private')
+                                ->live()
                                 ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
                                 ->maxSize(5120)
-                                ->required(),
+                                ->afterStateUpdated(function (Set $set, mixed $state): void {
+                                    $set('nomina_ai_status', $this->evaluateEvidenceState($state, 'nomina'));
+                                })
+                                ->required(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
+                            Html::make(fn (Get $get): HtmlString => $this->renderEvidenceStatus((string) $get('nomina_ai_status'))),
+                            Hidden::make('nomina_ai_status')
+                                ->default('pendiente')
+                                ->dehydrated(),
                         ])
-                        ->columns(2)
+                        ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['nomina', 'mixed'], true)),
+                    Repeater::make('benefit_evidences')
+                        ->label('Comprobantes de Prestaciones')
+                        ->addable(false)
+                        ->deletable(false)
+                        ->reorderable(false)
+                        ->collapsible(false)
+                        ->itemLabel(function (array $state, ?string $key = null): string {
+                            $name = $state['benefit_name'] ?? ($key ? data_get($this->data, "benefit_evidences.{$key}.benefit_name") : null);
+
+                            return $name ? "Comprobante de Prestación: {$name}" : 'Comprobante de Prestación';
+                        })
+                        ->schema([
+                            Hidden::make('benefit_name'),
+                            Hidden::make('benefit_id')
+                                ->required(),
+                            FileUpload::make('file')
+                                ->label('Archivo del Comprobante')
+                                ->disk('local')
+                                ->directory('loan-evidence-poc')
+                                ->visibility('private')
+                                ->live()
+                                ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
+                                ->maxSize(5120)
+                                ->afterStateUpdated(function (Set $set, callable $get, mixed $state): void {
+                                    $set(
+                                        'ai_status',
+                                        $this->evaluateEvidenceState(
+                                            $state,
+                                            'benefit',
+                                            $get('benefit_id') ? (int) $get('benefit_id') : null,
+                                        ),
+                                    );
+                                })
+                                ->required(),
+                            Html::make(fn (Get $get): HtmlString => $this->renderEvidenceStatus((string) $get('ai_status'))),
+                            Hidden::make('ai_status')
+                                ->default('pendiente')
+                                ->dehydrated(),
+                        ])
                         ->minItems(fn (callable $get): int => in_array($get('payment_type'), ['benefit', 'mixed'], true) ? 1 : 0)
                         ->visible(fn (callable $get): bool => in_array($get('payment_type'), ['benefit', 'mixed'], true)),
                 ]),
@@ -189,6 +268,7 @@ class ApplyLoan extends CreateRecord
     {
         /** @var User $user */
         $user = auth()->user();
+        $this->ensureEvidenceCanProceed($data);
         $paymentType = LoanPaymentType::from((string) $data['payment_type']);
         $benefits = $data['benefits'] ?? [];
 
@@ -249,6 +329,55 @@ class ApplyLoan extends CreateRecord
         }
     }
 
+    public function syncBenefitEvidenceRows(?array $selectedBenefitState = null): void
+    {
+        $rawState = $this->form->getRawState();
+        $paymentType = $rawState['payment_type'] ?? null;
+
+        if (! in_array($paymentType, ['benefit', 'mixed'], true)) {
+            data_set($this, 'data.benefit_evidences', []);
+            $this->form->clearCachedChildSchemas();
+
+            return;
+        }
+
+        $existingKeyByBenefitId = [];
+        $existingRowsByBenefitId = [];
+        foreach ($rawState['benefit_evidences'] ?? [] as $key => $evidence) {
+            if (! empty($evidence['benefit_id'])) {
+                $benefitId = (int) $evidence['benefit_id'];
+                $existingKeyByBenefitId[$benefitId] = $key;
+                $existingRowsByBenefitId[$benefitId] = $evidence;
+            }
+        }
+
+        $benefitsSource = $selectedBenefitState ?? $rawState['benefits'] ?? [];
+        $selectedBenefits = collect($benefitsSource)
+            ->filter(fn (array $benefit): bool => ! empty($benefit['benefit_id']))
+            ->pluck('benefit_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        $names = Benefit::whereIn('id', $selectedBenefits)->pluck('name', 'id');
+
+        $syncedRows = [];
+        foreach ($selectedBenefits as $benefitId) {
+            $key = (string) ($existingKeyByBenefitId[$benefitId] ?? Str::uuid());
+            $existing = $existingRowsByBenefitId[$benefitId] ?? [];
+
+            $syncedRows[$key] = [
+                'benefit_id' => $benefitId,
+                'benefit_name' => $names->get($benefitId, 'Prestación seleccionada'),
+                'file' => $existing['file'] ?? null,
+                'ai_status' => $existing['ai_status'] ?? 'pendiente',
+            ];
+        }
+
+        data_set($this, 'data.benefit_evidences', $syncedRows);
+        $this->form->clearCachedChildSchemas();
+    }
+
     private function createEvidence(Loan $loan, string $path, string $sourceType, ?int $benefitId = null): void
     {
         $disk = Storage::disk('local');
@@ -269,8 +398,169 @@ class ApplyLoan extends CreateRecord
             'file_name' => basename($path),
             'mime_type' => $disk->mimeType($path) ?: 'application/octet-stream',
             'file_size' => $disk->size($path),
-            'ai_status' => LoanAiStatus::Dudoso,
-            'manual_review_status' => 'pending',
+            ...$this->evaluateEvidenceForPersistence($path, $sourceType, $benefitId),
         ]);
+    }
+
+    private function evaluateEvidenceForForm(string $path, string $sourceType, ?int $benefitId = null): string
+    {
+        return $this->evaluateEvidenceForPersistence($path, $sourceType, $benefitId)['ai_status']->value;
+    }
+
+    private function evaluateEvidenceState(mixed $state, string $sourceType, ?int $benefitId = null): string
+    {
+        $path = $this->prepareEvidencePath($state);
+        if (! $path) {
+            return 'Pendiente de análisis';
+        }
+
+        $status = $this->evaluateEvidenceForForm($path, $sourceType, $benefitId);
+
+        if ($state instanceof TemporaryUploadedFile) {
+            Storage::disk('local')->delete($path);
+        }
+
+        return $status;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function ensureEvidenceCanProceed(array $data): void
+    {
+        $evidences = [];
+
+        if (! empty($data['nomina_evidence'])) {
+            $evidences[] = [
+                'path' => (string) $data['nomina_evidence'],
+                'source_type' => 'nomina',
+                'field' => 'nomina_evidence',
+                'status' => (string) ($data['nomina_ai_status'] ?? 'pendiente'),
+            ];
+        }
+
+        foreach ($data['benefit_evidences'] ?? [] as $index => $evidenceData) {
+            if (! empty($evidenceData['file']) && ! empty($evidenceData['benefit_id'])) {
+                $evidences[] = [
+                    'path' => (string) $evidenceData['file'],
+                    'source_type' => 'benefit',
+                    'benefit_id' => (int) $evidenceData['benefit_id'],
+                    'field' => "benefit_evidences.{$index}.file",
+                    'status' => (string) ($evidenceData['ai_status'] ?? 'pendiente'),
+                ];
+            }
+        }
+
+        foreach ($evidences as $evidence) {
+            if ($evidence['status'] === 'fallo_tecnico') {
+                continue;
+            }
+
+            $result = $this->evaluateEvidenceForPersistence(
+                $evidence['path'],
+                $evidence['source_type'],
+                $evidence['benefit_id'] ?? null,
+            );
+
+            if (in_array($result['ai_status']->value, ['valido', 'fallo_tecnico'], true)) {
+                continue;
+            }
+
+            Notification::make()
+                ->title('No puedes continuar todavía')
+                ->body($this->evidenceBlockingMessage($result['ai_status']->value))
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw new Halt;
+        }
+    }
+
+    private function evidenceBlockingMessage(string $status): string
+    {
+        return match ($status) {
+            'invalido' => 'Este comprobante no corresponde al documento solicitado. Regresa al paso “Evidencias”, selecciona un archivo legible y vigente del trabajador, y vuelve a cargarlo.',
+            'dudoso' => 'No fue posible confirmar este comprobante con suficiente certeza. Revisa que el nombre y el concepto correspondan a tu solicitud, y vuelve a cargar un documento más claro.',
+            default => 'No fue posible revisar este comprobante en este momento. Conserva el archivo y vuelve a intentarlo en unos minutos.',
+        };
+    }
+
+    private function renderEvidenceStatus(string $status): HtmlString
+    {
+        $content = match ($status) {
+            'valido' => [
+                'classes' => 'border-success-200 bg-success-50 text-success-800',
+                'icon' => '✓',
+                'title' => 'Comprobante listo',
+                'body' => 'El documento corresponde a esta solicitud y puede continuar.',
+            ],
+            'invalido' => [
+                'classes' => 'border-danger-200 bg-danger-50 text-danger-800',
+                'icon' => '!',
+                'title' => 'Necesitas reemplazar este comprobante',
+                'body' => 'El archivo no corresponde al documento solicitado. Carga un comprobante laboral legible, vigente y a nombre del trabajador.',
+            ],
+            'dudoso' => [
+                'classes' => 'border-warning-200 bg-warning-50 text-warning-800',
+                'icon' => '?',
+                'title' => 'Revisión pendiente',
+                'body' => 'No se pudo confirmar con claridad. Verifica el nombre, el concepto y la legibilidad antes de continuar.',
+            ],
+            'fallo_tecnico' => [
+                'classes' => 'border-info-200 bg-info-50 text-info-800',
+                'icon' => 'i',
+                'title' => 'Se revisará manualmente',
+                'body' => 'La revisión automática no está disponible. Puedes continuar; un revisor verificará este comprobante antes de aprobar la solicitud.',
+            ],
+            default => [
+                'classes' => 'border-gray-200 bg-gray-50 text-gray-700',
+                'icon' => '•',
+                'title' => 'Documento pendiente',
+                'body' => 'Carga el comprobante para revisar que sea el indicado.',
+            ],
+        };
+
+        return new HtmlString(
+            '<div class="flex items-start gap-3 rounded-xl border p-4 '.$content['classes'].'">'
+            .'<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/80 font-bold">'.$content['icon'].'</div>'
+            .'<div><p class="font-semibold">'.$content['title'].'</p><p class="mt-1 text-sm leading-5">'.$content['body'].'</p></div>'
+            .'</div>',
+        );
+    }
+
+    private function prepareEvidencePath(mixed $state): ?string
+    {
+        if (is_string($state) && $state !== '') {
+            return $state;
+        }
+
+        if ($state instanceof TemporaryUploadedFile) {
+            return $state->store('loan-evidence-poc', 'local');
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function evaluateEvidenceForPersistence(string $path, string $sourceType, ?int $benefitId = null): array
+    {
+        /** @var User $user */
+        $user = auth()->user();
+        $benefit = $benefitId ? Benefit::find($benefitId) : null;
+        $result = app(LoanDocumentAIService::class)->evaluate($path, $sourceType, $user, $benefit);
+
+        return [
+            'ai_status' => $result->aiStatus,
+            'ai_classification' => $result->classification,
+            'ai_confidence' => $result->confidence,
+            'ai_model' => $result->model,
+            'ai_prompt_version' => $result->promptVersion,
+            'extracted_data' => $result->extractedFields,
+            'comparison_data' => $result->comparison,
+            'manual_review_status' => 'pending',
+        ];
     }
 }

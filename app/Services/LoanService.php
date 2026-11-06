@@ -14,6 +14,7 @@ use App\Models\LoanFinancialSummary;
 use App\Models\LoanStatusHistory;
 use App\Models\User;
 use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -97,6 +98,30 @@ class LoanService
 
             return $loan;
         });
+    }
+
+    /**
+     * Get the latest bank details captured by the user for future applications.
+     *
+     * @return array{bank_name: ?string, bank_account: ?string, interbank_clabe: ?string}
+     */
+    public function latestBankDetails(User $user): array
+    {
+        $loan = Loan::forUser($user)
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNotNull('bank_name')
+                    ->orWhereNotNull('bank_account')
+                    ->orWhereNotNull('interbank_clabe');
+            })
+            ->latest('id')
+            ->first(['bank_name', 'bank_account', 'interbank_clabe']);
+
+        return [
+            'bank_name' => $loan?->bank_name,
+            'bank_account' => $loan?->bank_account,
+            'interbank_clabe' => $loan?->interbank_clabe,
+        ];
     }
 
     /**

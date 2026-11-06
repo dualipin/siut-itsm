@@ -22,6 +22,7 @@ use ImagickException;
 use Smalot\PdfParser\Parser as PdfParser;
 use Smalot\PdfParser\XObject\Image as PdfImage;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
+use Throwable;
 
 /**
  * Classifies and extracts data from an uploaded document using any
@@ -497,6 +498,18 @@ PROMPT;
             $maxSide ?? max(256, (int) config('services.document_ai.max_dimension', 1000)),
             (int) config('services.document_ai.jpeg_quality', 70),
         );
+    }
+
+    /**
+     * Downscale and re-encode an image as JPEG to cut input tokens; falls back to the original bytes.
+     */
+    public function optimizeImageForAi(string $bytes): string
+    {
+        try {
+            return $this->optimizeImage($bytes);
+        } catch (Throwable) {
+            return $bytes;
+        }
     }
 
     /**

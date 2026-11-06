@@ -46,6 +46,7 @@ return [
         'timeout' => (int) env('DOCUMENT_AI_TIMEOUT', 60),
         'sync_timeout' => (int) env('DOCUMENT_AI_SYNC_TIMEOUT', 25),
         'max_tokens' => (int) env('DOCUMENT_AI_MAX_TOKENS', 2048),
+        'reasoning_effort' => env('DOCUMENT_AI_REASONING_EFFORT'),
         'max_dimension' => (int) env('DOCUMENT_AI_MAX_DIMENSION', 1000),
         'jpeg_quality' => (int) env('DOCUMENT_AI_JPEG_QUALITY', 70),
         'store_max_dimension' => (int) env('DOCUMENT_AI_STORE_MAX_DIMENSION', 1600),
