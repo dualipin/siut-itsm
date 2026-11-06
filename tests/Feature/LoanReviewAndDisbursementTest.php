@@ -536,6 +536,3 @@ it('keeps signature verified on detail view even after admin modifies terms and 
         ->assertDontSee('Pendiente / Invalidada')
         ->assertSee('Fecha de firma');
 });
- Invalidada')
-        ->assertSee('Fecha de firma');
-});

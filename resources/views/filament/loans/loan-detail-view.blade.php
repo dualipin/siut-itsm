@@ -444,37 +444,3 @@
         </div>
     @endif
 </div>
-
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                                {{ $h->from_status ? $h->from_status->getLabel().' → ' : '' }}{{ $h->to_status->getLabel() }}
-                            </span>
-                            @if($h->comment)
-                                <p class="text-gray-500 dark:text-gray-400 mt-0.5 text-wrap-pretty">{{ $h->comment }}</p>
-                            @endif
-                        </div>
-                        <div class="text-right text-gray-500 dark:text-gray-400 shrink-0">
-                            <div>{{ $h->user->full_name ?? 'Sistema' }}</div>
-                            <div class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
-</div>
-                                {{ $h->from_status ? $h->from_status->getLabel().' → ' : '' }}{{ $h->to_status->getLabel() }}
-                            </span>
-                            @if($h->comment)
-                                <p class="text-gray-500 dark:text-gray-400 mt-0.5 text-wrap-pretty">{{ $h->comment }}</p>
-                            @endif
-                        </div>
-                        <div class="text-right text-gray-500 dark:text-gray-400 shrink-0">
-                            <div>{{ $h->user->full_name ?? 'Sistema' }}</div>
-                            <div class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ $h->created_at?->format('d/m/Y H:i') }}</div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
-</div>
