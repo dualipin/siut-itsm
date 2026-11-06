@@ -120,7 +120,7 @@
                     <div class="flex items-center justify-between pt-1">
                         <span class="text-xs text-gray-500">Trazo registrado:</span>
                         <div class="rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700">
-                            <img src="{{ $loan->signature_data }}" class="max-h-10 max-w-[130px] object-contain" alt="Firma registrada">
+                            <img src="{{ $loan->signature_data }}" class="max-h-16 max-w-32.5 object-contain" alt="Firma registrada">
                         </div>
                     </div>
                 @endif
@@ -171,7 +171,7 @@
                                     </span>
                                 @endif
                                 <a href="{{ route('loans.evidences.download', ['loan' => $loan->id, 'evidence' => $ev->id]) }}" target="_blank" class="text-xs font-semibold text-primary-600 hover:underline">
-                                    Descargar Archivo ↗
+                                    Descargar Archivo
                                 </a>
                             </div>
                         </div>
@@ -229,7 +229,7 @@
                     <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
                         @if($doc)
                             <a href="{{ route('loans.documents.download', ['loan' => $loan->id, 'document' => $doc->id]) }}" target="_blank" class="w-full text-center block text-xs font-bold text-primary-600 hover:text-primary-700 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg py-1.5 shadow-sm">
-                                Descargar PDF ↗
+                                Descargar PDF
                             </a>
                         @else
                             <button disabled class="w-full text-center block text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg py-1.5 cursor-not-allowed">
