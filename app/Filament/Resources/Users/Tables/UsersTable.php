@@ -2,8 +2,6 @@
 
 namespace App\Filament\Resources\Users\Tables;
 
-use App\Enums\DocumentStatus;
-use App\Enums\UserDocumentType;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use Filament\Actions\Action;
@@ -12,12 +10,6 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreBulkAction;
-use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Grid;
-use Filament\Schemas\Components\Section;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
@@ -25,7 +17,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\HtmlString;
 
 class UsersTable
 {
@@ -115,7 +106,7 @@ class UsersTable
 
                 EditAction::make(),
             ])
-            ->defaultSort(fn (Builder $query): Builder => $query->orderBy('surnames')->orderBy('name'))
+            ->defaultSort(fn (Builder $query): Builder => $query->orderBy('name')->orderBy('surnames'))
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
