@@ -123,6 +123,11 @@ class Loan extends Model
         return $this->belongsTo(User::class, 'exception_authorized_by');
     }
 
+    public function efirmaSignature(): HasOne
+    {
+        return $this->hasOne(LoanEfirmaSignature::class);
+    }
+
     public function loanBenefits(): HasMany
     {
         return $this->hasMany(LoanBenefit::class);
