@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 use function Livewire\on;
@@ -21,6 +23,30 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::before(function (User $user, string $ability, array $arguments = []): ?bool {
+            if (! $user->is_active) {
+                return false;
+            }
+
+            $target = $arguments[0] ?? null;
+            if ($target) {
+                $policy = Gate::getPolicyFor($target);
+                if ($policy && method_exists($policy, $ability)) {
+                    return null;
+                }
+            }
+
+            if (Gate::has($ability)) {
+                return null;
+            }
+
+            if ($user->isAgremiado()) {
+                return false;
+            }
+
+            return null;
+        });
+
         // Prevenir ErrorException "Undefined array key 'children'" en Livewire
         // cuando un snapshot llega sin la clave 'children' en el memo (bug en SupportNestingComponents)
         if (function_exists('Livewire\on')) {

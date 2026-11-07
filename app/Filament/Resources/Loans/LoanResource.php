@@ -15,7 +15,6 @@ use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class LoanResource extends Resource
@@ -57,26 +56,6 @@ class LoanResource extends Resource
         return 'warning';
     }
 
-    public static function canAccess(): bool
-    {
-        return (bool) auth()->user()?->is_active;
-    }
-
-    public static function canCreate(): bool
-    {
-        return (bool) auth()->user()?->is_active;
-    }
-
-    public static function canEdit(Model $record): bool
-    {
-        return false;
-    }
-
-    public static function canDelete(Model $record): bool
-    {
-        return auth()->user()?->isLeaderOrAdmin() ?? false;
-    }
-
     public static function table(Table $table): Table
     {
         return LoansTable::configure($table);
@@ -95,16 +74,17 @@ class LoanResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->withoutGlobalScopes([
-                SoftDeletingScope::class,
-            ])
             ->with(['user'])
             ->withExists('evidences');
 
         /** @var User|null $user */
         $user = auth()->user();
 
-        if ($user && $user->isAgremiado()) {
+        if ($user && $user->isLeaderOrAdmin()) {
+            $query->withoutGlobalScopes([
+                SoftDeletingScope::class,
+            ]);
+        } elseif ($user && $user->isAgremiado()) {
             $query->where('user_id', $user->id);
         }
 

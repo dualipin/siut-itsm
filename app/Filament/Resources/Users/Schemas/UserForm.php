@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Users\Schemas;
 
 use App\Enums\UserRole;
+use App\Models\User;
 use App\Rules\UniqueCurp;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
@@ -32,11 +33,16 @@ class UserForm
                     ->required(),
                 Select::make('role')
                     ->label('Rol de Usuario')
-                    ->options(UserRole::class)
-                    ->required(),
+                    ->options([
+                        UserRole::Agremiado->value => UserRole::Agremiado->getLabel(),
+                        UserRole::Admin->value => UserRole::Admin->getLabel(),
+                    ])
+                    ->required()
+                    ->disabled(fn (?Model $record): bool => $record?->id === auth()->id() || ($record instanceof User && $record->isLider())),
                 Toggle::make('is_active')
                     ->label('Activo')
-                    ->required(),
+                    ->required()
+                    ->disabled(fn (?Model $record): bool => $record?->id === auth()->id()),
                 TextInput::make('curp')
                     ->label('CURP')
                     ->required()

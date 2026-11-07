@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\TransparencyDocument;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TransparencyDocumentController extends Controller
@@ -21,6 +22,8 @@ class TransparencyDocumentController extends Controller
 
         // Only active users with portal access can access portal documents
         abort_unless($currentUser->is_active, 403, 'Tu cuenta se encuentra inactiva.');
+
+        Gate::authorize('view', $document);
 
         $media = $document->getFirstMedia('file');
 

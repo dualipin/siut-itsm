@@ -92,7 +92,7 @@ test('transparency record seeder populates database with records and media', fun
 
 test('authenticated active user can view portal transparency document inline', function () {
     $user = User::factory()->create(['is_active' => true]);
-    $record = TransparencyRecord::factory()->create(['created_by' => $user->id]);
+    $record = TransparencyRecord::factory()->published()->create(['created_by' => $user->id]);
     $document = TransparencyDocument::create([
         'transparency_record_id' => $record->id,
         'name' => 'Oficio de Presupuesto',
@@ -114,7 +114,7 @@ test('authenticated active user can view portal transparency document inline', f
 
 test('authenticated active user can download portal transparency document with download param', function () {
     $user = User::factory()->create(['is_active' => true]);
-    $record = TransparencyRecord::factory()->create(['created_by' => $user->id]);
+    $record = TransparencyRecord::factory()->published()->create(['created_by' => $user->id]);
     $document = TransparencyDocument::create([
         'transparency_record_id' => $record->id,
         'name' => 'Anexo de Horas',
@@ -178,7 +178,7 @@ test('inactive user is forbidden from accessing portal transparency document rou
 
 test('transparency document without media returns 404 on show route', function () {
     $user = User::factory()->create(['is_active' => true]);
-    $record = TransparencyRecord::factory()->create(['created_by' => $user->id]);
+    $record = TransparencyRecord::factory()->published()->create(['created_by' => $user->id]);
     $document = TransparencyDocument::create([
         'transparency_record_id' => $record->id,
         'name' => 'Documento Vacio',

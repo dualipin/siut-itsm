@@ -9,6 +9,7 @@ use App\Exceptions\DocumentAIException;
 use App\Filament\Resources\Users\Schemas\DocumentReviewInfolist;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
+use App\Services\AuditService;
 use App\Services\DocumentAIService;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -111,6 +112,10 @@ class ReviewDocuments extends ViewRecord
                         $media->setCustomProperty('reviewed_at', now()->toIso8601String());
                         $media->forgetCustomProperty('rejection_reason');
                         $media->save();
+                        AuditService::log('review_documents', auth()->id(), $user->id, [
+                            'document_type' => $type->value,
+                            'status' => DocumentStatus::Valid->value,
+                        ]);
                         $approvedCount++;
                     }
 
@@ -270,6 +275,11 @@ class ReviewDocuments extends ViewRecord
                 $media->forgetCustomProperty('rejection_reason');
                 $media->save();
 
+                AuditService::log('review_documents', auth()->id(), $user->id, [
+                    'document_type' => $type->value,
+                    'status' => DocumentStatus::Valid->value,
+                ]);
+
                 Notification::make()
                     ->title('Documento aprobado')
                     ->body("Tu documento '{$type->getLabel()}' ha sido revisado y validado satisfactoriamente.")
@@ -320,6 +330,12 @@ class ReviewDocuments extends ViewRecord
                 $media->setCustomProperty('reviewed_at', now()->toIso8601String());
                 $media->setCustomProperty('rejection_reason', $data['rejection_reason']);
                 $media->save();
+
+                AuditService::log('review_documents', auth()->id(), $user->id, [
+                    'document_type' => $type->value,
+                    'status' => DocumentStatus::Invalid->value,
+                    'reason' => $data['rejection_reason'],
+                ]);
 
                 Notification::make()
                     ->title('Documento marcado como Inválido')

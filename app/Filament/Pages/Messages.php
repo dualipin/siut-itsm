@@ -200,6 +200,22 @@ class Messages extends Page
             return;
         }
 
+        /** @var User $currentUser */
+        $currentUser = auth()->user();
+
+        if ($currentUser->isAgremiado()) {
+            $recipient = User::find($this->newRecipientId);
+            if (! $recipient || ! $recipient->isLeaderOrAdmin()) {
+                Notification::make()
+                    ->title('Error')
+                    ->body('Solo puedes iniciar conversaciones con administradores o el líder.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+        }
+
         $conversation = Conversation::create([
             'subject' => $this->newSubject,
             'created_by' => $userId,

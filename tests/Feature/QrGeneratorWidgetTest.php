@@ -4,8 +4,8 @@ use App\Filament\Widgets\QrGeneratorWidget;
 use App\Models\User;
 use Livewire\Livewire;
 
-test('qr generator widget can render successfully', function () {
-    $user = User::factory()->create(['is_active' => true]);
+test('qr generator widget can render successfully for admin', function () {
+    $user = User::factory()->admin()->create(['is_active' => true]);
 
     $this->actingAs($user);
 
@@ -15,11 +15,16 @@ test('qr generator widget can render successfully', function () {
         ->assertSee('island', escape: false);
 });
 
-test('authenticated user can view dashboard with qr generator widget', function () {
-    $user = User::factory()->create(['is_active' => true]);
+test('admin can view dashboard with qr generator widget while agremiado cannot', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
 
-    $response = $this->actingAs($user)->get('/portal');
+    $response = $this->actingAs($admin)->get('/portal');
 
     $response->assertSuccessful();
     $response->assertSee('data-vue="portal/qr-generator"', escape: false);
+
+    $agremiado = User::factory()->create(['is_active' => true]);
+    $agremiadoResponse = $this->actingAs($agremiado)->get('/portal');
+    $agremiadoResponse->assertSuccessful();
+    $agremiadoResponse->assertDontSee('data-vue="portal/qr-generator"', escape: false);
 });

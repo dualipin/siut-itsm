@@ -92,7 +92,8 @@ class LoansTable
                     ->label('Validar Evidencias')
                     ->icon(Heroicon::DocumentCheck)
                     ->color('info')
-                    ->visible(fn (Loan $record): bool => (auth()->user()?->isLeaderOrAdmin() ?? false) && ($record->relationLoaded('evidences') ? $record->evidences->isNotEmpty() : ($record->evidences_exists ?? $record->evidences()->exists())))
+                    ->authorize('review')
+                    ->visible(fn (Loan $record): bool => $record->relationLoaded('evidences') ? $record->evidences->isNotEmpty() : ($record->evidences_exists ?? $record->evidences()->exists()))
                     ->url(fn (Loan $record): string => LoanResource::getUrl('review-documents', ['record' => $record])),
             ])
             ->emptyStateHeading('Sin solicitudes de préstamo')

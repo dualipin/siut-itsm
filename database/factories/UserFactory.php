@@ -29,7 +29,7 @@ class UserFactory extends Factory
             'name' => fake()->firstName(),
             'surnames' => fake()->lastName().' '.fake()->lastName(),
             'email' => fake()->unique()->safeEmail(),
-            'role' => fake()->randomElement(UserRole::cases()),
+            'role' => UserRole::Agremiado,
             'is_active' => true,
             'curp' => strtoupper(fake()->unique()->bothify('????######??????##')),
             'birth_date' => fake()->dateTimeBetween('-60 years', '-18 years')->format('Y-m-d'),

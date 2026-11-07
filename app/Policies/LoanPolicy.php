@@ -70,18 +70,20 @@ class LoanPolicy
 
     /**
      * Determine whether the user can review/approve/reject/waitlist the loan.
+     * Separation of duties: nobody can review their own loan.
      */
     public function review(User $user, Loan $loan): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $user->isLeaderOrAdmin() && $user->id !== $loan->user_id;
     }
 
     /**
      * Determine whether the user can disburse the loan.
+     * Separation of duties: nobody can disburse their own loan.
      */
     public function disburse(User $user, Loan $loan): bool
     {
-        return $user->isLeaderOrAdmin() && $loan->status === LoanStatus::Aprobada;
+        return $user->isLeaderOrAdmin() && $loan->status === LoanStatus::Aprobada && $user->id !== $loan->user_id;
     }
 
     /**
@@ -102,5 +104,21 @@ class LoanPolicy
         }
 
         return $user->id === $loan->user_id;
+    }
+
+    /**
+     * Determine whether the user can restore the model.
+     */
+    public function restore(User $user, Loan $loan): bool
+    {
+        return $user->isLeaderOrAdmin();
+    }
+
+    /**
+     * Determine whether the user can permanently delete the model.
+     */
+    public function forceDelete(User $user, Loan $loan): bool
+    {
+        return $user->isLeaderOrAdmin();
     }
 }

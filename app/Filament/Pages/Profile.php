@@ -67,7 +67,9 @@ class Profile extends BaseEditProfile
     protected function getEmailFormComponent(): Component
     {
         return parent::getEmailFormComponent()
-            ->label('Correo Electrónico');
+            ->label('Correo Electrónico')
+            ->disabled(fn (): bool => auth()->user()?->isAgremiado() ?? false)
+            ->dehydrated(fn (): bool => ! (auth()->user()?->isAgremiado() ?? false));
     }
 
     protected function getCurrentPasswordFormComponent(): Component
@@ -130,11 +132,15 @@ class Profile extends BaseEditProfile
                                     ->maxLength(20),
                                 DatePicker::make('birth_date')
                                     ->label('Fecha de Nacimiento')
-                                    ->maxDate(now()->subYears(18)),
+                                    ->maxDate(now()->subYears(18))
+                                    ->disabled(fn (): bool => auth()->user()?->isAgremiado() ?? false)
+                                    ->dehydrated(fn (): bool => ! (auth()->user()?->isAgremiado() ?? false)),
                                 TextInput::make('salary')
                                     ->label('Salario')
                                     ->numeric()
-                                    ->prefix('$'),
+                                    ->prefix('$')
+                                    ->disabled(fn (): bool => auth()->user()?->isAgremiado() ?? false)
+                                    ->dehydrated(fn (): bool => ! (auth()->user()?->isAgremiado() ?? false)),
                             ]),
                         Textarea::make('address')
                             ->label('Dirección')
@@ -365,6 +371,10 @@ class Profile extends BaseEditProfile
      */
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
+        if ($record instanceof User && $record->isAgremiado()) {
+            unset($data['email'], $data['birth_date'], $data['salary']);
+        }
+
         $record = parent::handleRecordUpdate($record, $data);
         $this->form->model($record)->saveRelationships();
 

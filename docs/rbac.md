@@ -150,18 +150,18 @@ Cada fase se entrega con sus tests en `tests/Feature/Rbac/` (Pest) y con `vendor
 
 ## 7. Checklist de tests
 
-- [ ] Agremiado recibe 403 en todo recurso/página fuera de la lista blanca (test que itera el panel).
-- [ ] Un recurso nuevo sin policy ni `canAccess` no es visible para el agremiado.
-- [ ] Agremiado solo ve y descarga sus propios préstamos y solicitudes; recibe 403/404 con los de otro.
-- [ ] Agremiado no ve préstamos ni solicitudes eliminados.
-- [ ] Agremiado solo cancela su solicitud en `Pending`.
-- [ ] Agremiado no puede editar email, fecha de nacimiento ni salario desde el perfil.
-- [ ] Admin y Líder revisan préstamos ajenos; ninguno puede revisar el propio (policy **y** servicio).
-- [ ] `PostDeployMaintenance` permite `Admin` y niega `Lider`.
-- [ ] No se puede crear ni promover un segundo `Lider` (incluye líder inactivo).
-- [ ] "Transferir liderazgo" es atómico y solo lo ejecuta el líder actual.
-- [ ] Un usuario no puede cambiar su rol, desactivarse ni eliminarse; no se puede dejar el sistema sin admin/líder activo.
-- [ ] Un `Admin` no puede editar, desactivar, eliminar ni cambiar la contraseña del `Lider`.
-- [ ] Cada acción sensible escribe en el canal `audit` sin PII.
-- [ ] Agremiado no abre documentos de transparencia de registros no publicados.
-- [ ] Usuario inactivo no accede al panel ni a descargas.
+- [x] Agremiado recibe 403 en todo recurso/página fuera de la lista blanca (test que itera el panel).
+- [x] Un recurso nuevo sin policy ni `canAccess` no es visible para el agremiado.
+- [x] Agremiado solo ve y descarga sus propios préstamos y solicitudes; recibe 403/404 con los de otro.
+- [x] Agremiado no ve préstamos ni solicitudes eliminados.
+- [x] Agremiado solo cancela su solicitud en `Pending`.
+- [x] Agremiado no puede editar email, fecha de nacimiento ni salario desde el perfil.
+- [x] Admin y Líder revisan préstamos ajenos; ninguno puede revisar el propio (policy **y** servicio).
+- [x] `PostDeployMaintenance` permite `Admin` y niega `Lider`.
+- [x] No se puede crear ni promover un segundo `Lider` (incluye líder inactivo).
+- [x] "Transferir liderazgo" es atómico y solo lo ejecuta el líder actual.
+- [x] Un usuario no puede cambiar su rol, desactivarse ni eliminarse; no se puede dejar el sistema sin admin/líder activo.
+- [x] Un `Admin` no puede editar, desactivar, eliminar ni cambiar la contraseña del `Lider`.
+- [x] Cada acción sensible escribe en el canal `audit` sin PII.
+- [x] Agremiado no abre documentos de transparencia de registros no publicados.
+- [x] Usuario inactivo no accede al panel ni a descargas.
