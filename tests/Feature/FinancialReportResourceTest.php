@@ -12,10 +12,12 @@ use Livewire\Livewire;
 
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('portal'));
+    $this->admin = User::factory()->admin()->create();
+    $this->actingAs($this->admin);
 });
 
 test('it can render financial reports list page', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $report = FinancialReport::factory()->create(['created_by' => $user->id]);
 
     $this->actingAs($user);
@@ -26,7 +28,7 @@ test('it can render financial reports list page', function () {
 });
 
 test('it validates required fields on financial report creation', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
 
     $this->actingAs($user);
 
@@ -68,7 +70,7 @@ test('it only allows a single file in the financial_reports media collection', f
 test('it displays the document in the financial report detail view', function () {
     Storage::fake('public');
 
-    $user = User::factory()->create([
+    $user = User::factory()->admin()->create([
         'name' => 'Carlos',
         'surnames' => 'López',
     ]);
@@ -91,7 +93,7 @@ test('it displays the document in the financial report detail view', function ()
 });
 
 test('it shows fallback when financial report has no document in detail view', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $report = FinancialReport::factory()->create(['created_by' => $user->id]);
 
     $this->actingAs($user);
@@ -109,6 +111,8 @@ test('guest cannot open the financial report document without an active session'
         ->setFileName('reporte-privado.pdf')
         ->toMediaCollection('financial_reports');
 
+    auth()->logout();
+
     $response = $this->get(FinancialReportResource::getUrl('document', ['record' => $report]));
 
     $response->assertRedirect(route('filament.portal.auth.login'));
@@ -117,7 +121,7 @@ test('guest cannot open the financial report document without an active session'
 test('authenticated user can open and view the financial report document', function () {
     Storage::fake('public');
 
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $report = FinancialReport::factory()->create();
     $report->addMediaFromString('contenido confidencial')
         ->setFileName('reporte-privado.pdf')
@@ -132,7 +136,7 @@ test('authenticated user can open and view the financial report document', funct
 test('authenticated user can download the financial report document with download parameter', function () {
     Storage::fake('public');
 
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $report = FinancialReport::factory()->create();
     $report->addMediaFromString('contenido confidencial')
         ->setFileName('reporte-privado.pdf')
@@ -145,7 +149,7 @@ test('authenticated user can download the financial report document with downloa
 });
 
 test('document route returns 404 if the financial report has no document', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $report = FinancialReport::factory()->create();
 
     $response = $this->actingAs($user)->get(FinancialReportResource::getUrl('document', ['record' => $report]));

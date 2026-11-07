@@ -92,7 +92,18 @@ Route::middleware(['web', 'auth'])->get('/portal/maintenance/clear', function ()
 })->name('portal.maintenance.clear');
 
 Route::post('/api/deploy-webhook', function (Request $request) {
-    $secret = (string) config('app.deploy_secret', env('DEPLOY_WEBHOOK_SECRET', ''));
+    $secret = (string) config('app.deploy_secret');
+
+    if ($secret === '') {
+        $secret = (string) env('DEPLOY_WEBHOOK_SECRET', '');
+    }
+
+    if ($secret === '') {
+        $envPath = base_path('.env');
+        if (file_exists($envPath) && preg_match('/^DEPLOY_WEBHOOK_SECRET=(.*)$/m', (string) file_get_contents($envPath), $matches)) {
+            $secret = trim($matches[1], " \t\n\r\0\x0B\"'");
+        }
+    }
 
     if ($secret === '' || ! hash_equals($secret, (string) $request->header('X-Deploy-Token', ''))) {
         abort(403, 'Unauthorized');

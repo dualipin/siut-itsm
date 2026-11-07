@@ -43,11 +43,6 @@ class ViewLoan extends ViewRecord
     {
         /** @var Loan $record */
         $record = $this->getRecord();
-        $isLeaderOrAdmin = auth()->user()?->isLeaderOrAdmin() ?? false;
-
-        if (! $isLeaderOrAdmin) {
-            return [];
-        }
 
         $calendarService = app(LoanCalendarService::class);
 
@@ -57,6 +52,7 @@ class ViewLoan extends ViewRecord
                 ->label('Validar Evidencia Manual')
                 ->icon(Heroicon::DocumentCheck)
                 ->color('info')
+                ->authorize('review', $record)
                 ->visible(fn (): bool => $record->evidences()->exists())
                 ->badge(fn (): ?string => ($count = $record->evidences()->where('manual_review_status', 'pending')->count()) > 0 ? (string) $count : null)
                 ->badgeColor('warning')
@@ -67,6 +63,7 @@ class ViewLoan extends ViewRecord
                 ->label('Aprobar Préstamo')
                 ->icon(Heroicon::CheckCircle)
                 ->color('success')
+                ->authorize('review', $record)
                 ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true))
                 ->requiresConfirmation()
                 ->modalHeading(fn (): string => "¿Aprobar la solicitud {$record->folio}?")
@@ -301,6 +298,7 @@ class ViewLoan extends ViewRecord
                     ->label('Lista de Espera')
                     ->icon(Heroicon::Clock)
                     ->color('warning')
+                    ->authorize('review', $record)
                     ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision], true))
                     ->requiresConfirmation()
                     ->modalHeading('Colocar en Lista de Espera')
@@ -332,6 +330,7 @@ class ViewLoan extends ViewRecord
                     ->label('Rechazar')
                     ->icon(Heroicon::XCircle)
                     ->color('danger')
+                    ->authorize('review', $record)
                     ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true))
                     ->requiresConfirmation()
                     ->modalHeading('Rechazar Solicitud de Préstamo')
@@ -364,13 +363,14 @@ class ViewLoan extends ViewRecord
                 ->icon(Heroicon::ChevronDown)
                 ->color('gray')
                 ->button()
-                ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true)),
+                ->visible(fn (): bool => in_array($record->status, [LoanStatus::Enviada, LoanStatus::EnRevision, LoanStatus::ListaEspera], true) && (auth()->user()?->can('review', $record) ?? false)),
 
             // Disburse Action
             Action::make('disburseLoan')
                 ->label('Registrar Desembolso')
                 ->icon(Heroicon::Banknotes)
                 ->color('success')
+                ->authorize('disburse', $record)
                 ->visible(fn (): bool => $record->status === LoanStatus::Aprobada && $record->disbursed_at === null)
                 ->requiresConfirmation()
                 ->modalHeading('Registrar Desembolso de Recursos')

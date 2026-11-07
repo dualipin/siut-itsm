@@ -13,4 +13,9 @@ class QrGeneratorWidget extends Widget
     protected int|string|array $columnSpan = 'full';
 
     protected static ?int $sort = 3;
+
+    public static function canView(): bool
+    {
+        return auth()->user()?->isLeaderOrAdmin() ?? false;
+    }
 }

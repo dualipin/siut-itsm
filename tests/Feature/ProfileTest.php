@@ -54,7 +54,7 @@ test('authenticated user can view profile page with self details', function () {
 });
 
 test('authenticated user can update their personal information and salary', function () {
-    $user = User::factory()->create([
+    $user = User::factory()->admin()->create([
         'name' => 'Beatriz',
         'surnames' => 'Hernández',
         'email' => 'beatriz@siut.org',

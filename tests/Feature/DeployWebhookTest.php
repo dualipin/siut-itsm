@@ -2,11 +2,7 @@
 
 use App\Enums\UserRole;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
-use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 test('deploy webhook returns 403 when token is missing', function () {
     Config::set('app.deploy_secret', 'secret-deploy-token-12345');

@@ -23,6 +23,10 @@ class MessageAttachmentController extends Controller
             abort(401);
         }
 
+        if (! $user->is_active) {
+            abort(403, 'Tu cuenta se encuentra inactiva.');
+        }
+
         // Verify media belongs to a ConversationMessage
         if ($media->model_type !== ConversationMessage::class) {
             abort(404);

@@ -17,7 +17,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class UserRequestResource extends Resource
@@ -37,16 +36,6 @@ class UserRequestResource extends Resource
     protected static ?string $breadcrumb = 'Solicitudes';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Administración';
-
-    public static function canEdit(Model $record): bool
-    {
-        return auth()->user()?->isLeaderOrAdmin() ?? false;
-    }
-
-    public static function canDelete(Model $record): bool
-    {
-        return auth()->user()?->isLeaderOrAdmin() ?? false;
-    }
 
     public static function form(Schema $schema): Schema
     {
@@ -82,15 +71,16 @@ class UserRequestResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()
-            ->withoutGlobalScopes([
-                SoftDeletingScope::class,
-            ]);
+        $query = parent::getEloquentQuery();
 
-        /** @var User */
+        /** @var User|null $user */
         $user = auth()->user();
 
-        if ($user && $user->isAgremiado()) {
+        if ($user && $user->isLeaderOrAdmin()) {
+            $query->withoutGlobalScopes([
+                SoftDeletingScope::class,
+            ]);
+        } elseif ($user && $user->isAgremiado()) {
             $query->where('user_id', $user->id);
         }
 

@@ -20,6 +20,7 @@ class UserDocumentController extends Controller
         $currentUser = $request->user();
 
         abort_unless($currentUser !== null, 401);
+        abort_unless($currentUser->is_active, 403, 'Tu cuenta se encuentra inactiva.');
 
         // Enforce authorization: only leaders, administrators, or the owner can view
         abort_unless(

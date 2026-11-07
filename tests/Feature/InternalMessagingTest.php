@@ -164,7 +164,7 @@ test('messages page provides formatted searchable recipients list for new conver
     $inactive = User::factory()->create([
         'name' => 'Inactivo',
         'is_active' => false,
-        'role' => UserRole::Lider,
+        'role' => UserRole::Admin,
     ]);
 
     $this->actingAs($agremiado);

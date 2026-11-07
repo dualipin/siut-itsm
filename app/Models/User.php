@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\DocumentStatus;
 use App\Enums\UserDocumentType;
 use App\Enums\UserRole;
+use App\Services\AuditService;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
@@ -45,6 +46,29 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, InteractsWithMedia, Notifiable, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::saving(function (User $user): void {
+            if ($user->isDirty('role') && $user->role === UserRole::Lider) {
+                $query = static::where('role', UserRole::Lider);
+                if ($user->exists) {
+                    $query->where('id', '!=', $user->id);
+                }
+                if ($query->exists()) {
+                    throw new \DomainException('Solo puede existir un usuario con el rol de Líder.');
+                }
+            }
+        });
+
+        static::deleted(function (User $user): void {
+            AuditService::log('delete_user', auth()->id(), $user->id);
+        });
+
+        static::restored(function (User $user): void {
+            AuditService::log('restore_user', auth()->id(), $user->id);
+        });
+    }
 
     /**
      * Determine if the user can access the given Filament panel.

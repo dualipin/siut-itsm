@@ -14,9 +14,11 @@ use App\Models\LoanFinancialSummary;
 use App\Models\LoanStatusHistory;
 use App\Models\User;
 use Filament\Notifications\Notification;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class LoanService
@@ -314,6 +316,10 @@ class LoanService
      */
     public function markInReview(Loan $loan, User $reviewer): Loan
     {
+        if (! Gate::forUser($reviewer)->allows('review', $loan)) {
+            throw new AuthorizationException('No tienes autorización para revisar esta solicitud de préstamo.');
+        }
+
         return DB::transaction(function () use ($loan, $reviewer) {
             /** @var Loan $locked */
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
@@ -349,6 +355,10 @@ class LoanService
      */
     public function approve(Loan $loan, User $reviewer, array $params = []): Loan
     {
+        if (! Gate::forUser($reviewer)->allows('review', $loan)) {
+            throw new AuthorizationException('No tienes autorización para aprobar esta solicitud de préstamo.');
+        }
+
         return DB::transaction(function () use ($loan, $reviewer, $params) {
             /** @var Loan $locked */
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
@@ -441,6 +451,10 @@ class LoanService
      */
     public function waitlist(Loan $loan, User $reviewer, string $reason): Loan
     {
+        if (! Gate::forUser($reviewer)->allows('review', $loan)) {
+            throw new AuthorizationException('No tienes autorización para poner en lista de espera esta solicitud de préstamo.');
+        }
+
         return DB::transaction(function () use ($loan, $reviewer, $reason) {
             /** @var Loan $locked */
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
@@ -482,6 +496,10 @@ class LoanService
      */
     public function reject(Loan $loan, User $reviewer, string $reason): Loan
     {
+        if (! Gate::forUser($reviewer)->allows('review', $loan)) {
+            throw new AuthorizationException('No tienes autorización para rechazar esta solicitud de préstamo.');
+        }
+
         return DB::transaction(function () use ($loan, $reviewer, $reason) {
             /** @var Loan $locked */
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
@@ -527,6 +545,10 @@ class LoanService
      */
     public function disburse(Loan $loan, User $reviewer, array $data): Loan
     {
+        if (! Gate::forUser($reviewer)->allows('disburse', $loan)) {
+            throw new AuthorizationException('No tienes autorización para desembolsar esta solicitud de préstamo.');
+        }
+
         return DB::transaction(function () use ($loan, $reviewer, $data) {
             /** @var Loan $locked */
             $locked = Loan::where('id', $loan->id)->lockForUpdate()->firstOrFail();
@@ -586,6 +608,10 @@ class LoanService
      */
     public function reviewEvidence(LoanEvidence $evidence, User $reviewer, string $status, ?string $notes = null): LoanEvidence
     {
+        if (! Gate::forUser($reviewer)->allows('review', $evidence->loan)) {
+            throw new AuthorizationException('No tienes autorización para validar evidencias de esta solicitud de préstamo.');
+        }
+
         $evidence->update([
             'manual_review_status' => $status,
             'manual_review_notes' => $notes,
