@@ -6,6 +6,8 @@ use App\Http\Controllers\MessageAttachmentController;
 use App\Http\Controllers\PublicPetitionController;
 use App\Http\Controllers\TransparencyDocumentController;
 use App\Http\Controllers\UserDocumentController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -78,6 +80,49 @@ Route::get('/storage/{path}', function (string $path) {
         'Cache-Control' => 'public, max-age=86400, must-revalidate',
     ]);
 })->where('path', '.*')->name('public.storage');
+
+Route::middleware(['web', 'auth'])->get('/portal/maintenance/clear', function () {
+    if (! auth()->user()?->isAdmin()) {
+        abort(403);
+    }
+
+    Artisan::call('optimize:clear');
+
+    return redirect('/portal')->with('status', 'Caché optimizada limpiada correctamente.');
+})->name('portal.maintenance.clear');
+
+Route::post('/api/deploy-webhook', function (Request $request) {
+    $secret = (string) config('app.deploy_secret', env('DEPLOY_WEBHOOK_SECRET', ''));
+
+    if ($secret === '' || ! hash_equals($secret, (string) $request->header('X-Deploy-Token', ''))) {
+        abort(403, 'Unauthorized');
+    }
+
+    @ini_set('max_execution_time', '300');
+
+    $startTime = microtime(true);
+    $commands = [
+        'migrate' => ['--force' => true],
+        'optimize:clear' => [],
+        'optimize' => [],
+        'view:cache' => [],
+    ];
+
+    $results = [];
+    foreach ($commands as $command => $parameters) {
+        $exitCode = Artisan::call($command, $parameters);
+        $results[$command] = [
+            'exit_code' => $exitCode,
+            'output' => trim(Artisan::output()),
+        ];
+    }
+
+    return response()->json([
+        'success' => true,
+        'duration_seconds' => round(microtime(true) - $startTime, 2),
+        'results' => $results,
+    ]);
+})->name('deploy.webhook');
 
 Route::fallback(function () {
     return response()->view('errors.404-landing', [], 404);
