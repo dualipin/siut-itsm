@@ -55,6 +55,11 @@ function nextFortnight(dateStr: string): string {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+function isApplicationWindowOpen(date: Date): boolean {
+    const applicationDeadline = new Date(date.getFullYear(), 10, 30, 23, 59, 59, 999) // Nov 30
+    return date <= applicationDeadline
+}
+
 /**
  * Generate all valid fortnights between minDate (today+20) and Dec 31 of current year.
  * Only available when current date is on or before Nov 30 of current year.
@@ -63,9 +68,8 @@ const availableFortnights = computed(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const year = today.getFullYear()
-    const applicationDeadline = new Date(year, 10, 30, 23, 59, 59, 999) // Nov 30
 
-    if (today > applicationDeadline) {
+    if (!isApplicationWindowOpen(today)) {
         return []
     }
 
@@ -84,7 +88,7 @@ const availableFortnights = computed(() => {
         for (const day of candidates) {
             const d = new Date(year, month - 1, day)
             d.setHours(0, 0, 0, 0)
-            if (d >= minDate && d <= paymentCutoff) {
+            if (d > minDate && d <= paymentCutoff) {
                 const yyyy = d.getFullYear()
                 const mm = String(d.getMonth() + 1).padStart(2, '0')
                 const ddStr = String(d.getDate()).padStart(2, '0')
@@ -174,9 +178,19 @@ const showBenefits = computed(() =>
     form.data.payment_type === 'benefit' || form.data.payment_type === 'mixed'
 )
 
-// ── Available benefits (only future collection dates) ─────────────────────────
+// ── Available benefits (only future collection dates and within application window) ──
 const availableBenefits = computed(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const year = now.getFullYear()
+
+    if (!isApplicationWindowOpen(now)) {
+        return []
+    }
+
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const today = `${year}-${mm}-${dd}`
     return props.benefits.filter(b => b.collectionDate > today)
 })
 
@@ -442,8 +456,8 @@ function fieldError(key: string): string | undefined {
                                 </legend>
                             </div>
                             <div class="p-4 sm:p-5">
-                                <p v-if="availableBenefits.length === 0" class="text-sm text-base-content/60">
-                                    No hay prestaciones disponibles para el año en curso.
+                                <p v-if="availableBenefits.length === 0" class="text-sm text-warning">
+                                    No hay prestaciones disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
                                 </p>
                                 <div v-else class="space-y-2">
                                     <label

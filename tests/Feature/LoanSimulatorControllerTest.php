@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Benefit;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
@@ -187,6 +188,49 @@ it('POST simulate rejects first fortnight after december 31', function () {
     $response->assertJsonValidationErrors(['nomina.first_fortnight']);
     expect($response->json()['errors']['nomina.first_fortnight'][0])
         ->toBe('La última fecha válida para nómina es el 31 de diciembre del año en curso.');
+});
+
+it('POST simulate rejects nomina fortnights when calculated last fortnight exceeds december 31', function () {
+    Carbon::setTestNow('2026-11-15');
+
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 3,
+            'first_fortnight' => '2026-12-15',
+        ],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['nomina.fortnights']);
+});
+
+it('POST simulate rejects any simulation when the application window has closed on or after december 1', function () {
+    Carbon::setTestNow('2026-12-01');
+
+    $benefit = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'benefit',
+        'benefits' => [
+            [
+                'benefit_id' => $benefit->id,
+                'amount' => 5000,
+                'collection_date' => '2026-12-20',
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['payment_type']);
 });
 
 it('GET download with invalid token returns 404', function () {

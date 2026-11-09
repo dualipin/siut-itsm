@@ -2,7 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LoanPaymentType;
+use App\Services\LoanCalendarService;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class StoreLoanSimulationRequest extends FormRequest
@@ -14,21 +18,52 @@ class StoreLoanSimulationRequest extends FormRequest
 
     public function rules(): array
     {
+        $calendarService = app(LoanCalendarService::class);
         $paymentType = $this->input('payment_type');
-        $hasNomina = in_array($paymentType, ['nomina', 'mixed'], true);
-        $hasBenefits = in_array($paymentType, ['benefit', 'mixed'], true);
+        $hasNomina = in_array($paymentType, [LoanPaymentType::Nomina->value, LoanPaymentType::Mixed->value], true);
+        $hasBenefits = in_array($paymentType, [LoanPaymentType::Benefit->value, LoanPaymentType::Mixed->value], true);
 
-        $decemberThirtyOne = now()->format('Y').'-12-31';
+        $paymentDeadline = $calendarService->paymentDeadline();
+        $decemberThirtyOne = $paymentDeadline->format('Y-m-d');
         $minFirstFortnight = now()->addDays(20)->format('Y-m-d');
 
         return [
             'monthly_rate' => ['required', Rule::in([6, 7.5, 8, 9.5])],
-            'payment_type' => ['required', Rule::in(['nomina', 'benefit', 'mixed'])],
+            'payment_type' => [
+                'required',
+                Rule::enum(LoanPaymentType::class),
+                function (string $attribute, mixed $value, Closure $fail) use ($calendarService): void {
+                    if (! $calendarService->isApplicationWindowOpen()) {
+                        $fail('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).');
+                    }
+                },
+            ],
 
             // Nómina fields
             'nomina' => [$hasNomina ? 'required' : 'nullable', 'array'],
             'nomina.amount' => [$hasNomina ? 'required' : 'nullable', 'numeric', 'min:1'],
-            'nomina.fortnights' => [$hasNomina ? 'required' : 'nullable', 'integer', 'min:1'],
+            'nomina.fortnights' => [
+                $hasNomina ? 'required' : 'nullable',
+                'integer',
+                'min:1',
+                function (string $attribute, mixed $value, Closure $fail) use ($calendarService, $hasNomina, $paymentDeadline): void {
+                    if (! $hasNomina || ! is_numeric($value) || (int) $value < 1) {
+                        return;
+                    }
+
+                    $firstFortnight = $this->input('nomina.first_fortnight');
+                    if (! is_string($firstFortnight) || ! Carbon::hasFormat($firstFortnight, 'Y-m-d')) {
+                        return;
+                    }
+
+                    $firstDate = Carbon::createFromFormat('Y-m-d', $firstFortnight)->startOfDay();
+                    $lastFortnight = $calendarService->calculateFortnightDate($firstDate, (int) $value);
+
+                    if ($lastFortnight->gt($paymentDeadline)) {
+                        $fail('El plazo seleccionado rebasa la última quincena de diciembre del año en curso.');
+                    }
+                },
+            ],
             'nomina.first_fortnight' => [
                 $hasNomina ? 'required' : 'nullable',
                 'date',

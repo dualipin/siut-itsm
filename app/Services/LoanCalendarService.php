@@ -9,13 +9,29 @@ use Illuminate\Support\Collection;
 class LoanCalendarService
 {
     /**
+     * Get the application window deadline for the given year (November 30, end of day).
+     */
+    public function applicationDeadline(?int $year = null): Carbon
+    {
+        return Carbon::create($year ?? now()->year, 11, 30)->endOfDay();
+    }
+
+    /**
+     * Get the payroll payment deadline for the given year (December 31, end of day).
+     */
+    public function paymentDeadline(?int $year = null): Carbon
+    {
+        return Carbon::create($year ?? now()->year, 12, 31)->endOfDay();
+    }
+
+    /**
      * Check if the loan application window is open.
      * Deadline: November 30 (inclusive). From December 1, new loans are blocked.
      */
     public function isApplicationWindowOpen(?Carbon $date = null): bool
     {
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $deadline = Carbon::create($date->year, 11, 30)->endOfDay();
+        $deadline = $this->applicationDeadline($date->year);
 
         return $date->lte($deadline);
     }
@@ -34,8 +50,8 @@ class LoanCalendarService
     {
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $year = $date->year;
-        $applicationDeadline = Carbon::create($year, 11, 30)->endOfDay();
-        $paymentDeadline = Carbon::create($year, 12, 31)->endOfDay();
+        $applicationDeadline = $this->applicationDeadline($year);
+        $paymentDeadline = $this->paymentDeadline($year);
 
         if ($date->gt($applicationDeadline)) {
             return [];
@@ -86,6 +102,11 @@ class LoanCalendarService
     public function getEligibleBenefits(?Carbon $date = null): Collection
     {
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
+
+        if (! $this->isApplicationWindowOpen($date)) {
+            return collect();
+        }
+
         $year = $date->year;
 
         return Benefit::active()

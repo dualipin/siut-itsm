@@ -54,6 +54,19 @@ class ApplyLoan extends CreateRecord
 
     public function mount(): void
     {
+        if (! app(LoanCalendarService::class)->isApplicationWindowOpen()) {
+            Notification::make()
+                ->title('Periodo de solicitudes cerrado')
+                ->body('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->redirect(ListLoans::getUrl());
+
+            return;
+        }
+
         parent::mount();
 
         /** @var User $user */

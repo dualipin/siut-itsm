@@ -90,6 +90,19 @@ it('returns eligible benefits whose collection date has not passed in current ye
         ->not->toContain('Prestación Pasada');
 });
 
+it('does not return any eligible benefits when application window has closed on or after december 1', function () {
+    Carbon::setTestNow('2026-12-01');
+
+    Benefit::factory()->create([
+        'name' => 'Aguinaldo Diciembre',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    expect($this->calendar->getEligibleBenefits())->toBeEmpty();
+});
+
 it('calculates the completion date for k fortnights correctly', function () {
     // 1 quincena on 2026-11-30 completes on 2026-11-30
     $end1 = $this->calendar->calculateFortnightDate('2026-11-30', 1);

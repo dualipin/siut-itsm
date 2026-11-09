@@ -7,6 +7,7 @@ use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Exceptions\LoanTransitionException;
+use App\Filament\Resources\Loans\Pages\ViewLoan;
 use App\Models\Benefit;
 use App\Models\Loan;
 use App\Models\LoanBenefit;
@@ -577,7 +578,7 @@ it('allows admin view and approval to display completion dates extending up to d
     ]);
 
     $this->actingAs($admin)
-        ->get("/portal/loans/{$loan->id}")
+        ->get(ViewLoan::getUrl(['record' => $loan], panel: 'portal'))
         ->assertOk()
         ->assertSee('Término de pago nómina')
         ->assertSee('31/12/2026');

@@ -5,6 +5,7 @@ use App\Enums\LoanGeneratedDocumentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
+use App\Filament\Resources\Loans\Pages\ListLoans;
 use App\Filament\Resources\Loans\Pages\ViewLoan;
 use App\Models\Benefit;
 use App\Models\Loan;
@@ -530,6 +531,20 @@ it('blocks new loan applications when the window deadline of November 30 has pas
 
     $response->assertStatus(422);
     $response->assertJsonValidationErrors(['loan']);
+});
+
+it('disables new loan action and blocks ApplyLoan mount when application window has closed on or after december 1', function () {
+    Carbon::setTestNow('2026-12-01');
+
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $this->actingAs($user);
+
+    Livewire::test(ListLoans::class)
+        ->assertActionDisabled('createLoan');
+
+    Livewire::test(ApplyLoan::class)
+        ->assertNotified('Periodo de solicitudes cerrado')
+        ->assertRedirect(ListLoans::getUrl());
 });
 
 it('prevents a user from having more than one active loan without an authorized exception', function () {

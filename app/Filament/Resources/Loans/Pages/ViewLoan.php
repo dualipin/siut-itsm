@@ -164,7 +164,7 @@ class ViewLoan extends ViewRecord
 
                                         $options = [];
                                         $year = $firstDate->year;
-                                        $deadline = Carbon::create($year, 12, 31)->endOfDay();
+                                        $deadline = $calendarService->paymentDeadline($year);
                                         $current = $firstDate->copy();
                                         $i = 1;
                                         while ($current->lte($deadline) && $i <= 24) {
