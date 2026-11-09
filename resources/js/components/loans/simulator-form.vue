@@ -56,26 +56,35 @@ function nextFortnight(dateStr: string): string {
 }
 
 /**
- * Generate all valid fortnights between minDate (today+20) and Nov 30 of current year.
+ * Generate all valid fortnights between minDate (today+20) and Dec 31 of current year.
+ * Only available when current date is on or before Nov 30 of current year.
  */
 const availableFortnights = computed(() => {
     const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const year = today.getFullYear()
+    const applicationDeadline = new Date(year, 10, 30, 23, 59, 59, 999) // Nov 30
+
+    if (today > applicationDeadline) {
+        return []
+    }
+
     const minDate = new Date(today)
     minDate.setDate(today.getDate() + 20)
 
-    const year = today.getFullYear()
-    const cutoff = new Date(year, 10, 30) // Nov 30
+    const paymentCutoff = new Date(year, 11, 31, 23, 59, 59, 999) // Dec 31
 
     const result: Array<{ value: string; label: string }> = []
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov']
+    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-    for (let month = 1; month <= 11; month++) {
+    for (let month = 1; month <= 12; month++) {
         const last = lastDayOfMonth(year, month)
         const candidates = [15, last]
 
         for (const day of candidates) {
             const d = new Date(year, month - 1, day)
-            if (d >= minDate && d <= cutoff) {
+            d.setHours(0, 0, 0, 0)
+            if (d >= minDate && d <= paymentCutoff) {
                 const yyyy = d.getFullYear()
                 const mm = String(d.getMonth() + 1).padStart(2, '0')
                 const ddStr = String(d.getDate()).padStart(2, '0')
@@ -91,14 +100,14 @@ const availableFortnights = computed(() => {
 })
 
 /**
- * Available fortnight counts from the selected first_fortnight to Nov 30.
+ * Available fortnight counts from the selected first_fortnight to Dec 31.
  */
 const availableFortnightCounts = computed(() => {
     const firstStr = form.data.nomina.first_fortnight
     if (!firstStr) return []
 
     const year = new Date().getFullYear()
-    const cutoffStr = `${year}-11-30`
+    const cutoffStr = `${year}-12-31`
 
     const result: Array<{ value: number; label: string }> = []
     let current = firstStr
@@ -387,7 +396,7 @@ function fieldError(key: string): string | undefined {
                                         {{ fieldError('nomina.first_fortnight') }}
                                     </p>
                                     <p v-if="availableFortnights.length === 0" class="label-text-alt text-warning mt-1 text-sm">
-                                        No hay quincenas disponibles (límite: 30 Nov {{ new Date().getFullYear() }}).
+                                        No hay quincenas disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
                                     </p>
                                 </div>
 

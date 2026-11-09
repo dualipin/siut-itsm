@@ -18,7 +18,7 @@ class StoreLoanSimulationRequest extends FormRequest
         $hasNomina = in_array($paymentType, ['nomina', 'mixed'], true);
         $hasBenefits = in_array($paymentType, ['benefit', 'mixed'], true);
 
-        $novemberThirty = now()->format('Y').'-11-30';
+        $decemberThirtyOne = now()->format('Y').'-12-31';
         $minFirstFortnight = now()->addDays(20)->format('Y-m-d');
 
         return [
@@ -34,7 +34,7 @@ class StoreLoanSimulationRequest extends FormRequest
                 'date',
                 'date_format:Y-m-d',
                 'after_or_equal:'.$minFirstFortnight,
-                'before_or_equal:'.$novemberThirty,
+                'before_or_equal:'.$decemberThirtyOne,
             ],
 
             // Benefits fields
@@ -69,7 +69,7 @@ class StoreLoanSimulationRequest extends FormRequest
             'nomina.first_fortnight.required' => 'La primera quincena es obligatoria.',
             'nomina.first_fortnight.date' => 'La primera quincena debe ser una fecha válida.',
             'nomina.first_fortnight.after_or_equal' => 'La primera quincena debe ser al menos 20 días a partir de hoy.',
-            'nomina.first_fortnight.before_or_equal' => 'La última fecha válida para nómina es el 30 de noviembre del año en curso.',
+            'nomina.first_fortnight.before_or_equal' => 'La última fecha válida para nómina es el 31 de diciembre del año en curso.',
             'benefits.required' => 'Debe seleccionar al menos una prestación.',
             'benefits.*.benefit_id.required' => 'El ID de la prestación es obligatorio.',
             'benefits.*.benefit_id.exists' => 'La prestación seleccionada no existe o no está activa.',

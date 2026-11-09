@@ -562,3 +562,23 @@ it('keeps signature verified on detail view even after admin modifies terms and 
         ->assertDontSee('Pendiente / Invalidada')
         ->assertSee('Fecha de firma');
 });
+
+it('allows admin view and approval to display completion dates extending up to december 31', function () {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 3000,
+        'nomina_amount' => 3000,
+        'nomina_fortnights' => 3,
+        'first_fortnight_date' => '2026-11-30',
+    ]);
+
+    $this->actingAs($admin)
+        ->get("/portal/loans/{$loan->id}")
+        ->assertOk()
+        ->assertSee('Término de pago nómina')
+        ->assertSee('31/12/2026');
+});

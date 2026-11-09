@@ -24,8 +24,9 @@ class LoanCalendarService
      * Get the list of eligible fortnights for nómina.
      * Must respect:
      * 1. 20-day tolerance: candidate fortnight must be after now + 20 days.
-     * 2. Year deadline: cannot exceed November 30 of current year.
-     * 3. Fortnight days: 15th and the last real calendar day of each month.
+     * 2. Application window deadline: loan applications close November 30 of current year.
+     * 3. Payment deadline: cannot exceed December 31 of current year.
+     * 4. Fortnight days: 15th and the last real calendar day of each month.
      *
      * @return array<int, array{date: string, label: string, day: int, month: int, year: int}>
      */
@@ -33,9 +34,10 @@ class LoanCalendarService
     {
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $year = $date->year;
-        $deadline = Carbon::create($year, 11, 30)->endOfDay();
+        $applicationDeadline = Carbon::create($year, 11, 30)->endOfDay();
+        $paymentDeadline = Carbon::create($year, 12, 31)->endOfDay();
 
-        if ($date->gt($deadline)) {
+        if ($date->gt($applicationDeadline)) {
             return [];
         }
 
@@ -43,16 +45,16 @@ class LoanCalendarService
         $result = [];
 
         $current = $date->copy()->startOfMonth();
-        while ($current->year === $year && $current->month <= 11) {
+        while ($current->year === $year && $current->month <= 12) {
             // First fortnight: 15th
             $q1 = $current->copy()->setDay(15);
-            if ($q1->isAfter($minDate) && $q1->lte($deadline)) {
+            if ($q1->isAfter($minDate) && $q1->lte($paymentDeadline)) {
                 $result[] = $this->formatFortnight($q1);
             }
 
             // Second fortnight: last day of month
             $q2 = $current->copy()->endOfMonth()->startOfDay();
-            if ($q2->isAfter($minDate) && $q2->lte($deadline)) {
+            if ($q2->isAfter($minDate) && $q2->lte($paymentDeadline)) {
                 $result[] = $this->formatFortnight($q2);
             }
 

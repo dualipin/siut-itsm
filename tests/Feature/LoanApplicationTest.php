@@ -486,6 +486,33 @@ it('allows applicant to store a draft without monthly_rate leaving it for admin 
     ]);
 });
 
+it('allows applying in late november with payment fortnights in december up to december 31', function () {
+    Carbon::setTestNow('2026-11-15');
+
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $response = $this->actingAs($user)->postJson('/api/prestamos', [
+        'payment_type' => 'nomina',
+        'requested_amount' => 5000,
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 2,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+    ]);
+
+    $response->assertOk();
+    $response->assertJsonPath('success', true);
+    $response->assertJsonPath('loan.first_fortnight_date', fn ($date) => str_starts_with($date, '2026-12-15'));
+    $response->assertJsonPath('loan.nomina_fortnights', 2);
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'status' => LoanStatus::Borrador->value,
+        'first_fortnight_date' => '2026-12-15 00:00:00',
+        'nomina_fortnights' => 2,
+    ]);
+});
+
 it('blocks new loan applications when the window deadline of November 30 has passed', function () {
     Carbon::setTestNow('2026-12-01');
 
@@ -1077,6 +1104,7 @@ it('configures client-side image compression and webp support on loan evidence u
     );
 
     expect($nominaField)->not->toBeNull()
+        ->and($nominaField->getMaxSize())->toBe(20480)
         ->and($nominaField->getAcceptedFileTypes())->toContain('image/webp', 'image/jpeg', 'image/png', 'application/pdf')
         ->and($nominaField->getImageResizeMode())->toBe('contain')
         ->and($nominaField->getImageResizeTargetWidth())->toBe('1920')
@@ -1088,6 +1116,7 @@ it('configures client-side image compression and webp support on loan evidence u
     );
 
     expect($benefitFileField)->not->toBeNull()
+        ->and($benefitFileField->getMaxSize())->toBe(20480)
         ->and($benefitFileField->getAcceptedFileTypes())->toContain('image/webp', 'image/jpeg', 'image/png', 'application/pdf')
         ->and($benefitFileField->getImageResizeMode())->toBe('contain')
         ->and($benefitFileField->getImageResizeTargetWidth())->toBe('1920')

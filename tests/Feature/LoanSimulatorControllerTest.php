@@ -153,6 +153,42 @@ it('GET download with valid token returns pdf response', function () {
     $downloadResponse->assertHeader('Pragma', 'no-cache');
 });
 
+it('POST simulate allows first fortnight in december up to december 31', function () {
+    Carbon::setTestNow('2026-11-15');
+
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 2,
+            'first_fortnight' => '2026-12-15',
+        ],
+    ]);
+
+    $response->assertOk();
+    $response->assertJsonStructure(['pdf_url', 'application_url']);
+});
+
+it('POST simulate rejects first fortnight after december 31', function () {
+    Carbon::setTestNow('2026-11-15');
+
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 1,
+            'first_fortnight' => '2027-01-15',
+        ],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['nomina.first_fortnight']);
+    expect($response->json()['errors']['nomina.first_fortnight'][0])
+        ->toBe('La última fecha válida para nómina es el 31 de diciembre del año en curso.');
+});
+
 it('GET download with invalid token returns 404', function () {
     $response = $this->get('/api/simulador-prestamo/download/non-existent-token');
 

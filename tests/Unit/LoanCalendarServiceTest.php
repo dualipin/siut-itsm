@@ -39,11 +39,29 @@ it('calculates the first eligible fortnight respecting the 20-day tolerance exac
     expect($first2?->format('Y-m-d'))->toBe('2026-11-15');
 });
 
-it('does not return any fortnights after November 30', function () {
+it('returns december fortnights up to december 31 when applying before or on november 30', function () {
+    // 15/11 + 20 days = 05/12 -> eligible are 15/12 and 31/12
     Carbon::setTestNow('2026-11-15');
-    // 15/11 + 20 days = 05/12 -> exceeds Nov 30 deadline
+    $fortnights = $this->calendar->getEligibleFortnights();
+    expect($fortnights)->toHaveCount(2)
+        ->and($fortnights[0]['date'])->toBe('2026-12-15')
+        ->and($fortnights[1]['date'])->toBe('2026-12-31');
+
+    // 30/11 + 20 days = 20/12 -> eligible is 31/12 only
+    Carbon::setTestNow('2026-11-30');
+    $fortnightsNov30 = $this->calendar->getEligibleFortnights();
+    expect($fortnightsNov30)->toHaveCount(1)
+        ->and($fortnightsNov30[0]['date'])->toBe('2026-12-31');
+});
+
+it('does not return any fortnights when application window has closed on or after december 1', function () {
+    Carbon::setTestNow('2026-12-01');
     $fortnights = $this->calendar->getEligibleFortnights();
     expect($fortnights)->toBeEmpty();
+
+    Carbon::setTestNow('2026-12-15');
+    $fortnightsMidDec = $this->calendar->getEligibleFortnights();
+    expect($fortnightsMidDec)->toBeEmpty();
 });
 
 it('returns eligible benefits whose collection date has not passed in current year', function () {
