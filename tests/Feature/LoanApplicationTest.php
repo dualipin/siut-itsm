@@ -14,6 +14,7 @@ use App\Models\LoanGeneratedDocument;
 use App\Models\User;
 use App\Services\LoanService;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Wizard;
@@ -1056,4 +1057,73 @@ it('shows AI details on loan view only to administrators and leaders, hiding the
         ->assertSee('Nombre detectado:')
         ->assertSee('Juan Pérez')
         ->assertSee('IA: Válido');
+});
+
+it('configures client-side image compression and webp support on loan evidence uploads', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefit = Benefit::factory()->create();
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'mixed',
+            'benefits' => [
+                ['benefit_id' => $benefit->id, 'amount' => 5000],
+            ],
+        ]);
+
+    $nominaField = $component->instance()->form->getComponent(
+        fn ($c): bool => $c instanceof FileUpload && $c->getName() === 'nomina_evidence',
+    );
+
+    expect($nominaField)->not->toBeNull()
+        ->and($nominaField->getAcceptedFileTypes())->toContain('image/webp', 'image/jpeg', 'image/png', 'application/pdf')
+        ->and($nominaField->getImageResizeMode())->toBe('contain')
+        ->and($nominaField->getImageResizeTargetWidth())->toBe('1920')
+        ->and($nominaField->getImageResizeTargetHeight())->toBe('1920')
+        ->and($nominaField->shouldAutomaticallyUpscaleImagesWhenResizing())->toBeFalse();
+
+    $benefitFileField = $component->instance()->form->getComponent(
+        fn ($c): bool => $c instanceof FileUpload && $c->getName() === 'file',
+    );
+
+    expect($benefitFileField)->not->toBeNull()
+        ->and($benefitFileField->getAcceptedFileTypes())->toContain('image/webp', 'image/jpeg', 'image/png', 'application/pdf')
+        ->and($benefitFileField->getImageResizeMode())->toBe('contain')
+        ->and($benefitFileField->getImageResizeTargetWidth())->toBe('1920')
+        ->and($benefitFileField->getImageResizeTargetHeight())->toBe('1920')
+        ->and($benefitFileField->shouldAutomaticallyUpscaleImagesWhenResizing())->toBeFalse();
+});
+
+it('accepts webp image receipt and persists loan evidence successfully', function () {
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $file = UploadedFile::fake()->create('recibo_nomina.webp', 200, 'image/webp');
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 15000,
+            'nomina_fortnights' => 6,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_type' => 'drawn',
+            'signature_data' => $dummySig,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    /** @var Loan $loan */
+    $loan = Loan::where('user_id', $user->id)->firstOrFail();
+    $evidence = LoanEvidence::where('loan_id', $loan->id)->where('source_type', 'nomina')->first();
+
+    expect($evidence)->not->toBeNull()
+        ->and($evidence->file_name)->toEndWith('.webp')
+        ->and($evidence->mime_type)->toBe('image/webp');
 });
