@@ -236,7 +236,7 @@ class ApplyLoan extends CreateRecord
                                 ->imageResizeTargetWidth('1920')
                                 ->imageResizeTargetHeight('1920')
                                 ->imageResizeUpscale(false)
-                                ->maxSize(5120)
+                                ->maxSize(20480)
                                 ->afterStateUpdated(function (Set $set, mixed $state): void {
                                     $set('nomina_ai_status', $this->evaluateEvidenceState($state, 'nomina'));
                                 })
@@ -273,7 +273,7 @@ class ApplyLoan extends CreateRecord
                                 ->imageResizeTargetWidth('1920')
                                 ->imageResizeTargetHeight('1920')
                                 ->imageResizeUpscale(false)
-                                ->maxSize(5120)
+                                ->maxSize(20480)
                                 ->afterStateUpdated(function (Set $set, callable $get, mixed $state): void {
                                     $set(
                                         'ai_status',

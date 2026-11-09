@@ -9,6 +9,8 @@ use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
+use Filament\Schemas\Schema;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -230,4 +232,36 @@ test('view loan page has validateEvidence action pointing to review-documents', 
         ->assertSuccessful()
         ->assertSee('Validar Evidencia Manual')
         ->assertSee(route('filament.portal.resources.loans.review-documents', ['record' => $loan]));
+});
+
+test('replaceEvidence action configures image compression and 20MB limit', function () {
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $loan = Loan::factory()->submitted()->create(['user_id' => $agremiado->id]);
+    $evidence = LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 2048,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    $component = Livewire::test(ReviewLoanDocuments::class, ['record' => $loan->getRouteKey()]);
+    $action = $component->instance()->replaceEvidenceAction();
+    $schema = $action->getSchema(Schema::make($component->instance()));
+
+    $field = collect($schema->getComponents())->first(
+        fn ($c): bool => $c instanceof FileUpload && $c->getName() === 'document_file',
+    );
+
+    expect($field)->not->toBeNull()
+        ->and($field->getMaxSize())->toBe(20480)
+        ->and($field->getAcceptedFileTypes())->toContain('image/webp', 'image/jpeg', 'image/png', 'application/pdf')
+        ->and($field->getImageResizeMode())->toBe('contain')
+        ->and($field->getImageResizeTargetWidth())->toBe('1920')
+        ->and($field->getImageResizeTargetHeight())->toBe('1920')
+        ->and($field->shouldAutomaticallyUpscaleImagesWhenResizing())->toBeFalse();
 });

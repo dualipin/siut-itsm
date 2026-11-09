@@ -265,6 +265,11 @@ class ReviewLoanDocuments extends ViewRecord
                     ->directory(fn () => 'loans/'.$this->getRecord()->id.'/evidences')
                     ->visibility('private')
                     ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+                    ->imageResizeMode('contain')
+                    ->imageResizeTargetWidth('1920')
+                    ->imageResizeTargetHeight('1920')
+                    ->imageResizeUpscale(false)
+                    ->maxSize(20480)
                     ->required(),
             ])
             ->action(function (array $data, array $arguments, LoanDocumentAIService $aiService): void {
