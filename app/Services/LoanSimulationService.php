@@ -31,7 +31,7 @@ class LoanSimulationService
      */
     public function buildAmortizationTable(array $params): array
     {
-        $disbursement = Carbon::parse($params['disbursement_date']);
+        $disbursement = Carbon::parse($params['disbursement_date'])->startOfDay();
         $monthlyRate = (float) $params['monthly_rate'];
         $nominaDailyRate = $monthlyRate / 30;          // simple (método alemán) for nómina
         $benefitDailyRate = $this->dailyRate($monthlyRate); // equivalent for benefits
@@ -46,19 +46,19 @@ class LoanSimulationService
         if ($nomina !== null) {
             $amount = (float) ($nomina['amount'] ?? 0);
             $fortnights = (int) $nomina['fortnights'];
-            $firstFortnight = Carbon::parse($nomina['first_fortnight']);
+            $firstFortnight = Carbon::parse($nomina['first_fortnight'])->startOfDay();
+            $priorFortnight = $this->previousFortnight($firstFortnight);
             $principalPerFortnight = round($amount / $fortnights, 2);
             $balance = $amount;
 
-            // Period 0: extra days (disbursement → first fortnight)
-            $extraDays = $disbursement->diffInDays($firstFortnight);
-            if ($extraDays > 0) {
+            if ($disbursement->lt($priorFortnight)) {
+                $extraDays = $disbursement->diffInDays($priorFortnight);
                 $extraInterest = round($balance * $nominaDailyRate * $extraDays, 2);
                 $period++;
                 $rows[] = [
                     'period' => $period,
                     'label' => 'Días adicionales',
-                    'date' => $firstFortnight->format('Y-m-d'),
+                    'date' => $priorFortnight->format('Y-m-d'),
                     'opening_balance' => $balance,
                     'principal' => 0.0,
                     'interest' => $extraInterest,
@@ -68,9 +68,10 @@ class LoanSimulationService
                 ];
             }
 
-            // Regular fortnights — days are real calendar days between consecutive quincenas
-            $previousDate = $firstFortnight->copy();
-            $currentDate = $this->nextFortnight($firstFortnight);
+            $previousDate = $disbursement->gt($priorFortnight)
+                ? ($disbursement->lt($firstFortnight) ? $disbursement->copy() : $firstFortnight->copy())
+                : $priorFortnight->copy();
+            $currentDate = $firstFortnight->copy();
             for ($i = 0; $i < $fortnights; $i++) {
                 $isLastFortnight = ($i === $fortnights - 1);
 
@@ -284,5 +285,18 @@ class LoanSimulationService
 
         // Currently on last day of month → move to 15th of next month
         return $date->copy()->addMonthNoOverflow()->setDay(15);
+    }
+
+    /**
+     * Step back one fortnight from the given date.
+     * Fortnights land on the 15th or the last day of the month.
+     */
+    private function previousFortnight(Carbon $date): Carbon
+    {
+        if ($date->day <= 15) {
+            return $date->copy()->subMonthNoOverflow()->endOfMonth()->startOfDay();
+        }
+
+        return $date->copy()->setDay(15)->startOfDay();
     }
 }

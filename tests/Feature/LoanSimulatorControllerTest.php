@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Benefit;
+use App\Services\LoanCalendarService;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
@@ -10,6 +11,11 @@ beforeEach(function () {
 afterEach(function () {
     Carbon::setTestNow();
 });
+
+function firstEligibleFortnightDate(): string
+{
+    return app(LoanCalendarService::class)->getFirstEligibleFortnight()->format('Y-m-d');
+}
 
 it('renders the combined simulation PDF view with its financial sections', function () {
     $html = view('pdf.loan-simulation-combined', [
@@ -53,20 +59,13 @@ it('GET /simulador-prestamo returns 200', function () {
 });
 
 it('POST simulate with valid nomina data returns json with pdf_url', function () {
-    $firstFortnight = Carbon::now()->addMonth()->setDay(15)->format('Y-m-d');
-    // Ensure it doesn't exceed November 30
-    $nov30 = Carbon::parse(now()->format('Y').'-11-30');
-    if (Carbon::parse($firstFortnight)->isAfter($nov30)) {
-        $this->markTestSkipped('Cannot run near year-end when Nov 30 boundary is breached.');
-    }
-
     $response = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
         'payment_type' => 'nomina',
         'nomina' => [
             'amount' => 10000,
             'fortnights' => 4,
-            'first_fortnight' => $firstFortnight,
+            'first_fortnight' => firstEligibleFortnightDate(),
         ],
     ]);
 
@@ -95,19 +94,13 @@ it('POST simulate with benefit payment type requires benefits array', function (
 });
 
 it('POST simulate nomina requires nomina.amount', function () {
-    $firstFortnight = Carbon::now()->addMonth()->setDay(15)->format('Y-m-d');
-    $nov30 = Carbon::parse(now()->format('Y').'-11-30');
-    if (Carbon::parse($firstFortnight)->isAfter($nov30)) {
-        $this->markTestSkipped('Cannot run near year-end when Nov 30 boundary is breached.');
-    }
-
     $response = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
         'payment_type' => 'nomina',
         'nomina' => [
             // missing amount
             'fortnights' => 4,
-            'first_fortnight' => $firstFortnight,
+            'first_fortnight' => firstEligibleFortnightDate(),
         ],
     ]);
 
@@ -116,12 +109,6 @@ it('POST simulate nomina requires nomina.amount', function () {
 });
 
 it('GET download with valid token returns pdf response', function () {
-    $firstFortnight = Carbon::now()->addMonth()->setDay(15)->format('Y-m-d');
-    $nov30 = Carbon::parse(now()->format('Y').'-11-30');
-    if (Carbon::parse($firstFortnight)->isAfter($nov30)) {
-        $this->markTestSkipped('Cannot run near year-end when Nov 30 boundary is breached.');
-    }
-
     // First simulate to get token
     $simulateResponse = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
@@ -129,7 +116,7 @@ it('GET download with valid token returns pdf response', function () {
         'nomina' => [
             'amount' => 10000,
             'fortnights' => 4,
-            'first_fortnight' => $firstFortnight,
+            'first_fortnight' => firstEligibleFortnightDate(),
         ],
     ]);
 
@@ -205,6 +192,53 @@ it('POST simulate rejects nomina fortnights when calculated last fortnight excee
 
     $response->assertStatus(422);
     $response->assertJsonValidationErrors(['nomina.fortnights']);
+});
+
+it('POST simulate rejects a first fortnight different from the automatic first eligible fortnight', function () {
+    Carbon::setTestNow('2026-11-10');
+
+    // On 2026-11-10 (+20 days = 2026-11-30), first eligible is 2026-12-15; 2026-12-31 must be rejected
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 1,
+            'first_fortnight' => '2026-12-31',
+        ],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['nomina.first_fortnight']);
+});
+
+it('POST simulate rejects missing nomina.first_fortnight with only required error and rejects nomina simulation after december 1', function () {
+    $missingResponse = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 1,
+        ],
+    ]);
+
+    $missingResponse->assertStatus(422);
+    expect($missingResponse->json('errors')['nomina.first_fortnight'])->toHaveCount(1);
+
+    Carbon::setTestNow('2026-12-01');
+
+    $closedResponse = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 1,
+            'first_fortnight' => '2026-12-31',
+        ],
+    ]);
+
+    $closedResponse->assertStatus(422);
+    $closedResponse->assertJsonValidationErrors(['payment_type', 'nomina.first_fortnight']);
 });
 
 it('POST simulate rejects any simulation when the application window has closed on or after december 1', function () {

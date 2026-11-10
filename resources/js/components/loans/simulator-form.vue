@@ -103,8 +103,10 @@ const availableFortnights = computed(() => {
     return result
 })
 
+const firstEligibleFortnight = computed(() => availableFortnights.value[0] ?? null)
+
 /**
- * Available fortnight counts from the selected first_fortnight to Dec 31.
+ * Available fortnight counts from the automatic first_fortnight to Dec 31.
  */
 const availableFortnightCounts = computed(() => {
     const firstStr = form.data.nomina.first_fortnight
@@ -129,25 +131,48 @@ const availableFortnightCounts = computed(() => {
     return result
 })
 
-// Reset fortnights when first_fortnight changes
-watch(
-    () => form.data.nomina.first_fortnight,
-    () => { form.data.nomina.fortnights = '' }
+// ── Payment method helpers ─────────────────────────────────────────────────────
+const showNomina = computed(() =>
+    form.data.payment_type === 'nomina' || form.data.payment_type === 'mixed'
 )
 
-// Clear data for sections that are no longer visible when payment_type changes
+const showBenefits = computed(() =>
+    form.data.payment_type === 'benefit' || form.data.payment_type === 'mixed'
+)
+
+// Keep first_fortnight automatically synced with the first eligible fortnight when nómina is active
 watch(
-    () => form.data.payment_type,
-    (type) => {
-        if (type === 'benefit') {
+    [showNomina, firstEligibleFortnight],
+    ([isNominaVisible, firstFortnight]) => {
+        if (isNominaVisible) {
+            form.data.nomina.first_fortnight = firstFortnight?.value ?? ''
+        } else {
             form.data.nomina.amount = ''
             form.data.nomina.first_fortnight = ''
             form.data.nomina.fortnights = ''
-        } else if (type === 'nomina') {
+        }
+    },
+    { immediate: true }
+)
+
+// Reset fortnights when first_fortnight changes to a different date
+watch(
+    () => form.data.nomina.first_fortnight,
+    (nextVal, oldVal) => {
+        if (nextVal !== oldVal) {
+            form.data.nomina.fortnights = ''
+        }
+    }
+)
+
+// Clear benefits data when switching to nomina-only
+watch(
+    () => form.data.payment_type,
+    (type) => {
+        if (type === 'nomina') {
             form.data.benefits = []
             selectedBenefitIds.value = new Set()
         }
-        // 'mixed' keeps both sections — no cleanup needed
     }
 )
 
@@ -168,15 +193,6 @@ const lastFortnightDate = computed(() => {
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     return `${String(dd).padStart(2, '0')} ${months[mm - 1]} ${yyyy}`
 })
-
-// ── Payment method helpers ─────────────────────────────────────────────────────
-const showNomina = computed(() =>
-    form.data.payment_type === 'nomina' || form.data.payment_type === 'mixed'
-)
-
-const showBenefits = computed(() =>
-    form.data.payment_type === 'benefit' || form.data.payment_type === 'mixed'
-)
 
 // ── Available benefits (only future collection dates and within application window) ──
 const availableBenefits = computed(() => {
@@ -388,29 +404,29 @@ function fieldError(key: string): string | undefined {
                                 <!-- First fortnight -->
                                 <div class="form-control">
                                     <label class="label py-1" for="first-fortnight">
-                                        <span class="label-text text-sm uppercase tracking-wider text-base-content/60 font-semibold">
+                                        <span class="text-sm uppercase tracking-wider text-base-content/60 font-semibold">
                                             Primera quincena
                                         </span>
                                     </label>
-                                    <select
+                                    <input
                                         id="first-fortnight"
-                                        v-model="form.data.nomina.first_fortnight"
-                                        class="select select-bordered w-full text-base min-h-[48px]"
-                                        :class="{ 'select-error': fieldError('nomina.first_fortnight') }"
+                                        type="text"
+                                        readonly
+                                        :value="firstEligibleFortnight?.label ?? 'No disponible'"
+                                        class="input w-full text-base min-h-[48px] bg-base-200 text-base-content/80 cursor-not-allowed focus-visible:ring-2 focus-visible:ring-primary"
+                                        :class="{ 'input-error': fieldError('nomina.first_fortnight') }"
                                         :aria-invalid="Boolean(fieldError('nomina.first_fortnight'))"
-                                    >
-                                        <option value="" disabled>Selecciona…</option>
-                                        <option
-                                            v-for="f in availableFortnights"
-                                            :key="f.value"
-                                            :value="f.value"
-                                        >{{ f.label }}</option>
-                                    </select>
-                                    <p v-if="fieldError('nomina.first_fortnight')" class="label-text-alt text-error mt-1 text-sm">
+                                        :aria-describedby="fieldError('nomina.first_fortnight') ? 'first-fortnight-error' : 'first-fortnight-hint'"
+                                        aria-readonly="true"
+                                    />
+                                    <p v-if="fieldError('nomina.first_fortnight')" id="first-fortnight-error" class="text-error mt-1 text-sm">
                                         {{ fieldError('nomina.first_fortnight') }}
                                     </p>
-                                    <p v-if="availableFortnights.length === 0" class="label-text-alt text-warning mt-1 text-sm">
+                                    <p v-if="availableFortnights.length === 0" id="first-fortnight-hint" class="text-warning mt-1 text-sm">
                                         No hay quincenas disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
+                                    </p>
+                                    <p v-else id="first-fortnight-hint" class="text-base-content/60 mt-1 text-sm">
+                                        Asignada automáticamente (tolerancia de 20 días).
                                     </p>
                                 </div>
 
@@ -430,7 +446,7 @@ function fieldError(key: string): string | undefined {
                                         :disabled="!form.data.nomina.first_fortnight"
                                     >
                                         <option value="" disabled>
-                                            {{ form.data.nomina.first_fortnight ? 'Selecciona…' : 'Elige primero la quincena inicial' }}
+                                            {{ form.data.nomina.first_fortnight ? 'Selecciona…' : 'No hay quincenas disponibles' }}
                                         </option>
                                         <option
                                             v-for="opt in availableFortnightCounts"

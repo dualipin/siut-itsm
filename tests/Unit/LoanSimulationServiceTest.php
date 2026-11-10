@@ -14,7 +14,7 @@ it('builds a nomina amortization table with the correct number of rows', functio
             'nomina' => [
                 'amount' => 10000.0,
                 'fortnights' => 4,
-                'first_fortnight' => '2026-01-15',
+                'first_fortnight' => '2026-01-31',
             ],
         ],
     ];
@@ -26,9 +26,11 @@ it('builds a nomina amortization table with the correct number of rows', functio
     expect($table[0]['type'])->toBe('extra_days');
     expect($table[0]['date'])->toBe('2026-01-15');
 
-    // Fortnight rows
-    $fortnightRows = array_filter($table, fn ($r) => $r['type'] === 'nomina');
+    // Fortnight rows start on first_fortnight (2026-01-31)
+    $fortnightRows = array_values(array_filter($table, fn ($r) => $r['type'] === 'nomina'));
     expect($fortnightRows)->toHaveCount(4);
+    expect($fortnightRows[0]['date'])->toBe('2026-01-31');
+    expect($fortnightRows[3]['date'])->toBe('2026-03-15');
 });
 
 it('closing balance reaches zero after the last nomina fortnight', function () {
@@ -176,19 +178,19 @@ it('last valid nomina date is November 30 (boundary test)', function () {
             'nomina' => [
                 'amount' => 4000.0,
                 'fortnights' => 2,
-                'first_fortnight' => '2026-11-15',  // Nov 15 is valid
+                'first_fortnight' => '2026-11-15',
             ],
         ],
     ];
 
     $table = $this->service->buildAmortizationTable($params);
 
-    // extra days row + 2 fortnight rows
-    expect($table)->toHaveCount(3);
+    // Disbursement is Nov 1 (within Oct 31 → Nov 15), so no extra_days row
+    expect($table)->toHaveCount(2);
 
     $fortnightRows = array_values(array_filter($table, fn ($r) => $r['type'] === 'nomina'));
-    // First fortnight: Nov 15 → Nov 30 = 15 days
-    expect($fortnightRows[0]['date'])->toBe('2026-11-30');
+    expect($fortnightRows[0]['date'])->toBe('2026-11-15');
+    expect($fortnightRows[1]['date'])->toBe('2026-11-30');
 });
 
 it('builds a correct financial run summary', function () {
@@ -222,7 +224,7 @@ it('uses real calendar days for February fortnight (15 Feb → 28 Feb = 13 days)
             'nomina' => [
                 'amount' => 10000.0,
                 'fortnights' => 2,
-                'first_fortnight' => '2026-02-15',
+                'first_fortnight' => '2026-02-28',
             ],
         ],
     ];
@@ -251,7 +253,7 @@ it('uses 16 real days for the period Jan 15 → Jan 31', function () {
             'nomina' => [
                 'amount' => 6000.0,
                 'fortnights' => 2,
-                'first_fortnight' => '2026-01-15',
+                'first_fortnight' => '2026-01-31',
             ],
         ],
     ];
@@ -268,4 +270,45 @@ it('uses 16 real days for the period Jan 15 → Jan 31', function () {
 
     expect($fortnightRows[0]['date'])->toBe('2026-01-31');
     expect($fortnightRows[0]['interest'])->toBe($expectedInterestFirst);
+});
+
+it('aligns extra_days cutoff and fortnight dates without shifting December fortnights into January', function () {
+    $params = [
+        'monthly_rate' => 0.06,
+        'disbursement_date' => '2026-11-10',
+        'payment_methods' => [
+            'nomina' => [
+                'amount' => 10000.0,
+                'fortnights' => 2,
+                'first_fortnight' => '2026-12-15',
+            ],
+        ],
+    ];
+
+    $table = $this->service->buildAmortizationTable($params);
+    $summary = $this->service->buildFinancialRunSummary($params);
+
+    expect($table)->toHaveCount(3);
+
+    // Row 0: extra_days from 2026-11-10 to 2026-11-30 (20 days)
+    expect($table[0]['type'])->toBe('extra_days')
+        ->and($table[0]['date'])->toBe('2026-11-30')
+        ->and($table[0]['interest'])->toBe(400.0);
+
+    // Row 1: Quincena 1 on 2026-12-15 (Nov 30 → Dec 15 = 15 days)
+    expect($table[1]['type'])->toBe('nomina')
+        ->and($table[1]['label'])->toBe('Quincena 1')
+        ->and($table[1]['date'])->toBe('2026-12-15')
+        ->and($table[1]['interest'])->toBe(300.0);
+
+    // Row 2: Quincena 2 on 2026-12-31 (Dec 15 → Dec 31 = 16 days)
+    expect($table[2]['type'])->toBe('nomina')
+        ->and($table[2]['label'])->toBe('Quincena 2')
+        ->and($table[2]['date'])->toBe('2026-12-31')
+        ->and($table[2]['interest'])->toBe(160.0);
+
+    // Summary last_fortnight matches last table row date (never spills into January)
+    expect($summary['first_fortnight'])->toBe('2026-12-15')
+        ->and($summary['last_fortnight'])->toBe('2026-12-31')
+        ->and($table[2]['date'])->toBe($summary['last_fortnight']);
 });

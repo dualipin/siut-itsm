@@ -26,6 +26,7 @@ class StoreLoanSimulationRequest extends FormRequest
         $paymentDeadline = $calendarService->paymentDeadline();
         $decemberThirtyOne = $paymentDeadline->format('Y-m-d');
         $minFirstFortnight = now()->addDays(20)->format('Y-m-d');
+        $firstEligibleFortnight = $calendarService->getFirstEligibleFortnight()?->format('Y-m-d');
 
         return [
             'monthly_rate' => ['required', Rule::in([6, 7.5, 8, 9.5])],
@@ -65,11 +66,27 @@ class StoreLoanSimulationRequest extends FormRequest
                 },
             ],
             'nomina.first_fortnight' => [
+                'bail',
                 $hasNomina ? 'required' : 'nullable',
                 'date',
                 'date_format:Y-m-d',
                 'after_or_equal:'.$minFirstFortnight,
                 'before_or_equal:'.$decemberThirtyOne,
+                function (string $attribute, mixed $value, Closure $fail) use ($hasNomina, $firstEligibleFortnight): void {
+                    if (! $hasNomina) {
+                        return;
+                    }
+
+                    if ($firstEligibleFortnight === null) {
+                        $fail('No hay quincenas disponibles para este año.');
+
+                        return;
+                    }
+
+                    if ($value !== $firstEligibleFortnight) {
+                        $fail('La primera quincena debe corresponder a la primera quincena disponible según la tolerancia de 20 días.');
+                    }
+                },
             ],
 
             // Benefits fields
