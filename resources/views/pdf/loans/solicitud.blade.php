@@ -20,9 +20,11 @@
     $calculatedInstallment = ($hasNomina && $nominaFortnights > 0)
         ? round(($loan->nomina_amount ?? $amount) / $nominaFortnights, 2)
         : ($installmentAmount ?? $amount);
-    $firstDate = $loan->first_fortnight_date?->format('d/m/Y') ?? ($firstFortnightDate ?? now()->addDays(15)->format('d/m/Y'));
+    $year = (int) ($fiscalYear ?? $loan->fiscal_year ?? $loan->created_at?->year ?? now()->year);
+    $firstDate = isset($firstFortnightDate)
+        ? \Illuminate\Support\Carbon::parse($firstFortnightDate)->format('d/m/Y')
+        : ($loan->first_fortnight_date?->format('d/m/Y') ?? '');
     $paymentConfigCount = ($hasNomina ? 1 : 0) + $loan->loanBenefits->count();
-    $year = $loan->created_at?->year ?? now()->year;
 @endphp
 
 <style>

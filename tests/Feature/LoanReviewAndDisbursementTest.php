@@ -3,6 +3,7 @@
 use App\Enums\DisbursementMethod;
 use App\Enums\LoanAiStatus;
 use App\Enums\LoanGeneratedDocumentType;
+use App\Enums\LoanOperationalState;
 use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
@@ -16,11 +17,15 @@ use App\Models\LoanGeneratedDocument;
 use App\Models\LoanStatusHistory;
 use App\Models\User;
 use App\Policies\LoanPolicy;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanPdfGenerationService;
 use App\Services\LoanService;
+use Filament\Facades\Filament;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
+use Smalot\PdfParser\Parser as PdfParser;
 
 beforeEach(function () {
     Carbon::setTestNow('2026-06-01');
@@ -582,4 +587,361 @@ it('allows admin view and approval to display completion dates extending up to d
         ->assertOk()
         ->assertSee('Término de pago nómina')
         ->assertSee('31/12/2026');
+});
+
+it('uses jan 1 of target fiscal year when approving a future-year loan before jan 1 and aligns generated pdfs', function () {
+    Carbon::setTestNow('2026-12-15 10:00:00');
+
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $aguinaldo = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'fiscal_year' => 2027,
+        'folio' => 'SOL-2027-00001',
+        'payment_type' => LoanPaymentType::Mixed,
+        'requested_amount' => 15000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => '2027-01-15',
+        'monthly_rate' => 6.0,
+    ]);
+
+    LoanBenefit::create([
+        'loan_id' => $loan->id,
+        'benefit_id' => $aguinaldo->id,
+        'requested_amount' => 5000,
+        'collection_date' => '2027-12-20',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo-nomina.pdf',
+        'file_hash' => hash('sha256', 'nomina'),
+        'file_name' => 'recibo-nomina.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'benefit',
+        'benefit_id' => $aguinaldo->id,
+        'file_path' => 'loans/1/recibo-aguinaldo.pdf',
+        'file_hash' => hash('sha256', 'aguinaldo'),
+        'file_name' => 'recibo-aguinaldo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    /** @var LoanService $service */
+    $service = app(LoanService::class);
+    $approved = $service->approve($loan, $admin, [
+        'approved_amount' => 15000,
+        'monthly_rate' => 6.0,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+    ]);
+
+    expect($approved->financialSummary)->not->toBeNull()
+        ->and($approved->financialSummary->disbursement_date->format('Y-m-d'))->toBe('2027-01-01');
+
+    // From 2027-01-01 to 2027-01-15 = 14 days (no 2026-12-31 extra_days row, first interest = 10000 * (0.06/30) * 14 = 280.00)
+    $firstRow = $approved->amortizationRows()->orderBy('period')->firstOrFail();
+    expect($firstRow->type)->toBe('nomina')
+        ->and($firstRow->date->format('Y-m-d'))->toBe('2027-01-15')
+        ->and((float) $firstRow->interest)->toBe(280.0);
+
+    $parser = new PdfParser;
+    $extractText = function (LoanGeneratedDocumentType $type) use ($approved, $parser): string {
+        $doc = $approved->generatedDocuments()->where('document_type', $type)->firstOrFail();
+        $pdfBytes = Storage::disk('local')->get($doc->file_path);
+
+        return $parser->parseContent($pdfBytes)->getText();
+    };
+
+    $solicitudText = $extractText(LoanGeneratedDocumentType::Solicitud);
+    $pagareText = $extractText(LoanGeneratedDocumentType::Pagare);
+    $anuenciaText = $extractText(LoanGeneratedDocumentType::Anuencia);
+    $corridaText = $extractText(LoanGeneratedDocumentType::CorridaFinanciera);
+
+    expect($solicitudText)->toContain('CAJA DE AHORRO 2027')
+        ->toContain('de 2027')
+        ->toContain('15/01/2027')
+        ->not->toContain('CAJA DE AHORRO 2026');
+
+    expect($pagareText)->toContain('31/01/2027');
+
+    expect($anuenciaText)->toContain('2027-01-15')
+        ->toContain('20/12/2027');
+
+    $normalizedCorrida = mb_strtolower(preg_replace('/\s+/', ' ', $corridaText) ?? $corridaText);
+    expect($normalizedCorrida)->toContain('año fiscal 2027')
+        ->toContain('fecha de desembolso 01/01/2027')
+        ->not->toContain('fecha de desembolso 15/12/2026');
+});
+
+it('recalculates amortization and regenerates v2 pdfs from actual disbursement date when disbursing a pre-jan-1 approved loan in january', function () {
+    Carbon::setTestNow('2026-12-15 10:00:00');
+
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $aguinaldo = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'fiscal_year' => 2027,
+        'folio' => 'SOL-2027-00002',
+        'payment_type' => LoanPaymentType::Mixed,
+        'requested_amount' => 15000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => '2027-01-15',
+        'monthly_rate' => 6.0,
+    ]);
+
+    LoanBenefit::create([
+        'loan_id' => $loan->id,
+        'benefit_id' => $aguinaldo->id,
+        'requested_amount' => 5000,
+        'collection_date' => '2027-12-20',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/2/recibo-nomina.pdf',
+        'file_hash' => hash('sha256', 'nomina2'),
+        'file_name' => 'recibo-nomina.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'benefit',
+        'benefit_id' => $aguinaldo->id,
+        'file_path' => 'loans/2/recibo-aguinaldo.pdf',
+        'file_hash' => hash('sha256', 'aguinaldo2'),
+        'file_name' => 'recibo-aguinaldo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    /** @var LoanService $service */
+    $service = app(LoanService::class);
+    $approved = $service->approve($loan, $admin, [
+        'approved_amount' => 15000,
+        'monthly_rate' => 6.0,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+    ]);
+
+    expect($approved->financialSummary->disbursement_date->format('Y-m-d'))->toBe('2027-01-01');
+
+    // Disburse in January 2027 on actual delivery date 2027-01-10
+    Carbon::setTestNow('2027-01-10 11:00:00');
+    $disbursed = $service->disburse($approved, $admin, [
+        'disbursed_at' => '2027-01-10',
+        'disbursed_amount' => 15000,
+        'disbursement_method' => 'transferencia',
+        'disbursement_reference' => 'SPEI-2027-01',
+    ]);
+
+    expect($disbursed->status)->toBe(LoanStatus::Desembolsada)
+        ->and($disbursed->financialSummary->disbursement_date->format('Y-m-d'))->toBe('2027-01-10');
+
+    // From 2027-01-10 to 2027-01-15 = 5 days -> 10000 * (0.06/30) * 5 = 100.00
+    $firstRow = $disbursed->amortizationRows()->orderBy('period')->firstOrFail();
+    expect((float) $firstRow->interest)->toBe(100.0);
+
+    $v2Corrida = $disbursed->generatedDocuments()
+        ->where('document_type', LoanGeneratedDocumentType::CorridaFinanciera)
+        ->where('version', 2)
+        ->firstOrFail();
+
+    $parser = new PdfParser;
+    $corridaText = $parser->parseContent(Storage::disk('local')->get($v2Corrida->file_path))->getText();
+    $normalizedCorrida = mb_strtolower(preg_replace('/\s+/', ' ', $corridaText) ?? $corridaText);
+
+    expect($normalizedCorrida)->toContain('año fiscal 2027')
+        ->toContain('fecha de desembolso 10/01/2027')
+        ->toContain('$ 100.00')
+        ->not->toContain('fecha de desembolso 01/01/2027');
+});
+
+it('honors loan fiscal_year in ViewLoan approve modal, infolist, and updateDraft', function () {
+    Carbon::setTestNow('2026-11-15 10:00:00');
+    Filament::setCurrentPanel(Filament::getPanel('portal'));
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $aguinaldo = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    // Operational state is Activo (2026), yet admin reviews an already-submitted 2027 loan
+    // whose first_fortnight_date and benefit collection_date fell back to null.
+    $loan2027 = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'fiscal_year' => 2027,
+        'folio' => 'SOL-2027-00003',
+        'payment_type' => LoanPaymentType::Mixed,
+        'requested_amount' => 15000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => null,
+        'monthly_rate' => 6.0,
+    ]);
+
+    LoanBenefit::create([
+        'loan_id' => $loan2027->id,
+        'benefit_id' => $aguinaldo->id,
+        'requested_amount' => 5000,
+        'collection_date' => '2027-12-20',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan2027->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/3/recibo-nomina.pdf',
+        'file_hash' => hash('sha256', 'nomina3'),
+        'file_name' => 'recibo-nomina.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan2027->id,
+        'source_type' => 'benefit',
+        'benefit_id' => $aguinaldo->id,
+        'file_path' => 'loans/3/recibo-aguinaldo.pdf',
+        'file_hash' => hash('sha256', 'aguinaldo3'),
+        'file_name' => 'recibo-aguinaldo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'manual_review_status' => 'pending',
+    ]);
+
+    $this->actingAs($admin);
+
+    Livewire::test(ViewLoan::class, ['record' => $loan2027->getKey()])
+        ->assertSee('20/12/2027')
+        ->mountAction('approveLoan')
+        ->assertSchemaComponentExists('nomina_fortnights', checkComponentUsing: function ($component): bool {
+            $options = $component->getOptions();
+
+            return count($options) === 24
+                && str_contains((string) ($options[2] ?? ''), '31 de Enero de 2027')
+                && str_contains((string) ($options[24] ?? ''), '31 de Diciembre de 2027')
+                && ! str_contains(implode(' ', $options), '2026');
+        })
+        ->assertSchemaComponentExists('nomina_completion_date', checkComponentUsing: function ($component): bool {
+            return str_contains((string) $component->getContent(), '31 de Enero de 2027');
+        })
+        ->assertSchemaComponentExists("benefit_date_{$aguinaldo->id}", checkComponentUsing: function ($component): bool {
+            return str_contains((string) $component->getContent(), '20 de Diciembre de 2027');
+        })
+        ->callMountedAction([
+            'monthly_rate' => '6.00',
+            'nomina_amount' => 10000,
+            'nomina_fortnights' => 2,
+            "benefit_amount_{$aguinaldo->id}" => 5000,
+        ])
+        ->assertHasNoActionErrors()
+        ->assertNotified('Préstamo Aprobado');
+
+    $loan2027->refresh();
+    expect($loan2027->status)->toBe(LoanStatus::Aprobada)
+        ->and($loan2027->financialSummary->disbursement_date->format('Y-m-d'))->toBe('2027-01-01');
+});
+
+it('uses the loan fiscal_year when updating a 2027 draft in cierre de anio and rejects closed-year drafts', function () {
+    Carbon::setTestNow('2026-12-15 10:00:00');
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $user2026 = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+    $user2027 = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $aguinaldo = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    $draft2026 = Loan::factory()->create([
+        'user_id' => $user2026->id,
+        'status' => LoanStatus::Borrador,
+        'fiscal_year' => 2026,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 5000,
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 1,
+        'first_fortnight_date' => '2026-12-31',
+    ]);
+
+    app(LoanOperationalStateService::class)->updateState($admin, LoanOperationalState::CierreAnio);
+
+    /** @var LoanService $loanService */
+    $loanService = app(LoanService::class);
+
+    $draft2027 = $loanService->createDraft($user2027, [
+        'payment_type' => 'mixed',
+        'requested_amount' => 15000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 2,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+        'benefits' => [
+            ['benefit_id' => $aguinaldo->id, 'amount' => 5000],
+        ],
+    ]);
+
+    $updated2027 = $loanService->updateDraft($draft2027, [
+        'requested_amount' => 18000,
+        'nomina_amount' => 12000,
+        'nomina_fortnights' => 24,
+        'benefits' => [
+            ['benefit_id' => $aguinaldo->id, 'amount' => 6000],
+        ],
+    ]);
+
+    expect($updated2027->fiscal_year)->toBe(2027)
+        ->and($updated2027->nomina_fortnights)->toBe(24)
+        ->and($updated2027->first_fortnight_date->format('Y-m-d'))->toBe('2027-01-15')
+        ->and($updated2027->loanBenefits()->firstOrFail()->collection_date->format('Y-m-d'))->toBe('2027-12-20');
+
+    expect(fn () => $loanService->updateDraft($draft2026, [
+        'requested_amount' => 6000,
+    ]))->toThrow(ValidationException::class);
 });

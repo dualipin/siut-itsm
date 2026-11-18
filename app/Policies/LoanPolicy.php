@@ -107,6 +107,14 @@ class LoanPolicy
     }
 
     /**
+     * Determine whether the user can manage the loan operational state.
+     */
+    public function manageOperationalState(User $user): bool
+    {
+        return $user->isLeaderOrAdmin();
+    }
+
+    /**
      * Determine whether the user can restore the model.
      */
     public function restore(User $user, Loan $loan): bool

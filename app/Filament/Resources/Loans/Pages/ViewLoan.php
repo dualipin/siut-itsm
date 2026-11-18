@@ -45,6 +45,18 @@ class ViewLoan extends ViewRecord
         $record = $this->getRecord();
 
         $calendarService = app(LoanCalendarService::class);
+        $resolveFirstDate = static function (Loan $loanRecord) use ($calendarService): Carbon {
+            if ($loanRecord->first_fortnight_date) {
+                return Carbon::parse($loanRecord->first_fortnight_date);
+            }
+
+            $fiscalYear = (int) ($loanRecord->fiscal_year ?? now()->year);
+
+            return $calendarService->getFirstEligibleFortnight(fiscalYear: $fiscalYear)
+                ?? ($fiscalYear > now()->year
+                    ? Carbon::create($fiscalYear, 1, 15)
+                    : now()->addDays(20));
+        };
 
         return [
             // Manual Evidence Validation Action (navigates to split-view review-documents)
@@ -157,13 +169,11 @@ class ViewLoan extends ViewRecord
 
                                 Select::make('nomina_fortnights')
                                     ->label('Plazo en Quincenas')
-                                    ->options(function () use ($record, $calendarService): array {
-                                        $firstDate = $record->first_fortnight_date
-                                            ? Carbon::parse($record->first_fortnight_date)
-                                            : ($calendarService->getFirstEligibleFortnight() ?? now()->addDays(20));
+                                    ->options(function () use ($record, $calendarService, $resolveFirstDate): array {
+                                        $firstDate = $resolveFirstDate($record);
 
                                         $options = [];
-                                        $year = $firstDate->year;
+                                        $year = (int) ($record->fiscal_year ?? $firstDate->year);
                                         $deadline = $calendarService->paymentDeadline($year);
                                         $current = $firstDate->copy();
                                         $i = 1;
@@ -187,14 +197,12 @@ class ViewLoan extends ViewRecord
 
                             Placeholder::make('nomina_completion_date')
                                 ->label('Fecha en que se terminará de pagar por nómina')
-                                ->content(function (Get $get) use ($record, $calendarService): string {
+                                ->content(function (Get $get) use ($record, $calendarService, $resolveFirstDate): string {
                                     $fortnights = (int) ($get('nomina_fortnights') ?? $record->nomina_fortnights ?? 1);
                                     if ($fortnights <= 0) {
                                         return 'No especificado';
                                     }
-                                    $firstDate = $record->first_fortnight_date
-                                        ? Carbon::parse($record->first_fortnight_date)
-                                        : ($calendarService->getFirstEligibleFortnight() ?? now()->addDays(20));
+                                    $firstDate = $resolveFirstDate($record);
 
                                     $endDate = $calendarService->calculateFortnightDate($firstDate, $fortnights);
                                     $monthName = $endDate->translatedFormat('F');
@@ -208,9 +216,12 @@ class ViewLoan extends ViewRecord
                         ->visible($record->payment_type->hasBenefits() && $record->loanBenefits->isNotEmpty())
                         ->schema(function () use ($record): array {
                             $components = [];
+                            $fiscalYear = (int) ($record->fiscal_year ?? now()->year);
                             foreach ($record->loanBenefits as $lb) {
                                 $benefitName = $lb->benefit?->name ?? 'Prestación';
-                                $collectionDate = $lb->collection_date ? Carbon::parse($lb->collection_date) : null;
+                                $collectionDate = $lb->collection_date
+                                    ? Carbon::parse($lb->collection_date)
+                                    : $lb->benefit?->collectionDateForYear($fiscalYear);
                                 $collectionLabel = $collectionDate
                                     ? "{$collectionDate->day} de ".ucfirst($collectionDate->translatedFormat('F'))." de {$collectionDate->year}"
                                     : 'Fecha no registrada';

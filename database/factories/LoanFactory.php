@@ -6,7 +6,9 @@ use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
 use App\Models\Loan;
 use App\Models\User;
+use App\Services\LoanOperationalStateService;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Carbon;
 
 /**
  * @extends Factory<Loan>
@@ -18,7 +20,12 @@ class LoanFactory extends Factory
     public function definition(): array
     {
         return [
-            'folio' => Loan::generateFolio(),
+            'fiscal_year' => fn (array $attributes): int => isset($attributes['first_fortnight_date'])
+                ? Carbon::parse((string) $attributes['first_fortnight_date'])->year
+                : app(LoanOperationalStateService::class)->effectiveFiscalYear(),
+            'folio' => fn (array $attributes): string => Loan::generateFolio(
+                isset($attributes['fiscal_year']) ? (int) $attributes['fiscal_year'] : null,
+            ),
             'user_id' => User::factory(),
             'status' => LoanStatus::Borrador,
             'payment_type' => LoanPaymentType::Nomina,

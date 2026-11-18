@@ -3,14 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Actions\GenerateLoanSimulationPdf;
+use App\Enums\LoanOperationalState;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Http\Requests\StoreLoanSimulationRequest;
-use App\Models\Benefit;
+use App\Services\LoanCalendarService;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanSimulationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class LoanSimulatorController extends Controller
@@ -18,6 +19,8 @@ class LoanSimulatorController extends Controller
     public function __construct(
         protected readonly LoanSimulationService $loanSimulationService,
         protected readonly GenerateLoanSimulationPdf $generateLoanSimulationPdf,
+        protected readonly LoanOperationalStateService $operationalStateService,
+        protected readonly LoanCalendarService $calendarService,
     ) {}
 
     /**
@@ -25,21 +28,23 @@ class LoanSimulatorController extends Controller
      */
     public function show(): View
     {
-        $benefits = Benefit::active()
-            ->orderBy('collection_month')
-            ->orderBy('collection_day')
-            ->get(['id', 'name', 'collection_day', 'collection_month'])
-            ->map(fn (Benefit $benefit) => [
-                'id' => $benefit->id,
-                'name' => $benefit->name,
-                'collectionDay' => $benefit->collection_day,
-                'collectionMonth' => $benefit->collection_month,
-                'collectionDate' => $benefit->collectionDateForYear(now()->year)->format('Y-m-d'),
-            ])
-            ->values();
+        $isOutOfService = $this->operationalStateService->isTemporarilyOutOfService();
+        $effectiveState = $this->operationalStateService->effectiveState();
+        $targetFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+        $hasAvailableDates = $this->calendarService->isApplicationWindowOpen();
 
         return view('landing.simulador-prestamo', [
-            'benefits' => $benefits,
+            'benefits' => $this->calendarService->getSimulatorBenefits($targetFiscalYear),
+            'operationalState' => $effectiveState->value,
+            'targetFiscalYear' => $targetFiscalYear,
+            'closedFiscalYear' => now()->year,
+            'isYearEndClose' => $effectiveState === LoanOperationalState::CierreAnio,
+            'isOutOfService' => $isOutOfService,
+            'suspensionMessage' => $this->operationalStateService->publicSuspensionMessage(),
+            'hasAvailableDates' => $hasAvailableDates,
+            'windowClosedMessage' => (! $isOutOfService && ! $hasAvailableDates)
+                ? $this->calendarService->applicationClosedReason()
+                : null,
         ]);
     }
 
@@ -48,57 +53,7 @@ class LoanSimulatorController extends Controller
      */
     public function simulate(StoreLoanSimulationRequest $request): JsonResponse
     {
-        $validated = $request->validated();
-
-        $params = [
-            'monthly_rate' => (float) $validated['monthly_rate'] / 100,
-            'disbursement_date' => now()->format('Y-m-d'),
-            'payment_methods' => [],
-        ];
-
-        $nominaAmount = (float) ($validated['nomina']['amount'] ?? 0);
-        $nominaFortnights = (int) ($validated['nomina']['fortnights'] ?? 0);
-        if ($nominaAmount > 0 && $nominaFortnights > 0 && ! empty($validated['nomina']['first_fortnight'])) {
-            $params['payment_methods']['nomina'] = [
-                'amount' => $nominaAmount,
-                'fortnights' => $nominaFortnights,
-                'first_fortnight' => $validated['nomina']['first_fortnight'],
-            ];
-        }
-
-        if (! empty($validated['benefits'])) {
-            $ids = array_column($validated['benefits'], 'benefit_id');
-            $names = Benefit::whereIn('id', $ids)->pluck('name', 'id');
-
-            $params['payment_methods']['benefits'] = array_map(
-                fn (array $b) => [
-                    'benefit_id' => (int) $b['benefit_id'],
-                    'name' => $names[(int) $b['benefit_id']] ?? 'Prestación',
-                    'amount' => (float) $b['amount'],
-                    'collection_date' => $b['collection_date'],
-                ],
-                $validated['benefits']
-            );
-        }
-
-        $amortizationTable = $this->loanSimulationService->buildAmortizationTable($params);
-        $summary = $this->loanSimulationService->buildFinancialRunSummary($params);
-
-        // Cache the simulation data for 10 minutes so the PDF route can render it
-        $token = Str::uuid()->toString();
-        Cache::put('loan_simulation_'.$token, [
-            'amortizationTable' => $amortizationTable,
-            'summary' => $summary,
-        ], now()->addMinutes(10));
-
-        Cache::put('loan_application_'.$token, [
-            'payment_type' => $validated['payment_type'],
-            'nomina' => isset($validated['nomina']) ? [
-                'amount' => $validated['nomina']['amount'],
-                'fortnights' => $validated['nomina']['fortnights'],
-            ] : null,
-            'benefits' => $validated['benefits'] ?? [],
-        ], now()->addMinutes(10));
+        $token = $this->loanSimulationService->simulateAndCache($request->validated());
 
         return response()->json([
             'pdf_url' => route('public.simulator.download', ['token' => $token]),
@@ -111,6 +66,10 @@ class LoanSimulatorController extends Controller
      */
     public function download(string $token): Response
     {
+        if ($this->operationalStateService->isTemporarilyOutOfService()) {
+            abort(503, $this->operationalStateService->publicSuspensionMessage());
+        }
+
         /** @var array{amortizationTable: array<int, array<string, mixed>>, summary: array<string, mixed>}|null $data */
         $data = Cache::get('loan_simulation_'.$token);
 

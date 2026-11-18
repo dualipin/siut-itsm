@@ -7,6 +7,7 @@ use App\Enums\LoanStatus;
 use App\Filament\Resources\Loans\LoanResource;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Models\Loan;
+use App\Services\LoanCalendarService;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
@@ -30,6 +31,11 @@ class LoansTable
                     ->copyMessage('Folio copiado')
                     ->fontFamily('mono')
                     ->weight('bold'),
+
+                TextColumn::make('fiscal_year')
+                    ->label('Año fiscal')
+                    ->sortable()
+                    ->alignment('center'),
 
                 TextColumn::make('user.name')
                     ->label('Solicitante')
@@ -78,6 +84,16 @@ class LoansTable
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('fiscal_year')
+                    ->label('Año fiscal')
+                    ->options(fn (): array => Loan::query()
+                        ->whereNotNull('fiscal_year')
+                        ->distinct()
+                        ->orderByDesc('fiscal_year')
+                        ->pluck('fiscal_year')
+                        ->mapWithKeys(fn (mixed $year): array => [(string) $year => (string) $year])
+                        ->all()),
+
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options(LoanStatus::class),
@@ -104,7 +120,11 @@ class LoansTable
                     ->label('Nueva Solicitud')
                     ->icon(Heroicon::Plus)
                     ->color('primary')
-                    ->url(fn (): string => ApplyLoan::getUrl())
+                    ->disabled(fn (): bool => ! app(LoanCalendarService::class)->isApplicationWindowOpen())
+                    ->tooltip(fn (): ?string => app(LoanCalendarService::class)->isApplicationWindowOpen()
+                        ? null
+                        : app(LoanCalendarService::class)->applicationClosedReason())
+                    ->url(fn (): ?string => app(LoanCalendarService::class)->isApplicationWindowOpen() ? ApplyLoan::getUrl() : null)
                     ->visible(fn (): bool => auth()->user()?->is_active ?? false),
             ]);
     }

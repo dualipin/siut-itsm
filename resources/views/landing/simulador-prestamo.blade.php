@@ -1,9 +1,66 @@
 @extends('landing.layout')
 
 @section('content')
+    @php
+        $islandProps = [
+            'benefits' => $benefits->toArray(),
+            'operationalState' => $operationalState,
+            'targetFiscalYear' => $targetFiscalYear,
+            'closedFiscalYear' => $closedFiscalYear,
+            'suspensionMessage' => $suspensionMessage,
+            'hasAvailableDates' => $hasAvailableDates,
+            'windowClosedMessage' => $windowClosedMessage,
+        ];
+    @endphp
+
     <div
         data-vue="loans/simulator-form"
         data-client="load"
-        data-props="{{ json_encode(['benefits' => $benefits->toArray()]) }}"
-    ></div>
+    >
+        <script type="application/json" class="vue-island-props">{!! json_encode($islandProps, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) !!}</script>
+
+        @if ($isOutOfService || ! $hasAvailableDates || $isYearEndClose)
+            <div class="vue-island-fallback min-h-screen bg-base-200">
+                <header class="bg-base-300 border-b border-base-300">
+                    <div class="max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
+                        <div class="flex items-center gap-2 mb-2 sm:mb-4">
+                            <span class="text-sm uppercase tracking-[.18em] text-base-content/60 font-semibold">
+                                Sindicato Único de Trabajadores
+                            </span>
+                        </div>
+                        <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-base-content">
+                            Simulador de Préstamo
+                        </h1>
+                    </div>
+                </header>
+
+                <main class="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8">
+                    @if ($isOutOfService)
+                        <div role="alert" class="alert alert-error rounded-box shadow-sm">
+                            <div>
+                                <h2 class="font-semibold text-base">Servicio temporalmente fuera de servicio</h2>
+                                <p class="text-sm mt-1">{{ $suspensionMessage }}</p>
+                            </div>
+                        </div>
+                    @elseif (! $hasAvailableDates)
+                        <div role="alert" class="alert alert-warning rounded-box shadow-sm">
+                            <div>
+                                <h2 class="font-semibold text-base">Sin fechas disponibles en el ejercicio actual</h2>
+                                <p class="text-sm mt-1">{{ $windowClosedMessage }}</p>
+                            </div>
+                        </div>
+                    @elseif ($isYearEndClose)
+                        <div role="status" class="alert alert-info rounded-box shadow-sm">
+                            <div>
+                                <h2 class="font-semibold text-base">Cierre de año — Recepción anticipada para el ejercicio fiscal {{ $targetFiscalYear }}</h2>
+                                <p class="text-sm mt-1">
+                                    El ejercicio {{ $closedFiscalYear }} ha cerrado para nuevas operaciones. Las quincenas, prestaciones y el cálculo de intereses (con desembolso estimado el 1 de enero de {{ $targetFiscalYear }}) corresponden exclusivamente al ejercicio fiscal {{ $targetFiscalYear }}.
+                                </p>
+                            </div>
+                        </div>
+                    @endif
+                </main>
+            </div>
+        @endif
+    </div>
 @endsection

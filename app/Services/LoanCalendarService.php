@@ -8,60 +8,89 @@ use Illuminate\Support\Collection;
 
 class LoanCalendarService
 {
-    /**
-     * Get the application window deadline for the given year (November 30, end of day).
-     */
-    public function applicationDeadline(?int $year = null): Carbon
+    public function __construct(
+        protected readonly ?LoanOperationalStateService $operationalStateService = null,
+    ) {}
+
+    private function stateService(): LoanOperationalStateService
     {
-        return Carbon::create($year ?? now()->year, 11, 30)->endOfDay();
+        return $this->operationalStateService ?? app(LoanOperationalStateService::class);
     }
 
     /**
-     * Get the payroll payment deadline for the given year (December 31, end of day).
+     * Get the payroll payment deadline for the given year (or active fiscal year if omitted).
      */
     public function paymentDeadline(?int $year = null): Carbon
     {
-        return Carbon::create($year ?? now()->year, 12, 31)->endOfDay();
+        $resolvedYear = $year ?? $this->stateService()->effectiveFiscalYear();
+
+        return Carbon::create($resolvedYear, 12, 31)->endOfDay();
     }
 
     /**
      * Check if the loan application window is open.
-     * Deadline: November 30 (inclusive). From December 1, new loans are blocked.
+     * Blocked immediately when operational state is TemporalmenteFueraDeServicio.
+     * When Activo, stays open (including in December) as long as at least one eligible
+     * fortnight or active future benefit exists within the current year.
      */
     public function isApplicationWindowOpen(?Carbon $date = null): bool
     {
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $deadline = $this->applicationDeadline($date->year);
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
+            return false;
+        }
 
-        return $date->lte($deadline);
+        return ! empty($this->getEligibleFortnights($date))
+            || $this->getEligibleBenefits($date)->isNotEmpty();
+    }
+
+    /**
+     * Get the user-facing reason why the application window is closed.
+     */
+    public function applicationClosedReason(?Carbon $date = null): string
+    {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
+            return $this->stateService()->publicSuspensionMessage();
+        }
+
+        $fiscalYear = $this->stateService()->effectiveFiscalYear($date);
+
+        return "No hay fechas disponibles (quincenas ni prestaciones) para el ejercicio fiscal {$fiscalYear} hasta que la administración active Cierre de año.";
     }
 
     /**
      * Get the list of eligible fortnights for nómina.
      * Must respect:
-     * 1. 20-day tolerance: candidate fortnight must be after now + 20 days.
-     * 2. Application window deadline: loan applications close November 30 of current year.
-     * 3. Payment deadline: cannot exceed December 31 of current year.
+     * 1. Operational state is not TemporalmenteFueraDeServicio.
+     * 2. Effective fiscal year boundaries (Jan 1 to Dec 31 of target fiscal year).
+     * 3. 20-day tolerance: candidate fortnight must be after max(today + 20 days, Jan 1 of target fiscal year).
      * 4. Fortnight days: 15th and the last real calendar day of each month.
      *
      * @return array<int, array{date: string, label: string, day: int, month: int, year: int}>
      */
-    public function getEligibleFortnights(?Carbon $date = null): array
+    public function getEligibleFortnights(?Carbon $date = null, ?int $fiscalYear = null): array
     {
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $year = $date->year;
-        $applicationDeadline = $this->applicationDeadline($year);
-        $paymentDeadline = $this->paymentDeadline($year);
-
-        if ($date->gt($applicationDeadline)) {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
             return [];
         }
 
-        $minDate = $date->copy()->addDays(20);
+        $referenceDate = $date ? $date->copy()->startOfDay() : now()->startOfDay();
+        $resolvedFiscalYear = $fiscalYear ?? $this->stateService()->effectiveFiscalYear($referenceDate);
+        $paymentDeadline = $this->paymentDeadline($resolvedFiscalYear);
+        $fiscalYearStart = Carbon::create($resolvedFiscalYear, 1, 1)->startOfDay();
+
+        $minDate = $referenceDate->copy()->addDays(20);
+        if ($minDate->lt($fiscalYearStart)) {
+            $minDate = $fiscalYearStart->copy();
+        }
+
         $result = [];
 
-        $current = $date->copy()->startOfMonth();
-        while ($current->year === $year && $current->month <= 12) {
+        $current = $referenceDate->copy()->startOfMonth();
+        if ($current->lt($fiscalYearStart)) {
+            $current = $fiscalYearStart->copy();
+        }
+
+        while ($current->year === $resolvedFiscalYear && $current->month <= 12) {
             // First fortnight: 15th
             $q1 = $current->copy()->setDay(15);
             if ($q1->isAfter($minDate) && $q1->lte($paymentDeadline)) {
@@ -83,9 +112,9 @@ class LoanCalendarService
     /**
      * Get the first eligible fortnight.
      */
-    public function getFirstEligibleFortnight(?Carbon $date = null): ?Carbon
+    public function getFirstEligibleFortnight(?Carbon $date = null, ?int $fiscalYear = null): ?Carbon
     {
-        $fortnights = $this->getEligibleFortnights($date);
+        $fortnights = $this->getEligibleFortnights($date, $fiscalYear);
         if (empty($fortnights)) {
             return null;
         }
@@ -94,35 +123,34 @@ class LoanCalendarService
     }
 
     /**
-     * Get active benefits eligible for loan payment in the current year.
-     * Only benefits whose collection date has not passed are returned.
+     * Get active benefits eligible for loan payment in the effective fiscal year.
+     * Only benefits whose collection date in the target fiscal year has not passed are returned.
      *
      * @return Collection<int, array{id: int, name: string, collection_date: string, collection_day: int, collection_month: int, calculation_method: string, requires_document: bool, document_instructions: ?string}>
      */
     public function getEligibleBenefits(?Carbon $date = null): Collection
     {
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-
-        if (! $this->isApplicationWindowOpen($date)) {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
             return collect();
         }
 
-        $year = $date->year;
+        $referenceDate = $date ? $date->copy()->startOfDay() : now()->startOfDay();
+        $fiscalYear = $this->stateService()->effectiveFiscalYear($referenceDate);
 
         return Benefit::active()
             ->orderBy('collection_month')
             ->orderBy('collection_day')
             ->get()
-            ->filter(function (Benefit $benefit) use ($date, $year) {
-                $collectionDate = $benefit->collectionDateForYear($year);
+            ->filter(function (Benefit $benefit) use ($referenceDate, $fiscalYear) {
+                $collectionDate = $benefit->collectionDateForYear($fiscalYear);
 
-                return $collectionDate->isAfter($date);
+                return $collectionDate->isAfter($referenceDate);
             })
-            ->map(function (Benefit $benefit) use ($year) {
+            ->map(function (Benefit $benefit) use ($fiscalYear) {
                 return [
                     'id' => $benefit->id,
                     'name' => $benefit->name,
-                    'collection_date' => $benefit->collectionDateForYear($year)->format('Y-m-d'),
+                    'collection_date' => $benefit->collectionDateForYear($fiscalYear)->format('Y-m-d'),
                     'collection_day' => $benefit->collection_day,
                     'collection_month' => $benefit->collection_month,
                     'calculation_method' => $benefit->calculation_method,
@@ -130,6 +158,29 @@ class LoanCalendarService
                     'document_instructions' => $benefit->document_instructions,
                 ];
             })
+            ->values();
+    }
+
+    /**
+     * Get active benefits formatted for the public loan simulator in the target fiscal year.
+     *
+     * @return Collection<int, array{id: int, name: string, collectionDay: int, collectionMonth: int, collectionDate: string}>
+     */
+    public function getSimulatorBenefits(?int $fiscalYear = null): Collection
+    {
+        $resolvedFiscalYear = $fiscalYear ?? $this->stateService()->effectiveFiscalYear();
+
+        return Benefit::active()
+            ->orderBy('collection_month')
+            ->orderBy('collection_day')
+            ->get(['id', 'name', 'collection_day', 'collection_month'])
+            ->map(fn (Benefit $benefit): array => [
+                'id' => $benefit->id,
+                'name' => $benefit->name,
+                'collectionDay' => $benefit->collection_day,
+                'collectionMonth' => $benefit->collection_month,
+                'collectionDate' => $benefit->collectionDateForYear($resolvedFiscalYear)->format('Y-m-d'),
+            ])
             ->values();
     }
 

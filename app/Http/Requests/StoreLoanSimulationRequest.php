@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\LoanPaymentType;
 use App\Services\LoanCalendarService;
+use App\Services\LoanOperationalStateService;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Carbon;
@@ -19,13 +20,18 @@ class StoreLoanSimulationRequest extends FormRequest
     public function rules(): array
     {
         $calendarService = app(LoanCalendarService::class);
+        $operationalStateService = app(LoanOperationalStateService::class);
+        $isOutOfService = $operationalStateService->isTemporarilyOutOfService();
         $paymentType = $this->input('payment_type');
         $hasNomina = in_array($paymentType, [LoanPaymentType::Nomina->value, LoanPaymentType::Mixed->value], true);
         $hasBenefits = in_array($paymentType, [LoanPaymentType::Benefit->value, LoanPaymentType::Mixed->value], true);
 
-        $paymentDeadline = $calendarService->paymentDeadline();
+        $fiscalYear = $operationalStateService->effectiveFiscalYear();
+        $fiscalYearStart = Carbon::create($fiscalYear, 1, 1)->startOfDay();
+        $paymentDeadline = $calendarService->paymentDeadline($fiscalYear);
         $decemberThirtyOne = $paymentDeadline->format('Y-m-d');
-        $minFirstFortnight = now()->addDays(20)->format('Y-m-d');
+        $twentyDaysDate = now()->startOfDay()->addDays(20);
+        $minFirstFortnight = ($twentyDaysDate->gt($fiscalYearStart) ? $twentyDaysDate : $fiscalYearStart)->format('Y-m-d');
         $firstEligibleFortnight = $calendarService->getFirstEligibleFortnight()?->format('Y-m-d');
 
         return [
@@ -33,9 +39,15 @@ class StoreLoanSimulationRequest extends FormRequest
             'payment_type' => [
                 'required',
                 Rule::enum(LoanPaymentType::class),
-                function (string $attribute, mixed $value, Closure $fail) use ($calendarService): void {
+                function (string $attribute, mixed $value, Closure $fail) use ($calendarService, $operationalStateService, $isOutOfService): void {
+                    if ($isOutOfService) {
+                        $fail($operationalStateService->publicSuspensionMessage());
+
+                        return;
+                    }
+
                     if (! $calendarService->isApplicationWindowOpen()) {
-                        $fail('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).');
+                        $fail($calendarService->applicationClosedReason());
                     }
                 },
             ],
@@ -72,8 +84,8 @@ class StoreLoanSimulationRequest extends FormRequest
                 'date_format:Y-m-d',
                 'after_or_equal:'.$minFirstFortnight,
                 'before_or_equal:'.$decemberThirtyOne,
-                function (string $attribute, mixed $value, Closure $fail) use ($hasNomina, $firstEligibleFortnight): void {
-                    if (! $hasNomina) {
+                function (string $attribute, mixed $value, Closure $fail) use ($hasNomina, $firstEligibleFortnight, $isOutOfService): void {
+                    if (! $hasNomina || $isOutOfService) {
                         return;
                     }
 
@@ -97,7 +109,14 @@ class StoreLoanSimulationRequest extends FormRequest
                 Rule::exists('benefits', 'id')->where('is_active', true)->whereNull('deleted_at'),
             ],
             'benefits.*.amount' => [$hasBenefits ? 'required' : 'nullable', 'numeric', 'min:1'],
-            'benefits.*.collection_date' => [$hasBenefits ? 'required' : 'nullable', 'date', 'date_format:Y-m-d', 'after:today'],
+            'benefits.*.collection_date' => [
+                $hasBenefits ? 'required' : 'nullable',
+                'date',
+                'date_format:Y-m-d',
+                'after:today',
+                'after_or_equal:'.$fiscalYearStart->format('Y-m-d'),
+                'before_or_equal:'.$decemberThirtyOne,
+            ],
         ];
     }
 
@@ -129,6 +148,8 @@ class StoreLoanSimulationRequest extends FormRequest
             'benefits.*.amount.min' => 'El monto por prestación debe ser mayor a cero.',
             'benefits.*.collection_date.required' => 'La fecha de cobro de la prestación es obligatoria.',
             'benefits.*.collection_date.after' => 'La fecha de cobro de la prestación debe ser posterior a hoy.',
+            'benefits.*.collection_date.after_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.',
+            'benefits.*.collection_date.before_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.',
         ];
     }
 }

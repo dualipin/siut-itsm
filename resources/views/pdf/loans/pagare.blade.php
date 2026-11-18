@@ -6,6 +6,7 @@
   @php
       $amount = (float) ($loan->approved_amount ?? $loan->requested_amount);
       $monthlyRate = (float) $loan->monthly_rate;
+      $year = (int) ($fiscalYear ?? $loan->fiscal_year ?? $loan->created_at?->year ?? now()->year);
       $term = (int) ($termFortnights ?? ($loan->nomina_fortnights ?? 1));
       if ($term <= 0) {
           $term = 1;
@@ -150,7 +151,7 @@
           Debe(mos) y pagare(mos) incondicionalmente por este Pagaré a la orden de
           <span class="bold underline">Sindicato Único de Trabajadores del Instituto Tecnológico Superior de Macuspana</span>
           en <span class="underline bold">Macuspana, Tabasco</span> el
-          <span class="underline bold" style="padding: 0 30px;">{{ $lastPaymentDate ?? ($loan->disbursed_at?->format('d/m/Y') ?? '30/11/'.now()->year) }}</span>
+          <span class="underline bold" style="padding: 0 30px;">{{ $lastPaymentDate ?? '31/12/'.$year }}</span>
         </p>
         <p>
           La cantidad de:

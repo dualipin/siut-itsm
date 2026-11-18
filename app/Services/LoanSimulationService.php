@@ -2,10 +2,93 @@
 
 namespace App\Services;
 
+use App\Models\Benefit;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class LoanSimulationService
 {
+    public function __construct(
+        protected readonly ?LoanOperationalStateService $operationalStateService = null,
+    ) {}
+
+    private function stateService(): LoanOperationalStateService
+    {
+        return $this->operationalStateService ?? app(LoanOperationalStateService::class);
+    }
+
+    /**
+     * Run a loan simulation from validated input, cache PDF & application payloads, and return the token.
+     *
+     * @param  array{
+     *     monthly_rate: float|int|string,
+     *     payment_type: string,
+     *     nomina?: array{amount?: float|int|string, fortnights?: int|string, first_fortnight?: string}|null,
+     *     benefits?: array<int, array{benefit_id: int|string, amount: float|int|string, collection_date: string}>|null
+     * }  $validated
+     */
+    public function simulateAndCache(array $validated): string
+    {
+        $targetFiscalYear = $this->stateService()->effectiveFiscalYear();
+        $disbursementDate = $targetFiscalYear > now()->year
+            ? Carbon::create($targetFiscalYear, 1, 1)->format('Y-m-d')
+            : now()->format('Y-m-d');
+
+        $params = [
+            'monthly_rate' => (float) $validated['monthly_rate'] / 100,
+            'disbursement_date' => $disbursementDate,
+            'payment_methods' => [],
+        ];
+
+        $nominaAmount = (float) ($validated['nomina']['amount'] ?? 0);
+        $nominaFortnights = (int) ($validated['nomina']['fortnights'] ?? 0);
+        if ($nominaAmount > 0 && $nominaFortnights > 0 && ! empty($validated['nomina']['first_fortnight'])) {
+            $params['payment_methods']['nomina'] = [
+                'amount' => $nominaAmount,
+                'fortnights' => $nominaFortnights,
+                'first_fortnight' => $validated['nomina']['first_fortnight'],
+            ];
+        }
+
+        if (! empty($validated['benefits'])) {
+            $ids = array_column($validated['benefits'], 'benefit_id');
+            $names = Benefit::whereIn('id', $ids)->pluck('name', 'id');
+
+            $params['payment_methods']['benefits'] = array_map(
+                fn (array $b): array => [
+                    'benefit_id' => (int) $b['benefit_id'],
+                    'name' => $names[(int) $b['benefit_id']] ?? 'Prestación',
+                    'amount' => (float) $b['amount'],
+                    'collection_date' => $b['collection_date'],
+                ],
+                $validated['benefits'],
+            );
+        }
+
+        $amortizationTable = $this->buildAmortizationTable($params);
+        $summary = $this->buildFinancialRunSummary($params);
+        $summary['fiscal_year'] = $targetFiscalYear;
+
+        $token = Str::uuid()->toString();
+        Cache::put('loan_simulation_'.$token, [
+            'amortizationTable' => $amortizationTable,
+            'summary' => $summary,
+        ], now()->addMinutes(10));
+
+        Cache::put('loan_application_'.$token, [
+            'fiscal_year' => $targetFiscalYear,
+            'payment_type' => $validated['payment_type'],
+            'nomina' => isset($validated['nomina']) ? [
+                'amount' => $validated['nomina']['amount'],
+                'fortnights' => $validated['nomina']['fortnights'],
+            ] : null,
+            'benefits' => $validated['benefits'] ?? [],
+        ], now()->addMinutes(10));
+
+        return $token;
+    }
+
     /**
      * Build the full fortnight-by-fortnight amortization table.
      *

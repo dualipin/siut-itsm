@@ -20,7 +20,8 @@
     $calculatedInstallment = ($hasNomina && $nominaFortnights > 0)
         ? round(($loan->nomina_amount ?? $amount) / $nominaFortnights, 2)
         : ($installmentAmount ?? $amount);
-    $firstDate = $loan->first_fortnight_date?->format('Y-m-d') ?? ($firstFortnightDate ?? now()->addDays(15)->format('Y-m-d'));
+    $year = (int) ($fiscalYear ?? $loan->fiscal_year ?? $loan->created_at?->year ?? now()->year);
+    $firstDate = $firstFortnightDate ?? $loan->first_fortnight_date?->format('Y-m-d') ?? '';
     $totalNominaAmount = ($loan->loanBenefits->isEmpty())
         ? $amount
         : (float) ($loan->nomina_amount ?? $amount);
@@ -273,7 +274,7 @@
                     <td class="col-prestacion">{{ $lb->benefit->name ?? 'Prestación' }}</td>
                     <td class="col-si">${{ number_format($bAmount, 2) }}</td>
                     <td class="col-no">${{ number_format($bAmount, 2) }}</td>
-                    <td class="col-obs">1 parcialidad ({{ $lb->collection_date?->format('d/m/Y') }})</td>
+                    <td class="col-obs">1 parcialidad ({{ ($lb->collection_date ?? $lb->benefit?->collectionDateForYear($year))?->format('d/m/Y') }})</td>
                 </tr>
             @endforeach
         </tbody>

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Loans\Pages;
 
+use App\Enums\LoanOperationalState;
 use App\Enums\LoanPaymentType;
 use App\Filament\Forms\Components\SignaturePad;
 use App\Filament\Resources\Loans\LoanResource;
@@ -11,6 +12,7 @@ use App\Models\LoanEvidence;
 use App\Models\User;
 use App\Services\LoanCalendarService;
 use App\Services\LoanDocumentAIService;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -22,12 +24,14 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\HasWizard;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Wizard\Step;
+use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
@@ -52,12 +56,57 @@ class ApplyLoan extends CreateRecord
 
     protected static bool $canCreateAnother = false;
 
+    public ?int $mountedFiscalYear = null;
+
+    public function content(Schema $schema): Schema
+    {
+        $stateService = app(LoanOperationalStateService::class);
+
+        return $schema
+            ->components([
+                Callout::make(fn (): string => "Cierre de año — Recepción anticipada para el ejercicio fiscal {$stateService->effectiveFiscalYear()}")
+                    ->description(fn (): string => sprintf(
+                        'El ejercicio %d se encuentra cerrado. Esta solicitud se registrará y calculará para el ejercicio fiscal %d.',
+                        now()->year,
+                        $stateService->effectiveFiscalYear(),
+                    ))
+                    ->info()
+                    ->icon(Heroicon::InformationCircle)
+                    ->visible(fn (): bool => $stateService->effectiveState() === LoanOperationalState::CierreAnio),
+                $this->getFormContentComponent(),
+            ]);
+    }
+
     public function mount(): void
     {
-        if (! app(LoanCalendarService::class)->isApplicationWindowOpen()) {
+        $token = request()->query('simulation');
+        $operationalStateService = app(LoanOperationalStateService::class);
+        if ($operationalStateService->isTemporarilyOutOfService()) {
+            if (is_string($token) && $token !== '') {
+                Cache::forget('loan_application_'.$token);
+            }
+
             Notification::make()
-                ->title('Periodo de solicitudes cerrado')
-                ->body('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).')
+                ->title('Servicio temporalmente fuera de servicio')
+                ->body($operationalStateService->publicSuspensionMessage())
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->redirect(ListLoans::getUrl());
+
+            return;
+        }
+
+        $calendarService = app(LoanCalendarService::class);
+        if (! $calendarService->isApplicationWindowOpen()) {
+            if (is_string($token) && $token !== '') {
+                Cache::forget('loan_application_'.$token);
+            }
+
+            Notification::make()
+                ->title('Sin fechas disponibles en el ejercicio actual')
+                ->body($calendarService->applicationClosedReason())
                 ->warning()
                 ->persistent()
                 ->send();
@@ -68,6 +117,8 @@ class ApplyLoan extends CreateRecord
         }
 
         parent::mount();
+
+        $this->mountedFiscalYear = $operationalStateService->effectiveFiscalYear();
 
         /** @var User $user */
         $user = auth()->user();
@@ -81,18 +132,34 @@ class ApplyLoan extends CreateRecord
             'accept_terms' => false,
         ];
 
-        $token = request()->query('simulation');
-        if (is_string($token)) {
-            /** @var array{payment_type: string, nomina?: array{amount: float, fortnights: int}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
+        if (is_string($token) && $token !== '') {
+            /** @var array{fiscal_year?: int|string, payment_type: string, nomina?: array{amount: float, fortnights: int}, benefits?: array<int, array{benefit_id: int, amount: float}>}|null $simulation */
             $simulation = Cache::get('loan_application_'.$token);
             if ($simulation !== null) {
-                $fillData = [
-                    ...$fillData,
-                    'payment_type' => $simulation['payment_type'],
-                    'nomina_amount' => $simulation['nomina']['amount'] ?? null,
-                    'nomina_fortnights' => $simulation['nomina']['fortnights'] ?? null,
-                    'benefits' => $simulation['benefits'] ?? [],
-                ];
+                $simulationFiscalYear = isset($simulation['fiscal_year']) ? (int) $simulation['fiscal_year'] : null;
+
+                if ($simulationFiscalYear !== $this->mountedFiscalYear) {
+                    Cache::forget('loan_application_'.$token);
+
+                    Notification::make()
+                        ->title('Simulación desactualizada')
+                        ->body(sprintf(
+                            'La simulación corresponde a reglas anteriores (%s) y el ejercicio fiscal vigente es %d. Se descartó la precarga; realiza una nueva simulación bajo las condiciones actuales.',
+                            $simulationFiscalYear !== null ? "ejercicio {$simulationFiscalYear}" : 'sin año fiscal',
+                            $this->mountedFiscalYear,
+                        ))
+                        ->warning()
+                        ->persistent()
+                        ->send();
+                } else {
+                    $fillData = [
+                        ...$fillData,
+                        'payment_type' => $simulation['payment_type'],
+                        'nomina_amount' => $simulation['nomina']['amount'] ?? null,
+                        'nomina_fortnights' => $simulation['nomina']['fortnights'] ?? null,
+                        'benefits' => $simulation['benefits'] ?? [],
+                    ];
+                }
             }
         }
 
@@ -146,6 +213,8 @@ class ApplyLoan extends CreateRecord
                                         $index + 1 => ($index + 1).' '.($index === 0 ? 'quincena' : 'quincenas'),
                                     ])
                                     ->all())
+                                ->placeholder(fn (): string => empty($calendar->getEligibleFortnights()) ? 'Sin quincenas disponibles en el ejercicio actual' : 'Selecciona una opción')
+                                ->helperText(fn (): ?string => empty($calendar->getEligibleFortnights()) ? 'No hay quincenas disponibles para el ejercicio actual (tolerancia de 20 días antes del 31 de diciembre).' : null)
                                 ->live()
                                 ->afterStateUpdated(function (Set $set): void {
                                     $this->invalidateSignature($set);
@@ -388,8 +457,15 @@ class ApplyLoan extends CreateRecord
         ];
     }
 
+    protected function beforeValidate(): void
+    {
+        $this->validateActiveOperationalWindow();
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
+        $this->validateActiveOperationalWindow(halt: false);
+
         /** @var User $user */
         $user = auth()->user();
         $this->ensureEvidenceCanProceed($data);
@@ -563,6 +639,52 @@ class ApplyLoan extends CreateRecord
         $html .= '</div>';
 
         return new HtmlString($html);
+    }
+
+    private function validateActiveOperationalWindow(bool $halt = true): void
+    {
+        $calendarService = app(LoanCalendarService::class);
+        $stateService = app(LoanOperationalStateService::class);
+
+        if (! $calendarService->isApplicationWindowOpen()) {
+            $reason = $calendarService->applicationClosedReason();
+            $isOutOfService = $stateService->isTemporarilyOutOfService();
+
+            Notification::make()
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
+                ->body($reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            if ($halt) {
+                throw new Halt;
+            }
+
+            throw ValidationException::withMessages([
+                'loan' => $reason,
+            ]);
+        }
+
+        $currentFiscalYear = $stateService->effectiveFiscalYear();
+        if ($this->mountedFiscalYear !== null && $this->mountedFiscalYear !== $currentFiscalYear) {
+            $message = "El ejercicio fiscal vigente cambió de {$this->mountedFiscalYear} a {$currentFiscalYear}. Recarga la página o simula nuevamente bajo las condiciones actuales.";
+
+            Notification::make()
+                ->title('Cambio de ejercicio fiscal')
+                ->body($message)
+                ->warning()
+                ->persistent()
+                ->send();
+
+            if ($halt) {
+                throw new Halt;
+            }
+
+            throw ValidationException::withMessages([
+                'loan' => $message,
+            ]);
+        }
     }
 
     /**

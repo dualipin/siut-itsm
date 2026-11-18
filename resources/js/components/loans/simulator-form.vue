@@ -12,7 +12,38 @@ const props = defineProps<{
         collectionMonth: number
         collectionDate: string   // 'YYYY-MM-DD' for the current year
     }>
+    operationalState?: 'activo' | 'cierre_anio' | 'temporalmente_fuera_de_servicio'
+    targetFiscalYear?: number
+    closedFiscalYear?: number
+    suspensionMessage?: string | null
+    hasAvailableDates?: boolean
+    windowClosedMessage?: string | null
 }>()
+
+const isOutOfService = computed(
+    () => props.operationalState === 'temporalmente_fuera_de_servicio'
+)
+
+const isYearEndClose = computed(
+    () => props.operationalState === 'cierre_anio'
+)
+
+const fiscalYear = computed(
+    () => props.targetFiscalYear ?? new Date().getFullYear()
+)
+
+const closedYear = computed(
+    () => props.closedFiscalYear ?? new Date().getFullYear()
+)
+
+const resolvedSuspensionMessage = computed(
+    () => props.suspensionMessage?.trim() ?? ''
+)
+
+const resolvedWindowClosedMessage = computed(
+    () => props.windowClosedMessage?.trim()
+        || `No hay fechas disponibles (quincenas ni prestaciones) para el ejercicio fiscal ${fiscalYear.value} hasta que la administración active Cierre de año.`
+)
 
 // ── Form state ────────────────────────────────────────────────────────────────
 type BenefitEntry = { benefit_id: number; amount: string; collection_date: string }
@@ -55,26 +86,25 @@ function nextFortnight(dateStr: string): string {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-function isApplicationWindowOpen(date: Date): boolean {
-    const applicationDeadline = new Date(date.getFullYear(), 10, 30, 23, 59, 59, 999) // Nov 30
-    return date <= applicationDeadline
-}
-
 /**
- * Generate all valid fortnights between minDate (today+20) and Dec 31 of current year.
- * Only available when current date is on or before Nov 30 of current year.
+ * Generate all valid fortnights between minDate (today+20) and Dec 31 of the active fiscal year.
  */
 const availableFortnights = computed(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const year = today.getFullYear()
-
-    if (!isApplicationWindowOpen(today)) {
+    if (isOutOfService.value) {
         return []
     }
 
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const year = fiscalYear.value
+
     const minDate = new Date(today)
     minDate.setDate(today.getDate() + 20)
+
+    const yearStart = new Date(year, 0, 1)
+    yearStart.setHours(0, 0, 0, 0)
+
+    const effectiveMinDate = minDate > yearStart ? minDate : yearStart
 
     const paymentCutoff = new Date(year, 11, 31, 23, 59, 59, 999) // Dec 31
 
@@ -88,7 +118,7 @@ const availableFortnights = computed(() => {
         for (const day of candidates) {
             const d = new Date(year, month - 1, day)
             d.setHours(0, 0, 0, 0)
-            if (d > minDate && d <= paymentCutoff) {
+            if (d > effectiveMinDate && d <= paymentCutoff) {
                 const yyyy = d.getFullYear()
                 const mm = String(d.getMonth() + 1).padStart(2, '0')
                 const ddStr = String(d.getDate()).padStart(2, '0')
@@ -112,7 +142,7 @@ const availableFortnightCounts = computed(() => {
     const firstStr = form.data.nomina.first_fortnight
     if (!firstStr) return []
 
-    const year = new Date().getFullYear()
+    const year = fiscalYear.value
     const cutoffStr = `${year}-12-31`
 
     const result: Array<{ value: number; label: string }> = []
@@ -194,21 +224,35 @@ const lastFortnightDate = computed(() => {
     return `${String(dd).padStart(2, '0')} ${months[mm - 1]} ${yyyy}`
 })
 
-// ── Available benefits (only future collection dates and within application window) ──
+// ── Available benefits (only future collection dates in active operational state) ──
 const availableBenefits = computed(() => {
+    if (isOutOfService.value) {
+        return []
+    }
+
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     const year = now.getFullYear()
 
-    if (!isApplicationWindowOpen(now)) {
-        return []
-    }
-
     const mm = String(now.getMonth() + 1).padStart(2, '0')
     const dd = String(now.getDate()).padStart(2, '0')
     const today = `${year}-${mm}-${dd}`
-    return props.benefits.filter(b => b.collectionDate > today)
+    const yearStart = `${fiscalYear.value}-01-01`
+    const yearEnd = `${fiscalYear.value}-12-31`
+
+    return props.benefits.filter(
+        b => b.collectionDate > today
+            && b.collectionDate >= yearStart
+            && b.collectionDate <= yearEnd
+    )
 })
+
+const noAvailableDates = computed(
+    () => !isOutOfService.value && (
+        props.hasAvailableDates === false
+        || (availableFortnights.value.length === 0 && availableBenefits.value.length === 0)
+    )
+)
 
 // ── Selected benefit IDs tracking ─────────────────────────────────────────────
 const selectedBenefitIds = ref<Set<number>>(new Set())
@@ -247,6 +291,10 @@ const pdfOpened = ref(false)
 const applicationUrl = ref('')
 
 const submit = async () => {
+    if (isOutOfService.value || noAvailableDates.value) {
+        return
+    }
+
     pdfOpened.value = false
 
     await form.post('/api/simulador-prestamo/simulate', {
@@ -307,6 +355,44 @@ function fieldError(key: string): string | undefined {
 
         <main class="flex-1">
             <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-10">
+
+                <!-- ===== Suspension notice ===== -->
+                <div v-if="isOutOfService" role="alert" class="alert alert-error rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">Servicio temporalmente fuera de servicio</h2>
+                        <p class="text-sm mt-1">{{ resolvedSuspensionMessage }}</p>
+                    </div>
+                </div>
+
+                <!-- ===== No available dates in current fiscal year notice ===== -->
+                <div v-else-if="noAvailableDates" role="alert" class="alert alert-warning rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">Sin fechas disponibles en el ejercicio actual</h2>
+                        <p class="text-sm mt-1">{{ resolvedWindowClosedMessage }}</p>
+                    </div>
+                </div>
+
+                <template v-else>
+                <!-- ===== Year-end close banner ===== -->
+                <div v-if="isYearEndClose" role="status" class="alert alert-info rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">
+                            Cierre de año — Recepción anticipada para el ejercicio fiscal {{ fiscalYear }}
+                        </h2>
+                        <p class="text-sm mt-1">
+                            El ejercicio {{ closedYear }} ha cerrado para nuevas operaciones. Las quincenas, prestaciones y el cálculo de intereses (con desembolso estimado el 1 de enero de {{ fiscalYear }}) corresponden exclusivamente al ejercicio fiscal {{ fiscalYear }}.
+                        </p>
+                    </div>
+                </div>
 
                 <!-- ===== Feedback alerts ===== -->
                 <div v-if="pdfOpened && form.recentlySuccessful" role="status" class="alert alert-success rounded-box flex items-center gap-3">
@@ -423,7 +509,7 @@ function fieldError(key: string): string | undefined {
                                         {{ fieldError('nomina.first_fortnight') }}
                                     </p>
                                     <p v-if="availableFortnights.length === 0" id="first-fortnight-hint" class="text-warning mt-1 text-sm">
-                                        No hay quincenas disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
+                                        No hay quincenas disponibles para el ejercicio fiscal {{ fiscalYear }} (tolerancia de 20 días antes del 31 de diciembre).
                                     </p>
                                     <p v-else id="first-fortnight-hint" class="text-base-content/60 mt-1 text-sm">
                                         Asignada automáticamente (tolerancia de 20 días).
@@ -473,7 +559,7 @@ function fieldError(key: string): string | undefined {
                             </div>
                             <div class="p-4 sm:p-5">
                                 <p v-if="availableBenefits.length === 0" class="text-sm text-warning">
-                                    No hay prestaciones disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
+                                    No hay prestaciones disponibles para el ejercicio fiscal {{ fiscalYear }}.
                                 </p>
                                 <div v-else class="space-y-2">
                                     <label
@@ -606,6 +692,7 @@ function fieldError(key: string): string | undefined {
                         {{ form.processing ? 'Calculando…' : 'Simular préstamo' }}
                     </button>
                 </section>
+                </template>
 
             </div>
         </main>

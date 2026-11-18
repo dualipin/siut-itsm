@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\DisbursementMethod;
 use App\Enums\LoanPaymentType;
 use App\Enums\LoanStatus;
+use App\Services\LoanOperationalStateService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Loan extends Model
 {
@@ -19,6 +21,7 @@ class Loan extends Model
 
     protected $fillable = [
         'folio',
+        'fiscal_year',
         'user_id',
         'status',
         'payment_type',
@@ -55,26 +58,44 @@ class Loan extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (Loan $loan) {
+        static::creating(function (Loan $loan): void {
+            if ($loan->fiscal_year === null) {
+                $loan->fiscal_year = app(LoanOperationalStateService::class)->effectiveFiscalYear();
+            }
+
             if (empty($loan->folio)) {
-                $loan->folio = static::generateFolio();
+                $loan->folio = static::generateFolio((int) $loan->fiscal_year);
             }
         });
     }
 
-    public static function generateFolio(): string
+    public static function generateFolio(?int $fiscalYear = null): string
     {
-        $year = now()->format('Y');
-        $lastId = (int) (static::whereYear('created_at', $year)->max('id') ?? 0) + 1;
-        $candidate = sprintf('SOL-%s-%05d', $year, $lastId);
-        $count = 1;
+        return DB::transaction(function () use ($fiscalYear): string {
+            $year = $fiscalYear ?? app(LoanOperationalStateService::class)->effectiveFiscalYear();
+            $prefix = sprintf('SOL-%d-', $year);
 
-        while (static::where('folio', $candidate)->exists()) {
-            $candidate = sprintf('SOL-%s-%05d', $year, $lastId + $count);
-            $count++;
-        }
+            $maxSequence = (int) static::withTrashed()
+                ->where('folio', 'like', $prefix.'%')
+                ->lockForUpdate()
+                ->pluck('folio')
+                ->map(function (string $folio) use ($prefix): int {
+                    $suffix = substr($folio, strlen($prefix));
 
-        return $candidate;
+                    return ctype_digit($suffix) ? (int) $suffix : 0;
+                })
+                ->max();
+
+            $nextSequence = $maxSequence + 1;
+            $candidate = sprintf('%s%05d', $prefix, $nextSequence);
+
+            while (static::withTrashed()->where('folio', $candidate)->exists()) {
+                $nextSequence++;
+                $candidate = sprintf('%s%05d', $prefix, $nextSequence);
+            }
+
+            return $candidate;
+        });
     }
 
     /**
@@ -83,6 +104,7 @@ class Loan extends Model
     protected function casts(): array
     {
         return [
+            'fiscal_year' => 'integer',
             'status' => LoanStatus::class,
             'payment_type' => LoanPaymentType::class,
             'requested_amount' => 'decimal:2',
