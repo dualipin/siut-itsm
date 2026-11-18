@@ -106,7 +106,7 @@ class StoreLoanSimulationRequest extends FormRequest
                 Rule::exists('benefits', 'id')->where('is_active', true)->whereNull('deleted_at'),
             ],
             'benefits.*.amount' => [$hasBenefits ? 'required' : 'nullable', 'numeric', 'min:1'],
-            'benefits.*.collection_date' => [$hasBenefits ? 'required' : 'nullable', 'date', 'date_format:Y-m-d', 'after:today'],
+            'benefits.*.collection_date' => [$hasBenefits ? 'required' : 'nullable', 'date', 'date_format:Y-m-d', 'after:today', 'before_or_equal:'.$decemberThirtyOne],
         ];
     }
 
@@ -138,6 +138,7 @@ class StoreLoanSimulationRequest extends FormRequest
             'benefits.*.amount.min' => 'El monto por prestación debe ser mayor a cero.',
             'benefits.*.collection_date.required' => 'La fecha de cobro de la prestación es obligatoria.',
             'benefits.*.collection_date.after' => 'La fecha de cobro de la prestación debe ser posterior a hoy.',
+            'benefits.*.collection_date.before_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal en curso.',
         ];
     }
 }

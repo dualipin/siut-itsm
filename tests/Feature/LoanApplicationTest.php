@@ -516,36 +516,204 @@ it('allows applying in late november with payment fortnights in december up to d
     ]);
 });
 
-it('blocks new loan applications when the window deadline of November 30 has passed', function () {
-    Carbon::setTestNow('2026-12-01');
+it('allows draft creation, portal application, and submission in december while Activo when eligible dates exist', function () {
+    Carbon::setTestNow('2026-12-05');
+    Config::set('services.document_ai.enabled', false);
+    Config::set('livewire.temporary_file_upload.cleanup', false);
 
-    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $apiUser = User::factory()->create(['role' => UserRole::Agremiado]);
 
-    $response = $this->actingAs($user)->postJson('/api/prestamos', [
+    // API draft creation + submission in December (Dec 31 fortnight is eligible)
+    $draftResponse = $this->actingAs($apiUser)->postJson('/api/prestamos', [
         'payment_type' => 'nomina',
         'requested_amount' => 10000,
         'nomina_amount' => 10000,
-        'nomina_fortnights' => 4,
-        'first_fortnight_date' => '2026-12-15',
+        'nomina_fortnights' => 1,
         'bank_name' => 'BBVA',
         'bank_account' => '1234567890',
     ]);
 
-    $response->assertStatus(422);
-    $response->assertJsonValidationErrors(['loan']);
+    $draftResponse->assertOk()
+        ->assertJsonPath('loan.status', LoanStatus::Borrador->value)
+        ->assertJsonPath('loan.folio', fn (string $folio): bool => str_starts_with($folio, 'SOL-2026-'));
+
+    $loanId = (int) $draftResponse->json('loan.id');
+    $loan = Loan::findOrFail($loanId);
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    $this->actingAs($apiUser)->postJson("/api/prestamos/{$loanId}/firmar", [
+        'signature_data' => $dummySig,
+    ])->assertOk();
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo-dec.pdf',
+        'file_hash' => hash('sha256', 'dummy-dec'),
+        'file_name' => 'recibo-dec.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_classification' => 'recibo_nomina',
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'pending',
+    ]);
+
+    $this->actingAs($apiUser)
+        ->postJson("/api/prestamos/{$loanId}/enviar")
+        ->assertOk();
+
+    expect($loan->fresh()->status)->toBe(LoanStatus::Enviada);
+
+    // Portal ListLoans & ApplyLoan on Dec 5
+    $portalUser = User::factory()->create(['role' => UserRole::Agremiado]);
+    $this->actingAs($portalUser);
+
+    Livewire::test(ListLoans::class)
+        ->assertActionEnabled('createLoan')
+        ->assertDontSee('Sin fechas disponibles en el ejercicio actual');
+
+    $file = UploadedFile::fake()->createWithContent('recibo.pdf', "%PDF-1.4\n%fake\n");
+
+    Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 8000,
+            'nomina_fortnights' => 1,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_data' => $dummySig,
+            'accept_terms' => true,
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $portalUser->id,
+        'status' => LoanStatus::Enviada->value,
+        'first_fortnight_date' => '2026-12-31 00:00:00',
+    ]);
 });
 
-it('disables new loan action and blocks ApplyLoan mount when application window has closed on or after december 1', function () {
-    Carbon::setTestNow('2026-12-01');
+it('allows benefit loan application on december 15 while Activo when a future active benefit exists', function () {
+    Carbon::setTestNow('2026-12-15');
+    Config::set('services.document_ai.enabled', false);
+    Config::set('livewire.temporary_file_upload.cleanup', false);
+
+    $benefit = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
 
     $user = User::factory()->create(['role' => UserRole::Agremiado]);
+    $benefitFile = UploadedFile::fake()->createWithContent('aguinaldo.pdf', "%PDF-1.4\n%fake\n");
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     $this->actingAs($user);
 
     Livewire::test(ListLoans::class)
-        ->assertActionDisabled('createLoan');
+        ->assertActionEnabled('createLoan');
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'benefit',
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+        ])
+        ->set('data.benefits', [
+            'item-1' => ['benefit_id' => (string) $benefit->id, 'amount' => 5000],
+        ]);
+
+    $evidences = $component->get('data.benefit_evidences');
+    $evidenceKey = array_key_first($evidences);
+
+    $component->set("data.benefit_evidences.{$evidenceKey}.file", [$benefitFile])
+        ->set('data.signature_data', $dummySig)
+        ->set('data.accept_terms', true)
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas('loans', [
+        'user_id' => $user->id,
+        'status' => LoanStatus::Enviada->value,
+        'payment_type' => 'benefit',
+        'requested_amount' => 5000,
+    ]);
+});
+
+it('blocks draft creation, submission, and portal application in december while Activo when no dates remain and informs about Cierre de anio', function () {
+    // Create a signed draft with evidence earlier in the year
+    Carbon::setTestNow('2026-11-15');
+    $draftOwner = User::factory()->create(['role' => UserRole::Agremiado]);
+    $loanService = app(LoanService::class);
+    $draftLoan = $loanService->createDraft($draftOwner, [
+        'payment_type' => 'nomina',
+        'requested_amount' => 6000,
+        'nomina_amount' => 6000,
+        'nomina_fortnights' => 1,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+    ]);
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    $loanService->signLoan($draftLoan, $dummySig);
+    LoanEvidence::create([
+        'loan_id' => $draftLoan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo-nov.pdf',
+        'file_hash' => hash('sha256', 'dummy-nov'),
+        'file_name' => 'recibo-nov.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_classification' => 'recibo_nomina',
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'pending',
+    ]);
+
+    // Move to Dec 15 with no future benefits
+    Carbon::setTestNow('2026-12-15');
+
+    $user = User::factory()->create(['role' => UserRole::Agremiado]);
+
+    $createResponse = $this->actingAs($user)->postJson('/api/prestamos', [
+        'payment_type' => 'nomina',
+        'requested_amount' => 10000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 1,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+    ]);
+
+    $createResponse->assertStatus(422)
+        ->assertJsonValidationErrors(['loan']);
+    expect($createResponse->json('errors.loan.0'))
+        ->toContain('No hay fechas disponibles')
+        ->toContain('Cierre de año')
+        ->not->toContain('30 de noviembre');
+
+    $submitResponse = $this->actingAs($draftOwner)
+        ->postJson("/api/prestamos/{$draftLoan->id}/enviar");
+
+    $submitResponse->assertStatus(422)
+        ->assertJsonValidationErrors(['loan']);
+    expect($submitResponse->json('errors.loan.0'))
+        ->toContain('No hay fechas disponibles')
+        ->toContain('Cierre de año')
+        ->not->toContain('30 de noviembre');
+
+    $this->actingAs($user);
+
+    Livewire::test(ListLoans::class)
+        ->assertActionDisabled('createLoan')
+        ->assertSee('No hay fechas disponibles')
+        ->assertSee('Cierre de año')
+        ->assertDontSee('30 de noviembre');
 
     Livewire::test(ApplyLoan::class)
-        ->assertNotified('Periodo de solicitudes cerrado')
+        ->assertNotified('Sin fechas disponibles en el ejercicio actual')
         ->assertRedirect(ListLoans::getUrl());
 });
 

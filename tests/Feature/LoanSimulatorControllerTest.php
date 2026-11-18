@@ -215,7 +215,7 @@ it('POST simulate rejects a first fortnight different from the automatic first e
     $response->assertJsonValidationErrors(['nomina.first_fortnight']);
 });
 
-it('POST simulate rejects missing nomina.first_fortnight with only required error and rejects nomina simulation after december 1', function () {
+it('POST simulate rejects missing nomina.first_fortnight with only required error', function () {
     $missingResponse = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
         'payment_type' => 'nomina',
@@ -227,10 +227,24 @@ it('POST simulate rejects missing nomina.first_fortnight with only required erro
 
     $missingResponse->assertStatus(422);
     expect($missingResponse->json('errors')['nomina.first_fortnight'])->toHaveCount(1);
+});
 
-    Carbon::setTestNow('2026-12-01');
+it('allows nomina and benefit simulation in december while Activo when eligible dates exist', function () {
+    Carbon::setTestNow('2026-12-05');
 
-    $closedResponse = $this->postJson('/api/simulador-prestamo/simulate', [
+    $benefit = Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    $this->get('/simulador-prestamo')
+        ->assertOk()
+        ->assertDontSee('No hay fechas disponibles');
+
+    // Nomina simulation on Dec 5 uses Dec 31 as first and only eligible fortnight
+    $nominaResponse = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
         'payment_type' => 'nomina',
         'nomina' => [
@@ -240,21 +254,13 @@ it('POST simulate rejects missing nomina.first_fortnight with only required erro
         ],
     ]);
 
-    $closedResponse->assertStatus(422);
-    $closedResponse->assertJsonValidationErrors(['payment_type', 'nomina.first_fortnight']);
-});
+    $nominaResponse->assertOk()
+        ->assertJsonStructure(['pdf_url', 'application_url']);
 
-it('POST simulate rejects any simulation when the application window has closed on or after december 1', function () {
-    Carbon::setTestNow('2026-12-01');
+    // Benefit simulation on Dec 15 (no fortnights left, but Dec 20 benefit is still future)
+    Carbon::setTestNow('2026-12-15');
 
-    $benefit = Benefit::factory()->create([
-        'name' => 'Aguinaldo',
-        'collection_month' => 12,
-        'collection_day' => 20,
-        'is_active' => true,
-    ]);
-
-    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+    $benefitResponse = $this->postJson('/api/simulador-prestamo/simulate', [
         'monthly_rate' => 6,
         'payment_type' => 'benefit',
         'benefits' => [
@@ -266,8 +272,44 @@ it('POST simulate rejects any simulation when the application window has closed 
         ],
     ]);
 
-    $response->assertStatus(422);
-    $response->assertJsonValidationErrors(['payment_type']);
+    $benefitResponse->assertOk()
+        ->assertJsonStructure(['pdf_url', 'application_url']);
+});
+
+it('informs clearly in simulator page and rejects simulation in december while Activo when no eligible fortnights or benefits remain', function () {
+    Carbon::setTestNow('2026-12-15');
+
+    // Past benefit in same year should not count as available
+    Benefit::factory()->create([
+        'name' => 'Prima Vacacional',
+        'collection_month' => 7,
+        'collection_day' => 15,
+        'is_active' => true,
+    ]);
+
+    $this->get('/simulador-prestamo')
+        ->assertOk()
+        ->assertSee('No hay fechas disponibles')
+        ->assertSee('Cierre de año')
+        ->assertDontSee('30 de noviembre');
+
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 5000,
+            'fortnights' => 1,
+            'first_fortnight' => '2026-12-31',
+        ],
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['payment_type']);
+
+    expect($response->json('errors.payment_type.0'))
+        ->toContain('No hay fechas disponibles')
+        ->toContain('Cierre de año')
+        ->not->toContain('30 de noviembre');
 });
 
 it('GET download with invalid token returns 404', function () {

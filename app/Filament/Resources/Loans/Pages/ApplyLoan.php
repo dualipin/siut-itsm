@@ -69,10 +69,11 @@ class ApplyLoan extends CreateRecord
             return;
         }
 
-        if (! app(LoanCalendarService::class)->isApplicationWindowOpen()) {
+        $calendarService = app(LoanCalendarService::class);
+        if (! $calendarService->isApplicationWindowOpen()) {
             Notification::make()
-                ->title('Periodo de solicitudes cerrado')
-                ->body('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).')
+                ->title('Sin fechas disponibles en el ejercicio actual')
+                ->body($calendarService->applicationClosedReason())
                 ->warning()
                 ->persistent()
                 ->send();
@@ -161,6 +162,8 @@ class ApplyLoan extends CreateRecord
                                         $index + 1 => ($index + 1).' '.($index === 0 ? 'quincena' : 'quincenas'),
                                     ])
                                     ->all())
+                                ->placeholder(fn (): string => empty($calendar->getEligibleFortnights()) ? 'Sin quincenas disponibles en el ejercicio actual' : 'Selecciona una opción')
+                                ->helperText(fn (): ?string => empty($calendar->getEligibleFortnights()) ? 'No hay quincenas disponibles para el ejercicio actual (tolerancia de 20 días antes del 31 de diciembre).' : null)
                                 ->live()
                                 ->afterStateUpdated(function (Set $set): void {
                                     $this->invalidateSignature($set);
@@ -411,7 +414,7 @@ class ApplyLoan extends CreateRecord
             $isOutOfService = app(LoanOperationalStateService::class)->isTemporarilyOutOfService();
 
             Notification::make()
-                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Periodo de solicitudes cerrado')
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
                 ->body($reason)
                 ->danger()
                 ->persistent()
@@ -429,7 +432,7 @@ class ApplyLoan extends CreateRecord
             $isOutOfService = app(LoanOperationalStateService::class)->isTemporarilyOutOfService();
 
             Notification::make()
-                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Periodo de solicitudes cerrado')
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
                 ->body($reason)
                 ->danger()
                 ->persistent()

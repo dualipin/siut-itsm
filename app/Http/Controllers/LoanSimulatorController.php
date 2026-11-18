@@ -6,6 +6,7 @@ use App\Actions\GenerateLoanSimulationPdf;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Http\Requests\StoreLoanSimulationRequest;
 use App\Models\Benefit;
+use App\Services\LoanCalendarService;
 use App\Services\LoanOperationalStateService;
 use App\Services\LoanSimulationService;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,7 @@ class LoanSimulatorController extends Controller
         protected readonly LoanSimulationService $loanSimulationService,
         protected readonly GenerateLoanSimulationPdf $generateLoanSimulationPdf,
         protected readonly LoanOperationalStateService $operationalStateService,
+        protected readonly LoanCalendarService $calendarService,
     ) {}
 
     /**
@@ -32,6 +34,10 @@ class LoanSimulatorController extends Controller
         $targetFiscalYear = $this->operationalStateService->effectiveFiscalYear();
         $suspensionMessage = $isOutOfService
             ? $this->operationalStateService->publicSuspensionMessage()
+            : null;
+        $hasAvailableDates = $this->calendarService->isApplicationWindowOpen();
+        $windowClosedMessage = (! $isOutOfService && ! $hasAvailableDates)
+            ? $this->calendarService->applicationClosedReason()
             : null;
 
         $benefits = Benefit::active()
@@ -53,6 +59,8 @@ class LoanSimulatorController extends Controller
             'targetFiscalYear' => $targetFiscalYear,
             'isOutOfService' => $isOutOfService,
             'suspensionMessage' => $suspensionMessage,
+            'hasAvailableDates' => $hasAvailableDates,
+            'windowClosedMessage' => $windowClosedMessage,
         ]);
     }
 
