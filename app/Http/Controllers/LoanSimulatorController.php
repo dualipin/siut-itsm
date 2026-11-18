@@ -6,6 +6,7 @@ use App\Actions\GenerateLoanSimulationPdf;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Http\Requests\StoreLoanSimulationRequest;
 use App\Models\Benefit;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanSimulationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
@@ -18,6 +19,7 @@ class LoanSimulatorController extends Controller
     public function __construct(
         protected readonly LoanSimulationService $loanSimulationService,
         protected readonly GenerateLoanSimulationPdf $generateLoanSimulationPdf,
+        protected readonly LoanOperationalStateService $operationalStateService,
     ) {}
 
     /**
@@ -25,6 +27,13 @@ class LoanSimulatorController extends Controller
      */
     public function show(): View
     {
+        $isOutOfService = $this->operationalStateService->isTemporarilyOutOfService();
+        $effectiveState = $this->operationalStateService->effectiveState();
+        $targetFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+        $suspensionMessage = $isOutOfService
+            ? $this->operationalStateService->publicSuspensionMessage()
+            : null;
+
         $benefits = Benefit::active()
             ->orderBy('collection_month')
             ->orderBy('collection_day')
@@ -40,6 +49,10 @@ class LoanSimulatorController extends Controller
 
         return view('landing.simulador-prestamo', [
             'benefits' => $benefits,
+            'operationalState' => $effectiveState->value,
+            'targetFiscalYear' => $targetFiscalYear,
+            'isOutOfService' => $isOutOfService,
+            'suspensionMessage' => $suspensionMessage,
         ]);
     }
 
@@ -111,6 +124,10 @@ class LoanSimulatorController extends Controller
      */
     public function download(string $token): Response
     {
+        if ($this->operationalStateService->isTemporarilyOutOfService()) {
+            abort(503, $this->operationalStateService->publicSuspensionMessage());
+        }
+
         /** @var array{amortizationTable: array<int, array<string, mixed>>, summary: array<string, mixed>}|null $data */
         $data = Cache::get('loan_simulation_'.$token);
 

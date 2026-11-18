@@ -12,7 +12,19 @@ const props = defineProps<{
         collectionMonth: number
         collectionDate: string   // 'YYYY-MM-DD' for the current year
     }>
+    operationalState?: 'activo' | 'cierre_anio' | 'temporalmente_fuera_de_servicio'
+    targetFiscalYear?: number
+    suspensionMessage?: string | null
 }>()
+
+const isOutOfService = computed(
+    () => props.operationalState === 'temporalmente_fuera_de_servicio'
+)
+
+const resolvedSuspensionMessage = computed(
+    () => props.suspensionMessage?.trim()
+        || 'El servicio de préstamos se encuentra temporalmente fuera de servicio por mantenimiento o revisión administrativa. Por favor, intente más tarde.'
+)
 
 // ── Form state ────────────────────────────────────────────────────────────────
 type BenefitEntry = { benefit_id: number; amount: string; collection_date: string }
@@ -247,6 +259,10 @@ const pdfOpened = ref(false)
 const applicationUrl = ref('')
 
 const submit = async () => {
+    if (isOutOfService.value) {
+        return
+    }
+
     pdfOpened.value = false
 
     await form.post('/api/simulador-prestamo/simulate', {
@@ -308,6 +324,18 @@ function fieldError(key: string): string | undefined {
         <main class="flex-1">
             <div class="max-w-3xl w-full min-w-0 mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-10">
 
+                <!-- ===== Suspension notice ===== -->
+                <div v-if="isOutOfService" role="alert" class="alert alert-error rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">Servicio temporalmente fuera de servicio</h2>
+                        <p class="text-sm mt-1">{{ resolvedSuspensionMessage }}</p>
+                    </div>
+                </div>
+
+                <template v-else>
                 <!-- ===== Feedback alerts ===== -->
                 <div v-if="pdfOpened && form.recentlySuccessful" role="status" class="alert alert-success rounded-box flex items-center gap-3">
                     <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
@@ -606,6 +634,7 @@ function fieldError(key: string): string | undefined {
                         {{ form.processing ? 'Calculando…' : 'Simular préstamo' }}
                     </button>
                 </section>
+                </template>
 
             </div>
         </main>

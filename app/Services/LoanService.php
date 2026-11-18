@@ -40,7 +40,7 @@ class LoanService
     {
         if (! $this->calendarService->isApplicationWindowOpen()) {
             throw ValidationException::withMessages([
-                'loan' => 'El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).',
+                'loan' => $this->calendarService->applicationClosedReason(),
             ]);
         }
 
@@ -254,7 +254,7 @@ class LoanService
 
         if (! $this->calendarService->isApplicationWindowOpen()) {
             throw ValidationException::withMessages([
-                'loan' => 'El periodo de solicitudes concluyó el 30 de noviembre.',
+                'loan' => $this->calendarService->applicationClosedReason(),
             ]);
         }
 

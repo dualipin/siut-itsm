@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\LoanOperationalState;
 use App\Models\Benefit;
+use App\Models\User;
 use App\Services\LoanCalendarService;
+use App\Services\LoanOperationalStateService;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
@@ -271,4 +274,75 @@ it('GET download with invalid token returns 404', function () {
     $response = $this->get('/api/simulador-prestamo/download/non-existent-token');
 
     $response->assertNotFound();
+});
+
+it('shows suspension notice and blocks simulate and download when operational state is temporarily out of service', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $stateService = app(LoanOperationalStateService::class);
+
+    // Simulate while Activo to obtain a valid download token
+    $activeSimulate = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 10000,
+            'fortnights' => 4,
+            'first_fortnight' => firstEligibleFortnightDate(),
+        ],
+    ]);
+    $activeSimulate->assertOk();
+    $token = basename($activeSimulate->json('pdf_url'));
+
+    // Switch to TemporalmenteFueraDeServicio with custom message
+    $customMessage = 'Servicio suspendido por cierre de auditoría trimestral.';
+    $stateService->updateState($admin, LoanOperationalState::TemporalmenteFueraDeServicio, $customMessage);
+
+    // 1. Public simulator page shows custom suspension notice
+    $this->get('/simulador-prestamo')
+        ->assertOk()
+        ->assertSee($customMessage)
+        ->assertSee('Servicio temporalmente fuera de servicio');
+
+    // 2. Simulate endpoint rejects with 422 and suspension message
+    $blockedSimulate = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 10000,
+            'fortnights' => 4,
+            'first_fortnight' => '2026-06-30',
+        ],
+    ]);
+    $blockedSimulate->assertStatus(422)
+        ->assertJsonValidationErrors(['payment_type'])
+        ->assertJsonPath('errors.payment_type.0', $customMessage);
+
+    // 3. Download endpoint blocks even an existing valid token with 503
+    $this->get("/api/simulador-prestamo/download/{$token}")
+        ->assertStatus(503);
+
+    // 4. Empty suspension message falls back to default institutional message
+    $stateService->updateState($admin, LoanOperationalState::TemporalmenteFueraDeServicio, null);
+
+    $this->get('/simulador-prestamo')
+        ->assertOk()
+        ->assertSee(LoanOperationalStateService::DEFAULT_SUSPENSION_MESSAGE);
+
+    $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 10000,
+            'fortnights' => 4,
+            'first_fortnight' => '2026-06-30',
+        ],
+    ])->assertStatus(422)
+        ->assertJsonPath('errors.payment_type.0', LoanOperationalStateService::DEFAULT_SUSPENSION_MESSAGE);
+
+    // 5. Restoring to Activo re-enables simulation and download
+    $stateService->updateState($admin, LoanOperationalState::Activo);
+
+    $this->get("/api/simulador-prestamo/download/{$token}")
+        ->assertOk()
+        ->assertHeader('Content-Type', 'application/pdf');
 });

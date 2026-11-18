@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\LoanPaymentType;
 use App\Services\LoanCalendarService;
+use App\Services\LoanOperationalStateService;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Carbon;
@@ -19,6 +20,8 @@ class StoreLoanSimulationRequest extends FormRequest
     public function rules(): array
     {
         $calendarService = app(LoanCalendarService::class);
+        $operationalStateService = app(LoanOperationalStateService::class);
+        $isOutOfService = $operationalStateService->isTemporarilyOutOfService();
         $paymentType = $this->input('payment_type');
         $hasNomina = in_array($paymentType, [LoanPaymentType::Nomina->value, LoanPaymentType::Mixed->value], true);
         $hasBenefits = in_array($paymentType, [LoanPaymentType::Benefit->value, LoanPaymentType::Mixed->value], true);
@@ -33,9 +36,15 @@ class StoreLoanSimulationRequest extends FormRequest
             'payment_type' => [
                 'required',
                 Rule::enum(LoanPaymentType::class),
-                function (string $attribute, mixed $value, Closure $fail) use ($calendarService): void {
+                function (string $attribute, mixed $value, Closure $fail) use ($calendarService, $operationalStateService, $isOutOfService): void {
+                    if ($isOutOfService) {
+                        $fail($operationalStateService->publicSuspensionMessage());
+
+                        return;
+                    }
+
                     if (! $calendarService->isApplicationWindowOpen()) {
-                        $fail('El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).');
+                        $fail($calendarService->applicationClosedReason());
                     }
                 },
             ],
@@ -72,8 +81,8 @@ class StoreLoanSimulationRequest extends FormRequest
                 'date_format:Y-m-d',
                 'after_or_equal:'.$minFirstFortnight,
                 'before_or_equal:'.$decemberThirtyOne,
-                function (string $attribute, mixed $value, Closure $fail) use ($hasNomina, $firstEligibleFortnight): void {
-                    if (! $hasNomina) {
+                function (string $attribute, mixed $value, Closure $fail) use ($hasNomina, $firstEligibleFortnight, $isOutOfService): void {
+                    if (! $hasNomina || $isOutOfService) {
                         return;
                     }
 
