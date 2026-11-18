@@ -293,3 +293,55 @@ test('list loans exposes operational state governance action to admin and leader
         ->and($setting->updated_by)->toBe($lider->id)
         ->and($setting->state_changed_at?->format('Y-m-d H:i:s'))->toBe('2026-06-15 15:30:00');
 });
+
+test('cierre de anio locks next fiscal year with modal preview and auto-transitions to activo on january 1 without skipping a year', function () {
+    $this->travelTo('2026-11-20 14:00:00');
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $stateService = app(LoanOperationalStateService::class);
+
+    $this->actingAs($admin);
+
+    // Selecting Cierre de año in modal shows explicit preview for 2027 and locks target_fiscal_year = 2027
+    Livewire::test(ListLoans::class)
+        ->mountAction('manageOperationalState')
+        ->assertSchemaComponentHidden('cierre_anio_preview')
+        ->assertSchemaComponentDoesNotExist('target_fiscal_year')
+        ->setActionData([
+            'state' => LoanOperationalState::CierreAnio->value,
+        ])
+        ->assertSchemaComponentVisible('cierre_anio_preview')
+        ->assertSchemaComponentExists('cierre_anio_preview', checkComponentUsing: function ($component): bool {
+            $content = (string) $component->getContent();
+
+            return str_contains($content, '2027') && str_contains($content, 'sin captura manual');
+        })
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertNotified()
+        ->assertSee('Estado: Cierre de año');
+
+    $setting = LoanOperationalSetting::query()->firstOrFail();
+    expect($setting->state)->toBe(LoanOperationalState::CierreAnio)
+        ->and($setting->target_fiscal_year)->toBe(2027)
+        ->and($stateService->effectiveState())->toBe(LoanOperationalState::CierreAnio)
+        ->and($stateService->effectiveFiscalYear())->toBe(2027);
+
+    // Crossing to Jan 1, 2027 auto-transitions effective state to Activo for 2027 (never jumping to 2028)
+    $this->travelTo('2027-01-01 00:00:05');
+
+    expect($stateService->effectiveState())->toBe(LoanOperationalState::Activo)
+        ->and($stateService->effectiveFiscalYear())->toBe(2027);
+
+    Livewire::test(ListLoans::class)
+        ->assertSee('Estado: Activo')
+        ->mountAction('manageOperationalState')
+        ->assertActionDataSet([
+            'state' => LoanOperationalState::Activo,
+        ]);
+
+    // Switching explicitly back to Activo in Dec 2026 resets target_fiscal_year to 2026
+    $this->travelTo('2026-12-10 10:00:00');
+    $setting = $stateService->updateState($admin, LoanOperationalState::Activo);
+    expect($setting->target_fiscal_year)->toBe(2026);
+});

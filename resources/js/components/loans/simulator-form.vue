@@ -14,6 +14,7 @@ const props = defineProps<{
     }>
     operationalState?: 'activo' | 'cierre_anio' | 'temporalmente_fuera_de_servicio'
     targetFiscalYear?: number
+    closedFiscalYear?: number
     suspensionMessage?: string | null
     hasAvailableDates?: boolean
     windowClosedMessage?: string | null
@@ -23,8 +24,16 @@ const isOutOfService = computed(
     () => props.operationalState === 'temporalmente_fuera_de_servicio'
 )
 
+const isYearEndClose = computed(
+    () => props.operationalState === 'cierre_anio'
+)
+
 const fiscalYear = computed(
     () => props.targetFiscalYear ?? new Date().getFullYear()
+)
+
+const closedYear = computed(
+    () => props.closedFiscalYear ?? new Date().getFullYear()
 )
 
 const resolvedSuspensionMessage = computed(
@@ -93,6 +102,11 @@ const availableFortnights = computed(() => {
     const minDate = new Date(today)
     minDate.setDate(today.getDate() + 20)
 
+    const yearStart = new Date(year, 0, 1)
+    yearStart.setHours(0, 0, 0, 0)
+
+    const effectiveMinDate = minDate > yearStart ? minDate : yearStart
+
     const paymentCutoff = new Date(year, 11, 31, 23, 59, 59, 999) // Dec 31
 
     const result: Array<{ value: string; label: string }> = []
@@ -105,7 +119,7 @@ const availableFortnights = computed(() => {
         for (const day of candidates) {
             const d = new Date(year, month - 1, day)
             d.setHours(0, 0, 0, 0)
-            if (d > minDate && d <= paymentCutoff) {
+            if (d > effectiveMinDate && d <= paymentCutoff) {
                 const yyyy = d.getFullYear()
                 const mm = String(d.getMonth() + 1).padStart(2, '0')
                 const ddStr = String(d.getDate()).padStart(2, '0')
@@ -224,7 +238,14 @@ const availableBenefits = computed(() => {
     const mm = String(now.getMonth() + 1).padStart(2, '0')
     const dd = String(now.getDate()).padStart(2, '0')
     const today = `${year}-${mm}-${dd}`
-    return props.benefits.filter(b => b.collectionDate > today)
+    const yearStart = `${fiscalYear.value}-01-01`
+    const yearEnd = `${fiscalYear.value}-12-31`
+
+    return props.benefits.filter(
+        b => b.collectionDate > today
+            && b.collectionDate >= yearStart
+            && b.collectionDate <= yearEnd
+    )
 })
 
 const noAvailableDates = computed(
@@ -359,6 +380,21 @@ function fieldError(key: string): string | undefined {
                 </div>
 
                 <template v-else>
+                <!-- ===== Year-end close banner ===== -->
+                <div v-if="isYearEndClose" role="status" class="alert alert-info rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">
+                            Cierre de año — Recepción anticipada para el ejercicio fiscal {{ fiscalYear }}
+                        </h2>
+                        <p class="text-sm mt-1">
+                            El ejercicio {{ closedYear }} ha cerrado para nuevas operaciones. Las quincenas, prestaciones y el cálculo de intereses (con desembolso estimado el 1 de enero de {{ fiscalYear }}) corresponden exclusivamente al ejercicio fiscal {{ fiscalYear }}.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- ===== Feedback alerts ===== -->
                 <div v-if="pdfOpened && form.recentlySuccessful" role="status" class="alert alert-success rounded-box flex items-center gap-3">
                     <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">

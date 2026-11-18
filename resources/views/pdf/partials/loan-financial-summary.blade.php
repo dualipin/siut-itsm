@@ -16,6 +16,10 @@
             <td style="padding: 8px 10px; font-weight: bold;">{{ $summary['monthly_rate_percent'] }}</td>
         </tr>
         <tr style="border-bottom: 1px solid {{ $documentColors['base_300'] }};">
+            <td style="padding: 8px 10px; color: {{ $documentColors['base_content'] }}; font-weight: 600; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.05em;">Año fiscal</td>
+            <td style="padding: 8px 10px; font-weight: bold;">{{ $summary['fiscal_year'] ?? \Illuminate\Support\Carbon::parse($summary['disbursement_date'])->year }}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid {{ $documentColors['base_300'] }};">
             <td style="padding: 8px 10px; color: {{ $documentColors['base_content'] }}; font-weight: 600; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.05em;">Fecha de desembolso</td>
             <td style="padding: 8px 10px;">{{ \Illuminate\Support\Carbon::parse($summary['disbursement_date'])->format('d/m/Y') }}</td>
         </tr>

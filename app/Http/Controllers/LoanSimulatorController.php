@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\GenerateLoanSimulationPdf;
+use App\Enums\LoanOperationalState;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Http\Requests\StoreLoanSimulationRequest;
 use App\Models\Benefit;
@@ -11,6 +12,7 @@ use App\Services\LoanOperationalStateService;
 use App\Services\LoanSimulationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -32,6 +34,8 @@ class LoanSimulatorController extends Controller
         $isOutOfService = $this->operationalStateService->isTemporarilyOutOfService();
         $effectiveState = $this->operationalStateService->effectiveState();
         $targetFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+        $isYearEndClose = $effectiveState === LoanOperationalState::CierreAnio;
+        $closedFiscalYear = now()->year;
         $suspensionMessage = $isOutOfService
             ? $this->operationalStateService->publicSuspensionMessage()
             : null;
@@ -49,7 +53,7 @@ class LoanSimulatorController extends Controller
                 'name' => $benefit->name,
                 'collectionDay' => $benefit->collection_day,
                 'collectionMonth' => $benefit->collection_month,
-                'collectionDate' => $benefit->collectionDateForYear(now()->year)->format('Y-m-d'),
+                'collectionDate' => $benefit->collectionDateForYear($targetFiscalYear)->format('Y-m-d'),
             ])
             ->values();
 
@@ -57,6 +61,8 @@ class LoanSimulatorController extends Controller
             'benefits' => $benefits,
             'operationalState' => $effectiveState->value,
             'targetFiscalYear' => $targetFiscalYear,
+            'closedFiscalYear' => $closedFiscalYear,
+            'isYearEndClose' => $isYearEndClose,
             'isOutOfService' => $isOutOfService,
             'suspensionMessage' => $suspensionMessage,
             'hasAvailableDates' => $hasAvailableDates,
@@ -70,10 +76,14 @@ class LoanSimulatorController extends Controller
     public function simulate(StoreLoanSimulationRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        $targetFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+        $disbursementDate = $targetFiscalYear > now()->year
+            ? Carbon::create($targetFiscalYear, 1, 1)->format('Y-m-d')
+            : now()->format('Y-m-d');
 
         $params = [
             'monthly_rate' => (float) $validated['monthly_rate'] / 100,
-            'disbursement_date' => now()->format('Y-m-d'),
+            'disbursement_date' => $disbursementDate,
             'payment_methods' => [],
         ];
 
@@ -104,6 +114,7 @@ class LoanSimulatorController extends Controller
 
         $amortizationTable = $this->loanSimulationService->buildAmortizationTable($params);
         $summary = $this->loanSimulationService->buildFinancialRunSummary($params);
+        $summary['fiscal_year'] = $targetFiscalYear;
 
         // Cache the simulation data for 10 minutes so the PDF route can render it
         $token = Str::uuid()->toString();
@@ -113,6 +124,7 @@ class LoanSimulatorController extends Controller
         ], now()->addMinutes(10));
 
         Cache::put('loan_application_'.$token, [
+            'fiscal_year' => $targetFiscalYear,
             'payment_type' => $validated['payment_type'],
             'nomina' => isset($validated['nomina']) ? [
                 'amount' => $validated['nomina']['amount'],
