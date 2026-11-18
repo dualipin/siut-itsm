@@ -2,15 +2,9 @@
 import { ref } from 'vue'
 import { useIslandForm } from '@/composables/useIslandForm'
 import {
-    User,
-    Phone,
-    Mail,
     Send,
-    Tag,
-    MessageSquare,
     CheckCircle2,
     AlertCircle,
-    Sparkles,
     RotateCcw,
 } from '@lucide/vue'
 
@@ -42,197 +36,159 @@ const handleSendAnother = () => {
 </script>
 
 <template>
-    <div class="relative group">
-        <!-- Resplandor decorativo de fondo -->
-        <div
-            class="absolute -inset-1 bg-linear-to-r from-primary/20 to-secondary/20 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition duration-500 pointer-events-none">
-        </div>
-
-        <div
-            class="relative p-6 sm:p-8 md:p-10 rounded-3xl border border-base-300/80 bg-base-100/90 backdrop-blur-md shadow-xl transition-all duration-300">
-
-            <!-- ESTADO 1: PANTALLA DE ÉXITO (BUEN UX) -->
-            <div v-if="form.recentlySuccessful" class="text-center py-10 px-4 animate-fade-in-up space-y-6">
-                <!-- Icono de éxito con pulso -->
-                <div class="relative inline-flex items-center justify-center">
-                    <div class="absolute -inset-2 bg-success/20 rounded-full blur-md animate-pulse"></div>
-                    <div class="relative w-20 h-20 rounded-full bg-success/15 text-success flex items-center justify-center border-2 border-success/30 shadow-inner">
-                        <CheckCircle2 class="w-10 h-10 stroke-[2.5]" />
-                    </div>
+    <div class="card card-border bg-base-100">
+        <div class="card-body p-6 sm:p-8">
+            <!-- Estado de éxito -->
+            <div v-if="form.recentlySuccessful" class="text-center py-8 px-2 space-y-4">
+                <div class="size-14 rounded-full bg-success/10 text-success flex items-center justify-center mx-auto">
+                    <CheckCircle2 class="w-8 h-8" aria-hidden="true" />
                 </div>
 
                 <div class="max-w-md mx-auto space-y-2">
-                    <span class="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-success bg-success/10 px-3 py-1 rounded-full">
-                        Envío Confirmado
-                    </span>
-                    <h3 class="text-2xl sm:text-3xl font-extrabold text-base-content tracking-tight">
-                        ¡Mensaje Enviado con Éxito!
+                    <h3 class="text-xl font-bold text-base-content tracking-tight">
+                        Mensaje enviado
                     </h3>
-                    <p class="text-sm text-base-content/75 leading-relaxed">
-                        {{ form.statusMessage || 'Tu mensaje ha sido registrado correctamente. El equipo sindical se pondrá en contacto contigo a la brevedad.' }}
+                    <p class="text-sm text-base-content/70 leading-relaxed">
+                        {{ form.statusMessage || 'Recibimos tu consulta. El equipo sindical te responderá en menos de 24 horas hábiles.' }}
                     </p>
                 </div>
 
-                <!-- Resumen de contacto para tranquilidad del usuario -->
-                <div v-if="lastSubmittedEmail" class="max-w-xs mx-auto p-3.5 rounded-2xl bg-base-200/60 border border-base-300/80 text-xs flex items-center justify-center gap-2 text-base-content/80">
-                    <Mail class="w-4 h-4 text-primary shrink-0" />
-                    <span>Respuesta a: <strong class="text-base-content">{{ lastSubmittedEmail }}</strong></span>
-                </div>
+                <p v-if="lastSubmittedEmail" class="inline-flex flex-wrap items-center justify-center gap-1.5 px-3 py-1.5 rounded-box bg-base-200 text-xs text-base-content/75 max-w-full">
+                    <span>Enviaremos la respuesta a</span>
+                    <strong class="text-base-content break-all">{{ lastSubmittedEmail }}</strong>
+                </p>
 
-                <!-- Botón para enviar otro mensaje -->
-                <div class="pt-2">
+                <div class="card-actions justify-center pt-2">
                     <button
                         @click="handleSendAnother"
                         type="button"
-                        class="btn btn-outline btn-primary rounded-full px-6 text-xs font-bold gap-2 hover:scale-105 transition-transform">
-                        <RotateCcw class="w-3.5 h-3.5" />
+                        class="btn btn-outline btn-sm gap-2">
+                        <RotateCcw class="w-3.5 h-3.5" aria-hidden="true" />
                         <span>Enviar otro mensaje</span>
                     </button>
                 </div>
             </div>
 
-            <!-- ESTADO 2: FORMULARIO NORMAL -->
+            <!-- Formulario -->
             <template v-else>
-                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-200">
-                    <div class="p-2.5 rounded-2xl bg-primary/10 text-primary">
-                        <Sparkles class="w-5 h-5" />
-                    </div>
-                    <div>
-                        <h3 class="text-xl font-bold tracking-tight text-base-content mb-0">
-                            Envíanos un mensaje
-                        </h3>
-                        <p class="text-xs text-base-content/60 mb-0">
-                            Respuesta habitual en menos de 24 horas hábiles
-                        </p>
-                    </div>
+                <div class="mb-4">
+                    <h3 class="card-title text-xl">Envíanos un mensaje</h3>
+                    <p class="text-sm text-base-content/60 mt-1">
+                        Te responderemos por correo electrónico en menos de 24 horas hábiles.
+                    </p>
                 </div>
 
-                <form id="contact-form" @submit.prevent="handleContactSubmit" class="space-y-5">
+                <form id="contact-form" @submit.prevent="handleContactSubmit" class="space-y-2">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <!-- Nombre completo -->
-                        <div class="space-y-1.5">
-                            <label
-                                class="text-xs font-semibold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5"
-                                for="name">
-                                <User class="w-3.5 h-3.5 text-primary" />
-                                Nombre completo
-                            </label>
-                            <div class="relative">
-                                <input
-                                    class="input input-bordered w-full rounded-2xl pl-10 pr-4 py-3 bg-base-200/40 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-sm"
-                                    :class="{ 'input-error': form.errors.name }"
-                                    id="name"
-                                    type="text"
-                                    v-model="form.data.name"
-                                    placeholder="Ej. María González"
-                                    required />
-                                <User
-                                    class="w-4 h-4 text-base-content/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                            <p v-if="form.errors.name" class="text-xs text-error mt-1">{{ form.errors.name[0] }}</p>
-                        </div>
+                        <fieldset class="fieldset" :disabled="form.processing">
+                            <label for="name" class="fieldset-legend">Nombre completo</label>
+                            <input
+                                class="input w-full"
+                                :class="{ 'input-error': form.errors.name }"
+                                :aria-invalid="Boolean(form.errors.name)"
+                                :aria-describedby="form.errors.name ? 'name-error' : undefined"
+                                id="name"
+                                type="text"
+                                autocomplete="name"
+                                v-model="form.data.name"
+                                placeholder="Ej. María González"
+                                required />
+                            <p v-if="form.errors.name" id="name-error" role="alert" class="label text-xs text-error whitespace-normal">
+                                {{ form.errors.name[0] }}
+                            </p>
+                        </fieldset>
 
                         <!-- Teléfono -->
-                        <div class="space-y-1.5">
-                            <label
-                                class="text-xs font-semibold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5"
-                                for="phone">
-                                <Phone class="w-3.5 h-3.5 text-primary" />
+                        <fieldset class="fieldset" :disabled="form.processing">
+                            <label for="phone" class="fieldset-legend">
                                 Teléfono
+                                <span class="text-xs font-normal text-base-content/50">(opcional)</span>
                             </label>
-                            <div class="relative">
-                                <input
-                                    class="input input-bordered w-full rounded-2xl pl-10 pr-4 py-3 bg-base-200/40 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-sm"
-                                    :class="{ 'input-error': form.errors.phone }"
-                                    id="phone"
-                                    type="tel"
-                                    v-model="form.data.phone"
-                                    placeholder="10 dígitos (ej. 9361066169)" />
-                                <Phone
-                                    class="w-4 h-4 text-base-content/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                            <p v-if="form.errors.phone" class="text-xs text-error mt-1">{{ form.errors.phone[0] }}</p>
-                        </div>
+                            <input
+                                class="input w-full"
+                                :class="{ 'input-error': form.errors.phone }"
+                                :aria-invalid="Boolean(form.errors.phone)"
+                                :aria-describedby="form.errors.phone ? 'phone-error' : undefined"
+                                id="phone"
+                                type="tel"
+                                autocomplete="tel"
+                                v-model="form.data.phone"
+                                placeholder="Ej. 936 106 6169 (10 dígitos)" />
+                            <p v-if="form.errors.phone" id="phone-error" role="alert" class="label text-xs text-error whitespace-normal">
+                                {{ form.errors.phone[0] }}
+                            </p>
+                        </fieldset>
                     </div>
 
                     <!-- Correo electrónico -->
-                    <div class="space-y-1.5">
-                        <label
-                            class="text-xs font-semibold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5"
-                            for="email">
-                            <Mail class="w-3.5 h-3.5 text-primary" />
-                            Correo electrónico
-                        </label>
-                        <div class="relative">
-                            <input
-                                class="input input-bordered w-full rounded-2xl pl-10 pr-4 py-3 bg-base-200/40 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-sm"
-                                :class="{ 'input-error': form.errors.email }"
-                                id="email"
-                                type="email"
-                                v-model="form.data.email"
-                                placeholder="ejemplo@correo.com"
-                                required />
-                            <Mail
-                                class="w-4 h-4 text-base-content/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                        <p v-if="form.errors.email" class="text-xs text-error mt-1">{{ form.errors.email[0] }}</p>
-                    </div>
+                    <fieldset class="fieldset" :disabled="form.processing">
+                        <label for="email" class="fieldset-legend">Correo electrónico</label>
+                        <input
+                            class="input w-full"
+                            :class="{ 'input-error': form.errors.email }"
+                            :aria-invalid="Boolean(form.errors.email)"
+                            :aria-describedby="form.errors.email ? 'email-error' : undefined"
+                            id="email"
+                            type="email"
+                            autocomplete="email"
+                            v-model="form.data.email"
+                            placeholder="nombre@correo.com"
+                            required />
+                        <p v-if="form.errors.email" id="email-error" role="alert" class="label text-xs text-error whitespace-normal">
+                            {{ form.errors.email[0] }}
+                        </p>
+                    </fieldset>
 
                     <!-- Asunto -->
-                    <div class="space-y-1.5">
-                        <label
-                            class="text-xs font-semibold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5"
-                            for="subject">
-                            <Tag class="w-3.5 h-3.5 text-primary" />
+                    <fieldset class="fieldset" :disabled="form.processing">
+                        <label for="subject" class="fieldset-legend">
                             Asunto
+                            <span class="text-xs font-normal text-base-content/50">(opcional)</span>
                         </label>
-                        <div class="relative">
-                            <input
-                                class="input input-bordered w-full rounded-2xl pl-10 pr-4 py-3 bg-base-200/40 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-sm"
-                                :class="{ 'input-error': form.errors.subject }"
-                                id="subject"
-                                type="text"
-                                v-model="form.data.subject"
-                                placeholder="Motivo de tu consulta (ej. Trámite, Duda, Afiliación)" />
-                            <Tag
-                                class="w-4 h-4 text-base-content/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                        <p v-if="form.errors.subject" class="text-xs text-error mt-1">{{ form.errors.subject[0] }}</p>
-                    </div>
+                        <input
+                            class="input w-full"
+                            :class="{ 'input-error': form.errors.subject }"
+                            :aria-invalid="Boolean(form.errors.subject)"
+                            :aria-describedby="form.errors.subject ? 'subject-error' : undefined"
+                            id="subject"
+                            type="text"
+                            v-model="form.data.subject"
+                            placeholder="Ej. Afiliación, préstamo o duda general" />
+                        <p v-if="form.errors.subject" id="subject-error" role="alert" class="label text-xs text-error whitespace-normal">
+                            {{ form.errors.subject[0] }}
+                        </p>
+                    </fieldset>
 
                     <!-- Mensaje -->
-                    <div class="space-y-1.5">
-                        <label
-                            class="text-xs font-semibold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5"
-                            for="message">
-                            <MessageSquare class="w-3.5 h-3.5 text-primary" />
-                            Mensaje
-                        </label>
-                        <div class="relative">
-                            <textarea
-                                class="textarea textarea-bordered w-full rounded-2xl pl-10 pr-4 py-3 bg-base-200/40 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-sm min-h-32 leading-relaxed resize-y"
-                                :class="{ 'textarea-error': form.errors.message }"
-                                id="message"
-                                v-model="form.data.message"
-                                placeholder="Escribe detalladamente tu consulta..."
-                                required></textarea>
-                            <MessageSquare
-                                class="w-4 h-4 text-base-content/40 absolute left-3.5 top-4 pointer-events-none" />
-                        </div>
-                        <p v-if="form.errors.message" class="text-xs text-error mt-1">{{ form.errors.message[0] }}</p>
-                    </div>
+                    <fieldset class="fieldset" :disabled="form.processing">
+                        <label for="message" class="fieldset-legend">Mensaje</label>
+                        <textarea
+                            class="textarea w-full min-h-28 leading-relaxed"
+                            :class="{ 'textarea-error': form.errors.message }"
+                            :aria-invalid="Boolean(form.errors.message)"
+                            :aria-describedby="form.errors.message ? 'message-error' : undefined"
+                            id="message"
+                            v-model="form.data.message"
+                            placeholder="Describe tu consulta o solicitud..."
+                            required></textarea>
+                        <p v-if="form.errors.message" id="message-error" role="alert" class="label text-xs text-error whitespace-normal">
+                            {{ form.errors.message[0] }}
+                        </p>
+                    </fieldset>
 
-                    <!-- Alerta si ocurre error de validación o red -->
+                    <!-- Alerta de error -->
                     <div v-if="form.statusType === 'error' && form.statusMessage"
-                        class="p-4 rounded-2xl border flex items-start gap-3 bg-error/10 border-error/30 text-error-content animate-fade-in-up">
-                        <AlertCircle class="w-5 h-5 text-error shrink-0 mt-0.5" />
-                        <span class="text-sm font-medium">{{ form.statusMessage }}</span>
+                        role="alert"
+                        class="alert alert-error alert-soft mt-2">
+                        <AlertCircle class="w-5 h-5 shrink-0" aria-hidden="true" />
+                        <span>{{ form.statusMessage }}</span>
                     </div>
 
                     <!-- Botón Submit -->
-                    <div class="pt-2">
+                    <div class="card-actions justify-end pt-3">
                         <button
-                            class="btn btn-primary w-full sm:w-auto rounded-full px-8 py-3 font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2"
+                            class="btn btn-primary w-full sm:w-auto"
                             type="submit"
                             :disabled="form.processing">
                             <template v-if="form.processing">
@@ -241,7 +197,7 @@ const handleSendAnother = () => {
                             </template>
                             <template v-else>
                                 <span>Enviar mensaje</span>
-                                <Send class="w-4 h-4" />
+                                <Send class="w-4 h-4" aria-hidden="true" />
                             </template>
                         </button>
                     </div>

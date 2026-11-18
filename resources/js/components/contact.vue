@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import ContactForm from '@/components/contact-form.vue'
-import { SyndicateConfig } from '@/types/syndicate';
-import { Sparkles, Phone, Mail, MapPin } from '@lucide/vue'
-
+import { SyndicateConfig } from '@/types/syndicate'
+import { Phone, Mail, MapPin, ArrowUpRight } from '@lucide/vue'
 
 defineProps<{
   syndicate: SyndicateConfig
@@ -10,103 +9,84 @@ defineProps<{
 </script>
 
 <template>
-  <section class="py-20 bg-base-100 relative overflow-hidden" id="contact">
-    <!-- Elemento decorativo de fondo -->
-    <div class="absolute top-0 right-0 -mt-20 -mr-20 w-96 h-96 rounded-full bg-primary/5 blur-3xl pointer-events-none"></div>
-    <div class="absolute bottom-0 left-0 -mb-20 -ml-20 w-96 h-96 rounded-full bg-secondary/5 blur-3xl pointer-events-none"></div>
+  <section class="py-16 md:py-24 bg-base-200/40" id="contact">
+    <div class="container mx-auto px-4 sm:px-6 max-w-6xl">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <!-- Columna izquierda: Información de contacto -->
+        <div class="lg:col-span-5">
+          <h2 class="text-3xl font-bold tracking-tight text-base-content">
+            Estamos para servirte y escucharte
+          </h2>
+          <p class="mt-3 text-base text-base-content/70 leading-relaxed">
+            Escríbenos a través del formulario o comunícate directamente por nuestros canales oficiales.
+          </p>
 
-    <div class="container mx-auto px-4 max-w-7xl relative z-10">
-      <!-- Cabecera de la sección -->
-      <div class="mb-14 max-w-3xl mx-auto text-center">
-        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wider uppercase bg-primary/10 text-primary mb-3">
-          <Sparkles class="w-3.5 h-3.5" />
-          Atención y Contacto
-        </span>
-        <h2 class="text-3xl md:text-4xl font-extrabold tracking-tight mb-4 text-base-content">
-          Estamos para servirte y escucharte
-        </h2>
-        <p class="text-base-content/75 text-base md:text-lg leading-relaxed mb-0">
-          Si tienes alguna pregunta, inquietud o necesitas información
-          adicional, no dudes en contactarnos a través de nuestros canales
-          oficiales. También te esperamos en nuestras oficinas sindicales.
-        </p>
-      </div>
+          <!-- Lista de canales con DaisyUI card + list -->
+          <div class="card card-border bg-base-100 mt-8">
+            <ul class="list">
+              <!-- Teléfono / WhatsApp -->
+              <li class="list-row items-center">
+                <div class="size-10 rounded-box bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Phone class="w-5 h-5" aria-hidden="true" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-base-content/60">
+                    Teléfono y WhatsApp
+                  </div>
+                  <a
+                    :href="syndicate.socialMedia.whatsapp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="link link-hover font-semibold text-base-content inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded"
+                  >
+                    <span>{{ syndicate.phone }}</span>
+                    <span class="sr-only"> (abre WhatsApp en una pestaña nueva)</span>
+                    <ArrowUpRight class="w-3.5 h-3.5 text-base-content/50 shrink-0" aria-hidden="true" />
+                  </a>
+                </div>
+              </li>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-        <!-- Canales de contacto directos (Columna de la izquierda) -->
-        <div class="lg:col-span-5 space-y-6">
-          <div class="bg-base-200/50 rounded-3xl p-6 sm:p-8 border border-base-300/60 shadow-sm space-y-6">
-            <h3 class="text-lg font-bold tracking-tight text-base-content border-b border-base-300/80 pb-3 mb-4">
-              Información de contacto
-            </h3>
+              <!-- Correo electrónico -->
+              <li class="list-row items-center">
+                <div class="size-10 rounded-box bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Mail class="w-5 h-5" aria-hidden="true" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-base-content/60">
+                    Correo electrónico
+                  </div>
+                  <a
+                    :href="`mailto:${syndicate.email}`"
+                    class="link link-hover font-semibold text-base-content lowercase break-all inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded"
+                  >
+                    <span>{{ syndicate.email }}</span>
+                    <ArrowUpRight class="w-3.5 h-3.5 text-base-content/50 shrink-0" aria-hidden="true" />
+                  </a>
+                </div>
+              </li>
 
-            <!-- Teléfono / WhatsApp -->
-            <div class="flex items-start gap-4 p-4 rounded-2xl bg-base-100 border border-base-200/80 hover:border-success/40 transition-all group">
-              <div class="p-3 rounded-2xl bg-success/10 text-success group-hover:scale-110 transition-transform">
-                <Phone class="w-6 h-6" />
-              </div>
-              <div>
-                <span class="block text-xs uppercase tracking-wider font-semibold text-base-content/60 mb-0.5">
-                  Teléfono & WhatsApp
-                </span>
-                <a
-                  :href="syndicate.socialMedia.whatsapp"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="font-bold text-base md:text-lg hover:underline text-success inline-flex items-center gap-1"
-                >
-                  {{ syndicate.phone }}
-                </a>
-              </div>
-            </div>
-
-            <!-- Correo electrónico -->
-            <div class="flex items-start gap-4 p-4 rounded-2xl bg-base-100 border border-base-200/80 hover:border-primary/40 transition-all group">
-              <div class="p-3 rounded-2xl bg-primary/10 text-primary group-hover:scale-110 transition-transform">
-                <Mail class="w-6 h-6" />
-              </div>
-              <div>
-                <span class="block text-xs uppercase tracking-wider font-semibold text-base-content/60 mb-0.5">
-                  Correo electrónico
-                </span>
-                <a
-                  :href="`mailto:${syndicate.email}`"
-                  class="font-bold text-base md:text-lg hover:underline text-base-content lowercase break-all"
-                >
-                  {{ syndicate.email }}
-                </a>
-              </div>
-            </div>
-
-            <!-- Dirección -->
-            <div class="flex items-start gap-4 p-4 rounded-2xl bg-base-100 border border-base-200/80 hover:border-secondary/40 transition-all group">
-              <div class="p-3 rounded-2xl bg-secondary/10 text-secondary group-hover:scale-110 transition-transform">
-                <MapPin class="w-6 h-6" />
-              </div>
-              <div>
-                <span class="block text-xs uppercase tracking-wider font-semibold text-base-content/60 mb-0.5">
-                  Oficinas Sindicales
-                </span>
-                <address class="font-semibold not-italic text-sm text-base-content/90 leading-snug">
-                  {{ syndicate.address }}
-                </address>
-              </div>
-            </div>
-          </div>
-
-          <!-- Banner de atención presencial -->
-          <div class="p-6 rounded-3xl bg-linear-to-r from-primary/10 via-base-200 to-secondary/10 border border-primary/20 text-center sm:text-left">
-            <span class="text-xs uppercase font-bold tracking-widest text-primary block mb-1">
-              Atención Presencial
-            </span>
-            <p class="text-xs sm:text-sm text-base-content/80 mb-0">
-              Puedes acudir a las oficinas sindicales en horario hábil para
-              atención personalizada y recepción de documentos.
-            </p>
+              <!-- Oficinas sindicales -->
+              <li class="list-row items-start">
+                <div class="size-10 rounded-box bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <MapPin class="w-5 h-5" aria-hidden="true" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-base-content/60">
+                    Oficinas sindicales
+                  </div>
+                  <address class="not-italic text-sm font-medium text-base-content/90 leading-snug mt-0.5">
+                    {{ syndicate.address }}
+                  </address>
+                  <p class="text-xs text-base-content/60 mt-1.5">
+                    Atención presencial en horario hábil para trámites y entrega de documentos.
+                  </p>
+                </div>
+              </li>
+            </ul>
           </div>
         </div>
 
-        <!-- Formulario (Columna de la derecha) -->
+        <!-- Columna derecha: Formulario -->
         <div class="lg:col-span-7">
           <ContactForm />
         </div>
