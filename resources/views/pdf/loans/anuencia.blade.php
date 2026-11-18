@@ -21,10 +21,7 @@
         ? round(($loan->nomina_amount ?? $amount) / $nominaFortnights, 2)
         : ($installmentAmount ?? $amount);
     $year = (int) ($fiscalYear ?? $loan->fiscal_year ?? $loan->created_at?->year ?? now()->year);
-    $fallbackFirstDate = $year > now()->year
-        ? \Illuminate\Support\Carbon::create($year, 1, 15)->format('Y-m-d')
-        : now()->addDays(15)->format('Y-m-d');
-    $firstDate = $loan->first_fortnight_date?->format('Y-m-d') ?? ($firstFortnightDate ?? $fallbackFirstDate);
+    $firstDate = $firstFortnightDate ?? $loan->first_fortnight_date?->format('Y-m-d') ?? '';
     $totalNominaAmount = ($loan->loanBenefits->isEmpty())
         ? $amount
         : (float) ($loan->nomina_amount ?? $amount);

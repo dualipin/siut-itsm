@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Loan extends Model
 {
@@ -70,28 +71,31 @@ class Loan extends Model
 
     public static function generateFolio(?int $fiscalYear = null): string
     {
-        $year = $fiscalYear ?? app(LoanOperationalStateService::class)->effectiveFiscalYear();
-        $prefix = sprintf('SOL-%d-', $year);
+        return DB::transaction(function () use ($fiscalYear): string {
+            $year = $fiscalYear ?? app(LoanOperationalStateService::class)->effectiveFiscalYear();
+            $prefix = sprintf('SOL-%d-', $year);
 
-        $maxSequence = (int) static::withTrashed()
-            ->where('folio', 'like', $prefix.'%')
-            ->pluck('folio')
-            ->map(function (string $folio) use ($prefix): int {
-                $suffix = substr($folio, strlen($prefix));
+            $maxSequence = (int) static::withTrashed()
+                ->where('folio', 'like', $prefix.'%')
+                ->lockForUpdate()
+                ->pluck('folio')
+                ->map(function (string $folio) use ($prefix): int {
+                    $suffix = substr($folio, strlen($prefix));
 
-                return ctype_digit($suffix) ? (int) $suffix : 0;
-            })
-            ->max();
+                    return ctype_digit($suffix) ? (int) $suffix : 0;
+                })
+                ->max();
 
-        $nextSequence = $maxSequence + 1;
-        $candidate = sprintf('%s%05d', $prefix, $nextSequence);
-
-        while (static::withTrashed()->where('folio', $candidate)->exists()) {
-            $nextSequence++;
+            $nextSequence = $maxSequence + 1;
             $candidate = sprintf('%s%05d', $prefix, $nextSequence);
-        }
 
-        return $candidate;
+            while (static::withTrashed()->where('folio', $candidate)->exists()) {
+                $nextSequence++;
+                $candidate = sprintf('%s%05d', $prefix, $nextSequence);
+            }
+
+            return $candidate;
+        });
     }
 
     /**

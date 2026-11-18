@@ -149,7 +149,7 @@ class StoreLoanSimulationRequest extends FormRequest
             'benefits.*.collection_date.required' => 'La fecha de cobro de la prestación es obligatoria.',
             'benefits.*.collection_date.after' => 'La fecha de cobro de la prestación debe ser posterior a hoy.',
             'benefits.*.collection_date.after_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.',
-            'benefits.*.collection_date.before_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal en curso.',
+            'benefits.*.collection_date.before_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.',
         ];
     }
 }
