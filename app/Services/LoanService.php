@@ -159,11 +159,12 @@ class LoanService
         }
 
         return DB::transaction(function () use ($loan, $data, $currentFiscalYear) {
+            $fiscalYear = (int) ($loan->fiscal_year ?? $currentFiscalYear);
             $paymentType = isset($data['payment_type'])
                 ? LoanPaymentType::from($data['payment_type'])
                 : $loan->payment_type;
             $nominaSchedule = $paymentType->hasNomina()
-                ? $this->resolveNominaSchedule((int) ($data['nomina_fortnights'] ?? $loan->nomina_fortnights ?? 0))
+                ? $this->resolveNominaSchedule((int) ($data['nomina_fortnights'] ?? $loan->nomina_fortnights ?? 0), $fiscalYear)
                 : null;
 
             $loan->update([
@@ -184,8 +185,6 @@ class LoanService
                 'bank_account' => $data['bank_account'] ?? $loan->bank_account,
                 'interbank_clabe' => $data['interbank_clabe'] ?? $loan->interbank_clabe,
             ]);
-
-            $fiscalYear = (int) ($loan->fiscal_year ?? $currentFiscalYear);
 
             if ($paymentType->hasBenefits() && isset($data['benefits'])) {
                 $loan->loanBenefits()->delete();
@@ -217,21 +216,21 @@ class LoanService
      *
      * @throws ValidationException
      */
-    private function resolveNominaSchedule(int $fortnights): array
+    private function resolveNominaSchedule(int $fortnights, ?int $fiscalYear = null): array
     {
-        $fiscalYear = $this->operationalStateService->effectiveFiscalYear();
-        $eligibleFortnights = $this->calendarService->getEligibleFortnights();
+        $resolvedFiscalYear = $fiscalYear ?? $this->operationalStateService->effectiveFiscalYear();
+        $eligibleFortnights = $this->calendarService->getEligibleFortnights(fiscalYear: $resolvedFiscalYear);
         $firstFortnight = $eligibleFortnights[0]['date'] ?? null;
 
         if ($firstFortnight === null) {
             throw ValidationException::withMessages([
-                'nomina_fortnights' => "No hay quincenas disponibles para el ejercicio fiscal {$fiscalYear}.",
+                'nomina_fortnights' => "No hay quincenas disponibles para el ejercicio fiscal {$resolvedFiscalYear}.",
             ]);
         }
 
         if ($fortnights < 1 || $fortnights > count($eligibleFortnights)) {
             throw ValidationException::withMessages([
-                'nomina_fortnights' => "El número de quincenas seleccionado no está disponible para el ejercicio fiscal {$fiscalYear}.",
+                'nomina_fortnights' => "El número de quincenas seleccionado no está disponible para el ejercicio fiscal {$resolvedFiscalYear}.",
             ]);
         }
 
@@ -442,8 +441,13 @@ class LoanService
                 }
             }
 
+            $fiscalYear = (int) ($locked->fiscal_year ?? now()->year);
+            $initialDisbursementDate = $fiscalYear > now()->year
+                ? Carbon::create($fiscalYear, 1, 1)->format('Y-m-d')
+                : now()->format('Y-m-d');
+
             // Build and persist initial amortization table and financial summary
-            $this->persistAmortizationAndSummary($locked, now()->format('Y-m-d'));
+            $this->persistAmortizationAndSummary($locked, $initialDisbursementDate);
 
             LoanStatusHistory::create([
                 'loan_id' => $locked->id,
@@ -660,9 +664,15 @@ class LoanService
         ];
 
         if ($loan->payment_type->hasNomina()) {
-            $params['payment_methods']['nomina'] = ['amount' => (float) ($loan->nomina_amount ?? $loan->approved_amount ?? $loan->requested_amount),
+            $fiscalYear = (int) ($loan->fiscal_year ?? Carbon::parse($disbursementDate)->year);
+            $fallbackFirstFortnight = $fiscalYear > now()->year
+                ? Carbon::create($fiscalYear, 1, 15)->format('Y-m-d')
+                : now()->addDays(25)->format('Y-m-d');
+
+            $params['payment_methods']['nomina'] = [
+                'amount' => (float) ($loan->nomina_amount ?? $loan->approved_amount ?? $loan->requested_amount),
                 'fortnights' => (int) ($loan->nomina_fortnights ?? 0),
-                'first_fortnight' => $loan->first_fortnight_date?->format('Y-m-d') ?? now()->addDays(25)->format('Y-m-d'),
+                'first_fortnight' => $loan->first_fortnight_date?->format('Y-m-d') ?? $fallbackFirstFortnight,
             ];
         }
 
@@ -711,5 +721,8 @@ class LoanService
             'first_fortnight' => $summary['first_fortnight'],
             'last_fortnight' => $summary['last_fortnight'],
         ]);
+
+        $loan->unsetRelation('amortizationRows');
+        $loan->unsetRelation('financialSummary');
     }
 }

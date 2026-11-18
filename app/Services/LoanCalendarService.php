@@ -67,16 +67,16 @@ class LoanCalendarService
      *
      * @return array<int, array{date: string, label: string, day: int, month: int, year: int}>
      */
-    public function getEligibleFortnights(?Carbon $date = null): array
+    public function getEligibleFortnights(?Carbon $date = null, ?int $fiscalYear = null): array
     {
         if ($this->stateService()->isTemporarilyOutOfService($date)) {
             return [];
         }
 
         $referenceDate = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $fiscalYear = $this->stateService()->effectiveFiscalYear($referenceDate);
-        $paymentDeadline = $this->paymentDeadline($fiscalYear);
-        $fiscalYearStart = Carbon::create($fiscalYear, 1, 1)->startOfDay();
+        $resolvedFiscalYear = $fiscalYear ?? $this->stateService()->effectiveFiscalYear($referenceDate);
+        $paymentDeadline = $this->paymentDeadline($resolvedFiscalYear);
+        $fiscalYearStart = Carbon::create($resolvedFiscalYear, 1, 1)->startOfDay();
 
         $minDate = $referenceDate->copy()->addDays(20);
         if ($minDate->lt($fiscalYearStart)) {
@@ -90,7 +90,7 @@ class LoanCalendarService
             $current = $fiscalYearStart->copy();
         }
 
-        while ($current->year === $fiscalYear && $current->month <= 12) {
+        while ($current->year === $resolvedFiscalYear && $current->month <= 12) {
             // First fortnight: 15th
             $q1 = $current->copy()->setDay(15);
             if ($q1->isAfter($minDate) && $q1->lte($paymentDeadline)) {
@@ -112,9 +112,9 @@ class LoanCalendarService
     /**
      * Get the first eligible fortnight.
      */
-    public function getFirstEligibleFortnight(?Carbon $date = null): ?Carbon
+    public function getFirstEligibleFortnight(?Carbon $date = null, ?int $fiscalYear = null): ?Carbon
     {
-        $fortnights = $this->getEligibleFortnights($date);
+        $fortnights = $this->getEligibleFortnights($date, $fiscalYear);
         if (empty($fortnights)) {
             return null;
         }
