@@ -43,6 +43,15 @@ class ListLoans extends ListRecords
                     ->warning()
                     ->icon(Heroicon::CalendarDays)
                     ->visible(fn (): bool => ! $stateService->isTemporarilyOutOfService() && ! $calendarService->isApplicationWindowOpen()),
+                Callout::make(fn (): string => "Cierre de año — Recepción anticipada para el ejercicio fiscal {$stateService->effectiveFiscalYear()}")
+                    ->description(fn (): string => sprintf(
+                        'El ejercicio %d se encuentra cerrado. Las nuevas solicitudes se registrarán y proyectarán para el ejercicio fiscal %d.',
+                        now()->year,
+                        $stateService->effectiveFiscalYear(),
+                    ))
+                    ->info()
+                    ->icon(Heroicon::InformationCircle)
+                    ->visible(fn (): bool => $stateService->effectiveState() === LoanOperationalState::CierreAnio),
                 $this->getTabsContentComponent(),
                 RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
                 EmbeddedTable::make(),

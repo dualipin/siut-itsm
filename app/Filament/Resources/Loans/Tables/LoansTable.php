@@ -32,6 +32,11 @@ class LoansTable
                     ->fontFamily('mono')
                     ->weight('bold'),
 
+                TextColumn::make('fiscal_year')
+                    ->label('Año fiscal')
+                    ->sortable()
+                    ->alignment('center'),
+
                 TextColumn::make('user.name')
                     ->label('Solicitante')
                     ->formatStateUsing(fn ($record) => $record->user?->full_name ?? 'N/A')
@@ -79,6 +84,16 @@ class LoansTable
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('fiscal_year')
+                    ->label('Año fiscal')
+                    ->options(fn (): array => Loan::query()
+                        ->whereNotNull('fiscal_year')
+                        ->distinct()
+                        ->orderByDesc('fiscal_year')
+                        ->pluck('fiscal_year')
+                        ->mapWithKeys(fn (mixed $year): array => [(string) $year => (string) $year])
+                        ->all()),
+
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options(LoanStatus::class),

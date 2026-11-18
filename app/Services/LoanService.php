@@ -27,6 +27,7 @@ class LoanService
         protected readonly LoanCalendarService $calendarService,
         protected readonly LoanSimulationService $simulationService,
         protected readonly LoanPdfGenerationService $pdfService,
+        protected readonly LoanOperationalStateService $operationalStateService,
     ) {}
 
     /**
@@ -53,13 +54,15 @@ class LoanService
         }
 
         return DB::transaction(function () use ($user, $data) {
+            $fiscalYear = $this->operationalStateService->effectiveFiscalYear();
             $paymentType = LoanPaymentType::from($data['payment_type']);
             $nominaSchedule = $paymentType->hasNomina()
                 ? $this->resolveNominaSchedule((int) ($data['nomina_fortnights'] ?? 0))
                 : null;
 
             $loan = Loan::create([
-                'folio' => Loan::generateFolio(),
+                'folio' => Loan::generateFolio($fiscalYear),
+                'fiscal_year' => $fiscalYear,
                 'user_id' => $user->id,
                 'status' => LoanStatus::Borrador,
                 'payment_type' => $paymentType,
@@ -79,7 +82,7 @@ class LoanService
             if ($paymentType->hasBenefits() && ! empty($data['benefits'])) {
                 foreach ($data['benefits'] as $b) {
                     $benefit = Benefit::findOrFail((int) $b['benefit_id']);
-                    $collectionDate = $benefit->collectionDateForYear(now()->year);
+                    $collectionDate = $benefit->collectionDateForYear($fiscalYear);
 
                     LoanBenefit::create([
                         'loan_id' => $loan->id,
@@ -142,7 +145,20 @@ class LoanService
             ]);
         }
 
-        return DB::transaction(function () use ($loan, $data) {
+        if (! $this->calendarService->isApplicationWindowOpen()) {
+            throw ValidationException::withMessages([
+                'loan' => $this->calendarService->applicationClosedReason(),
+            ]);
+        }
+
+        $currentFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+        if ($loan->fiscal_year !== null && (int) $loan->fiscal_year !== $currentFiscalYear) {
+            throw ValidationException::withMessages([
+                'loan' => "No es posible modificar este borrador porque pertenece al ejercicio fiscal {$loan->fiscal_year} y el ejercicio vigente es {$currentFiscalYear}.",
+            ]);
+        }
+
+        return DB::transaction(function () use ($loan, $data, $currentFiscalYear) {
             $paymentType = isset($data['payment_type'])
                 ? LoanPaymentType::from($data['payment_type'])
                 : $loan->payment_type;
@@ -169,11 +185,13 @@ class LoanService
                 'interbank_clabe' => $data['interbank_clabe'] ?? $loan->interbank_clabe,
             ]);
 
+            $fiscalYear = (int) ($loan->fiscal_year ?? $currentFiscalYear);
+
             if ($paymentType->hasBenefits() && isset($data['benefits'])) {
                 $loan->loanBenefits()->delete();
                 foreach ($data['benefits'] as $b) {
                     $benefit = Benefit::findOrFail((int) $b['benefit_id']);
-                    $collectionDate = $benefit->collectionDateForYear(now()->year);
+                    $collectionDate = $benefit->collectionDateForYear($fiscalYear);
 
                     LoanBenefit::create([
                         'loan_id' => $loan->id,
@@ -201,18 +219,19 @@ class LoanService
      */
     private function resolveNominaSchedule(int $fortnights): array
     {
+        $fiscalYear = $this->operationalStateService->effectiveFiscalYear();
         $eligibleFortnights = $this->calendarService->getEligibleFortnights();
         $firstFortnight = $eligibleFortnights[0]['date'] ?? null;
 
         if ($firstFortnight === null) {
             throw ValidationException::withMessages([
-                'nomina_fortnights' => 'No hay quincenas disponibles para este año.',
+                'nomina_fortnights' => "No hay quincenas disponibles para el ejercicio fiscal {$fiscalYear}.",
             ]);
         }
 
         if ($fortnights < 1 || $fortnights > count($eligibleFortnights)) {
             throw ValidationException::withMessages([
-                'nomina_fortnights' => 'El número de quincenas seleccionado no está disponible para este año.',
+                'nomina_fortnights' => "El número de quincenas seleccionado no está disponible para el ejercicio fiscal {$fiscalYear}.",
             ]);
         }
 
@@ -264,6 +283,13 @@ class LoanService
 
             if ($locked->status !== LoanStatus::Borrador) {
                 throw new LoanTransitionException('La solicitud ya no está en borrador. Estado actual: '.$locked->status->getLabel().'.');
+            }
+
+            $currentFiscalYear = $this->operationalStateService->effectiveFiscalYear();
+            if ($locked->fiscal_year !== null && (int) $locked->fiscal_year !== $currentFiscalYear) {
+                throw ValidationException::withMessages([
+                    'loan' => "No es posible enviar este borrador porque pertenece al ejercicio fiscal {$locked->fiscal_year} y el ejercicio vigente es {$currentFiscalYear}. Inicia una nueva solicitud bajo las condiciones actuales.",
+                ]);
             }
 
             if (! $locked->isSignatureValid()) {
