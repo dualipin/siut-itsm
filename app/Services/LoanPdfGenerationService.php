@@ -110,6 +110,12 @@ class LoanPdfGenerationService
      */
     protected function prepareViewData(Loan $loan, User $user): array
     {
+        $fiscalYear = (int) ($loan->fiscal_year ?? $loan->created_at?->year ?? now()->year);
+        $isFutureFiscalYear = $fiscalYear > now()->year;
+        $fallbackDisbursementDate = $isFutureFiscalYear
+            ? Carbon::create($fiscalYear, 1, 1)->format('Y-m-d')
+            : now()->format('Y-m-d');
+
         $amount = (float) ($loan->approved_amount ?? $loan->requested_amount);
         $amountInWords = NumberToWords::toCurrency($amount);
 
@@ -120,7 +126,10 @@ class LoanPdfGenerationService
         if ($loan->financialSummary?->last_fortnight) {
             $lastPaymentDate = Carbon::parse($loan->financialSummary->last_fortnight)->format('d/m/Y');
         } elseif ($loan->loanBenefits->isNotEmpty()) {
-            $maxCollectionDate = $loan->loanBenefits->max('collection_date');
+            $maxCollectionDate = $loan->loanBenefits->max(function ($lb) use ($fiscalYear): ?string {
+                return $lb->collection_date?->format('Y-m-d')
+                    ?? $lb->benefit?->collectionDateForYear($fiscalYear)->format('Y-m-d');
+            });
             if ($maxCollectionDate) {
                 $lastPaymentDate = Carbon::parse($maxCollectionDate)->format('d/m/Y');
             }
@@ -128,9 +137,10 @@ class LoanPdfGenerationService
 
         // Summary & amortization data for corrida
         $summary = $loan->financialSummary ? [
+            'fiscal_year' => $fiscalYear,
             'amount' => (float) $loan->financialSummary->total_principal,
             'monthly_rate_percent' => number_format((float) $loan->monthly_rate, 2).' %',
-            'disbursement_date' => $loan->financialSummary->disbursement_date?->format('Y-m-d') ?? now()->format('Y-m-d'),
+            'disbursement_date' => $loan->financialSummary->disbursement_date?->format('Y-m-d') ?? $fallbackDisbursementDate,
             'fortnights' => $loan->financialSummary->fortnights,
             'first_fortnight' => $loan->financialSummary->first_fortnight?->format('Y-m-d'),
             'last_fortnight' => $loan->financialSummary->last_fortnight?->format('Y-m-d'),
@@ -138,9 +148,10 @@ class LoanPdfGenerationService
             'total_interest' => (float) $loan->financialSummary->total_interest,
             'total_payment' => (float) $loan->financialSummary->total_payment,
         ] : [
+            'fiscal_year' => $fiscalYear,
             'amount' => $amount,
             'monthly_rate_percent' => number_format((float) $loan->monthly_rate, 2).' %',
-            'disbursement_date' => now()->format('Y-m-d'),
+            'disbursement_date' => $fallbackDisbursementDate,
             'fortnights' => $loan->nomina_fortnights,
             'first_fortnight' => $loan->first_fortnight_date?->format('Y-m-d'),
             'last_fortnight' => null,
@@ -166,13 +177,16 @@ class LoanPdfGenerationService
             : $amount;
 
         $firstFortnightDate = $loan->first_fortnight_date?->format('Y-m-d')
-            ?? now()->addDays(15)->format('Y-m-d');
+            ?? ($isFutureFiscalYear
+                ? Carbon::create($fiscalYear, 1, 15)->format('Y-m-d')
+                : now()->addDays(15)->format('Y-m-d'));
 
         $termFortnights = (int) ($loan->nomina_fortnights ?? 0);
 
         return [
             'loan' => $loan,
             'user' => $user,
+            'fiscalYear' => $fiscalYear,
             'amountInWords' => $amountInWords,
             'approvalDateLong' => $approvalDateLong,
             'lastPaymentDate' => $lastPaymentDate,

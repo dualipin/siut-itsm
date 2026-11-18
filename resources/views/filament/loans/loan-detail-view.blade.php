@@ -172,8 +172,12 @@
                         <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Prestaciones asignadas</dt>
                         <dd class="space-y-1">
                             @foreach($loan->loanBenefits as $lb)
+                                @php
+                                    $benefitCollectionDate = $lb->collection_date
+                                        ?? $lb->benefit?->collectionDateForYear((int) ($loan->fiscal_year ?? now()->year));
+                                @endphp
                                 <div class="flex justify-between items-center text-xs text-gray-700 dark:text-gray-300">
-                                    <span>{{ $lb->benefit->name ?? 'Prestación' }} <span class="text-gray-500 dark:text-gray-400 tabular-nums">({{ $lb->collection_date?->format('d/m/Y') }})</span></span>
+                                    <span>{{ $lb->benefit->name ?? 'Prestación' }} <span class="text-gray-500 dark:text-gray-400 tabular-nums">({{ $benefitCollectionDate?->format('d/m/Y') }})</span></span>
                                     <span class="font-semibold tabular-nums text-gray-900 dark:text-white">${{ number_format($lb->approved_amount ?? $lb->requested_amount, 2) }}</span>
                                 </div>
                             @endforeach
