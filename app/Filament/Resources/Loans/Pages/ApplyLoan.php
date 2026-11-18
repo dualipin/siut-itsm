@@ -11,6 +11,7 @@ use App\Models\LoanEvidence;
 use App\Models\User;
 use App\Services\LoanCalendarService;
 use App\Services\LoanDocumentAIService;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -54,6 +55,20 @@ class ApplyLoan extends CreateRecord
 
     public function mount(): void
     {
+        $operationalStateService = app(LoanOperationalStateService::class);
+        if ($operationalStateService->isTemporarilyOutOfService()) {
+            Notification::make()
+                ->title('Servicio temporalmente fuera de servicio')
+                ->body($operationalStateService->publicSuspensionMessage())
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->redirect(ListLoans::getUrl());
+
+            return;
+        }
+
         if (! app(LoanCalendarService::class)->isApplicationWindowOpen()) {
             Notification::make()
                 ->title('Periodo de solicitudes cerrado')
@@ -388,8 +403,43 @@ class ApplyLoan extends CreateRecord
         ];
     }
 
+    protected function beforeValidate(): void
+    {
+        $calendarService = app(LoanCalendarService::class);
+        if (! $calendarService->isApplicationWindowOpen()) {
+            $reason = $calendarService->applicationClosedReason();
+            $isOutOfService = app(LoanOperationalStateService::class)->isTemporarilyOutOfService();
+
+            Notification::make()
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Periodo de solicitudes cerrado')
+                ->body($reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw new Halt;
+        }
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
+        $calendarService = app(LoanCalendarService::class);
+        if (! $calendarService->isApplicationWindowOpen()) {
+            $reason = $calendarService->applicationClosedReason();
+            $isOutOfService = app(LoanOperationalStateService::class)->isTemporarilyOutOfService();
+
+            Notification::make()
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Periodo de solicitudes cerrado')
+                ->body($reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            throw ValidationException::withMessages([
+                'loan' => $reason,
+            ]);
+        }
+
         /** @var User $user */
         $user = auth()->user();
         $this->ensureEvidenceCanProceed($data);

@@ -7,6 +7,7 @@ use App\Enums\LoanStatus;
 use App\Filament\Resources\Loans\LoanResource;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
 use App\Models\Loan;
+use App\Services\LoanCalendarService;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
@@ -104,7 +105,11 @@ class LoansTable
                     ->label('Nueva Solicitud')
                     ->icon(Heroicon::Plus)
                     ->color('primary')
-                    ->url(fn (): string => ApplyLoan::getUrl())
+                    ->disabled(fn (): bool => ! app(LoanCalendarService::class)->isApplicationWindowOpen())
+                    ->tooltip(fn (): ?string => app(LoanCalendarService::class)->isApplicationWindowOpen()
+                        ? null
+                        : app(LoanCalendarService::class)->applicationClosedReason())
+                    ->url(fn (): ?string => app(LoanCalendarService::class)->isApplicationWindowOpen() ? ApplyLoan::getUrl() : null)
                     ->visible(fn (): bool => auth()->user()?->is_active ?? false),
             ]);
     }

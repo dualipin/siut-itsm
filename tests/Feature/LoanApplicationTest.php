@@ -2,6 +2,7 @@
 
 use App\Enums\LoanAiStatus;
 use App\Enums\LoanGeneratedDocumentType;
+use App\Enums\LoanOperationalState;
 use App\Enums\LoanStatus;
 use App\Enums\UserRole;
 use App\Filament\Resources\Loans\Pages\ApplyLoan;
@@ -13,6 +14,7 @@ use App\Models\LoanAmortizationRow;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
+use App\Services\LoanOperationalStateService;
 use App\Services\LoanService;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -1170,4 +1172,142 @@ it('accepts webp image receipt and persists loan evidence successfully', functio
     expect($evidence)->not->toBeNull()
         ->and($evidence->file_name)->toEndWith('.webp')
         ->and($evidence->mime_type)->toBe('image/webp');
+});
+
+it('blocks portal access, draft creation, and draft submission during temporalmente fuera de servicio while leaving submitted loans unaffected', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+    $otherAgremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $loanService = app(LoanService::class);
+    $stateService = app(LoanOperationalStateService::class);
+
+    // Create a draft with signature and evidence while Activo
+    $draftLoan = $loanService->createDraft($agremiado, [
+        'payment_type' => 'nomina',
+        'requested_amount' => 10000,
+        'nomina_amount' => 10000,
+        'nomina_fortnights' => 4,
+        'bank_name' => 'BBVA',
+        'bank_account' => '1234567890',
+    ]);
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    $loanService->signLoan($draftLoan, $dummySig);
+    LoanEvidence::create([
+        'loan_id' => $draftLoan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/1/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_classification' => 'recibo_nomina',
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'pending',
+    ]);
+
+    // Existing submitted loan for another user
+    $submittedLoan = Loan::factory()->for($otherAgremiado)->submitted()->create([
+        'payment_type' => 'nomina',
+        'requested_amount' => 8000,
+        'nomina_amount' => 8000,
+        'nomina_fortnights' => 4,
+    ]);
+    LoanEvidence::create([
+        'loan_id' => $submittedLoan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/2/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy2'),
+        'file_name' => 'recibo2.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_classification' => 'recibo_nomina',
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'approved',
+    ]);
+
+    // Admin activates TemporalmenteFueraDeServicio
+    $suspensionMessage = 'Suspensión temporal por mantenimiento del fondo.';
+    $stateService->updateState($admin, LoanOperationalState::TemporalmenteFueraDeServicio, $suspensionMessage);
+
+    // 1. Portal ListLoans disables createLoan & createLoanEmpty and shows notice
+    $this->actingAs($agremiado);
+    Livewire::test(ListLoans::class)
+        ->assertActionDisabled('createLoan')
+        ->assertSee($suspensionMessage);
+
+    // 2. ApplyLoan mount notifies and redirects back to ListLoans
+    Livewire::test(ApplyLoan::class)
+        ->assertNotified('Servicio temporalmente fuera de servicio')
+        ->assertRedirect(ListLoans::getUrl());
+
+    // 3. Draft creation via API returns 422 with suspension message
+    $this->actingAs($otherAgremiado)
+        ->postJson('/api/prestamos', [
+            'payment_type' => 'nomina',
+            'requested_amount' => 5000,
+            'nomina_amount' => 5000,
+            'nomina_fortnights' => 2,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['loan'])
+        ->assertJsonPath('errors.loan.0', $suspensionMessage);
+
+    // 4. Draft submission via API returns 422 with suspension message
+    $this->actingAs($agremiado)
+        ->postJson("/api/prestamos/{$draftLoan->id}/enviar")
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['loan'])
+        ->assertJsonPath('errors.loan.0', $suspensionMessage);
+
+    expect($draftLoan->fresh()->status)->toBe(LoanStatus::Borrador);
+
+    // 5. Submitted loans (Enviada+) remain unaffected: viewable and reviewable
+    $this->actingAs($otherAgremiado)
+        ->get("/portal/loans/{$submittedLoan->id}")
+        ->assertOk()
+        ->assertSee($submittedLoan->folio);
+
+    $reviewedLoan = $loanService->markInReview($submittedLoan, $admin);
+    expect($reviewedLoan->status)->toBe(LoanStatus::EnRevision);
+});
+
+it('blocks submitting an already-opened ApplyLoan form if operational state becomes temporarily out of service before create', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $user = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+    $file = UploadedFile::fake()->create('recibo.pdf', 100, 'application/pdf');
+    $dummySig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    Config::set('services.document_ai.enabled', false);
+
+    $this->actingAs($user);
+
+    $component = Livewire::test(ApplyLoan::class)
+        ->fillForm([
+            'payment_type' => 'nomina',
+            'nomina_amount' => 10000,
+            'nomina_fortnights' => 4,
+            'bank_name' => 'BBVA',
+            'bank_account' => '1234567890',
+            'nomina_evidence' => $file,
+            'signature_type' => 'drawn',
+            'signature_data' => $dummySig,
+            'accept_terms' => true,
+        ]);
+
+    // Admin suspends service while user has wizard open
+    app(LoanOperationalStateService::class)->updateState(
+        $admin,
+        LoanOperationalState::TemporalmenteFueraDeServicio,
+        'Cierre inmediato por mantenimiento.',
+    );
+
+    $component->call('create')
+        ->assertNotified();
+
+    expect(Loan::query()->where('user_id', $user->id)->exists())->toBeFalse();
 });

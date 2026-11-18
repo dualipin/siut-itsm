@@ -8,6 +8,15 @@ use Illuminate\Support\Collection;
 
 class LoanCalendarService
 {
+    public function __construct(
+        protected readonly ?LoanOperationalStateService $operationalStateService = null,
+    ) {}
+
+    private function stateService(): LoanOperationalStateService
+    {
+        return $this->operationalStateService ?? app(LoanOperationalStateService::class);
+    }
+
     /**
      * Get the application window deadline for the given year (November 30, end of day).
      */
@@ -26,14 +35,31 @@ class LoanCalendarService
 
     /**
      * Check if the loan application window is open.
+     * Blocked immediately when operational state is TemporalmenteFueraDeServicio.
      * Deadline: November 30 (inclusive). From December 1, new loans are blocked.
      */
     public function isApplicationWindowOpen(?Carbon $date = null): bool
     {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
+            return false;
+        }
+
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $deadline = $this->applicationDeadline($date->year);
 
         return $date->lte($deadline);
+    }
+
+    /**
+     * Get the user-facing reason why the application window is closed.
+     */
+    public function applicationClosedReason(?Carbon $date = null): string
+    {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
+            return $this->stateService()->publicSuspensionMessage();
+        }
+
+        return 'El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).';
     }
 
     /**
@@ -50,10 +76,9 @@ class LoanCalendarService
     {
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $year = $date->year;
-        $applicationDeadline = $this->applicationDeadline($year);
         $paymentDeadline = $this->paymentDeadline($year);
 
-        if ($date->gt($applicationDeadline)) {
+        if (! $this->isApplicationWindowOpen($date)) {
             return [];
         }
 
