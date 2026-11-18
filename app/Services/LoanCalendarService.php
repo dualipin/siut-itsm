@@ -18,14 +18,6 @@ class LoanCalendarService
     }
 
     /**
-     * Get the application window deadline for the given year (November 30, end of day).
-     */
-    public function applicationDeadline(?int $year = null): Carbon
-    {
-        return Carbon::create($year ?? now()->year, 11, 30)->endOfDay();
-    }
-
-    /**
      * Get the payroll payment deadline for the given year (December 31, end of day).
      */
     public function paymentDeadline(?int $year = null): Carbon
@@ -36,7 +28,8 @@ class LoanCalendarService
     /**
      * Check if the loan application window is open.
      * Blocked immediately when operational state is TemporalmenteFueraDeServicio.
-     * Deadline: November 30 (inclusive). From December 1, new loans are blocked.
+     * When Activo, stays open (including in December) as long as at least one eligible
+     * fortnight or active future benefit exists within the current year.
      */
     public function isApplicationWindowOpen(?Carbon $date = null): bool
     {
@@ -44,10 +37,8 @@ class LoanCalendarService
             return false;
         }
 
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $deadline = $this->applicationDeadline($date->year);
-
-        return $date->lte($deadline);
+        return ! empty($this->getEligibleFortnights($date))
+            || $this->getEligibleBenefits($date)->isNotEmpty();
     }
 
     /**
@@ -59,14 +50,16 @@ class LoanCalendarService
             return $this->stateService()->publicSuspensionMessage();
         }
 
-        return 'El periodo de recepción de solicitudes de préstamos ha concluido por este año (fecha límite: 30 de noviembre).';
+        $fiscalYear = $this->stateService()->effectiveFiscalYear($date);
+
+        return "No hay fechas disponibles (quincenas ni prestaciones) para el ejercicio fiscal {$fiscalYear} hasta que la administración active Cierre de año.";
     }
 
     /**
      * Get the list of eligible fortnights for nómina.
      * Must respect:
-     * 1. 20-day tolerance: candidate fortnight must be after now + 20 days.
-     * 2. Application window deadline: loan applications close November 30 of current year.
+     * 1. Operational state is not TemporalmenteFueraDeServicio.
+     * 2. 20-day tolerance: candidate fortnight must be after now + 20 days.
      * 3. Payment deadline: cannot exceed December 31 of current year.
      * 4. Fortnight days: 15th and the last real calendar day of each month.
      *
@@ -74,13 +67,13 @@ class LoanCalendarService
      */
     public function getEligibleFortnights(?Carbon $date = null): array
     {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
+            return [];
+        }
+
         $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $year = $date->year;
         $paymentDeadline = $this->paymentDeadline($year);
-
-        if (! $this->isApplicationWindowOpen($date)) {
-            return [];
-        }
 
         $minDate = $date->copy()->addDays(20);
         $result = [];
@@ -126,12 +119,11 @@ class LoanCalendarService
      */
     public function getEligibleBenefits(?Carbon $date = null): Collection
     {
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-
-        if (! $this->isApplicationWindowOpen($date)) {
+        if ($this->stateService()->isTemporarilyOutOfService($date)) {
             return collect();
         }
 
+        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
         $year = $date->year;
 
         return Benefit::active()

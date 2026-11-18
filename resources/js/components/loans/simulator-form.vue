@@ -15,15 +15,26 @@ const props = defineProps<{
     operationalState?: 'activo' | 'cierre_anio' | 'temporalmente_fuera_de_servicio'
     targetFiscalYear?: number
     suspensionMessage?: string | null
+    hasAvailableDates?: boolean
+    windowClosedMessage?: string | null
 }>()
 
 const isOutOfService = computed(
     () => props.operationalState === 'temporalmente_fuera_de_servicio'
 )
 
+const fiscalYear = computed(
+    () => props.targetFiscalYear ?? new Date().getFullYear()
+)
+
 const resolvedSuspensionMessage = computed(
     () => props.suspensionMessage?.trim()
         || 'El servicio de préstamos se encuentra temporalmente fuera de servicio por mantenimiento o revisión administrativa. Por favor, intente más tarde.'
+)
+
+const resolvedWindowClosedMessage = computed(
+    () => props.windowClosedMessage?.trim()
+        || `No hay fechas disponibles (quincenas ni prestaciones) para el ejercicio fiscal ${fiscalYear.value} hasta que la administración active Cierre de año.`
 )
 
 // ── Form state ────────────────────────────────────────────────────────────────
@@ -67,23 +78,17 @@ function nextFortnight(dateStr: string): string {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-function isApplicationWindowOpen(date: Date): boolean {
-    const applicationDeadline = new Date(date.getFullYear(), 10, 30, 23, 59, 59, 999) // Nov 30
-    return date <= applicationDeadline
-}
-
 /**
- * Generate all valid fortnights between minDate (today+20) and Dec 31 of current year.
- * Only available when current date is on or before Nov 30 of current year.
+ * Generate all valid fortnights between minDate (today+20) and Dec 31 of the active fiscal year.
  */
 const availableFortnights = computed(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const year = today.getFullYear()
-
-    if (!isApplicationWindowOpen(today)) {
+    if (isOutOfService.value) {
         return []
     }
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const year = fiscalYear.value
 
     const minDate = new Date(today)
     minDate.setDate(today.getDate() + 20)
@@ -124,7 +129,7 @@ const availableFortnightCounts = computed(() => {
     const firstStr = form.data.nomina.first_fortnight
     if (!firstStr) return []
 
-    const year = new Date().getFullYear()
+    const year = fiscalYear.value
     const cutoffStr = `${year}-12-31`
 
     const result: Array<{ value: number; label: string }> = []
@@ -206,21 +211,28 @@ const lastFortnightDate = computed(() => {
     return `${String(dd).padStart(2, '0')} ${months[mm - 1]} ${yyyy}`
 })
 
-// ── Available benefits (only future collection dates and within application window) ──
+// ── Available benefits (only future collection dates in active operational state) ──
 const availableBenefits = computed(() => {
+    if (isOutOfService.value) {
+        return []
+    }
+
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     const year = now.getFullYear()
-
-    if (!isApplicationWindowOpen(now)) {
-        return []
-    }
 
     const mm = String(now.getMonth() + 1).padStart(2, '0')
     const dd = String(now.getDate()).padStart(2, '0')
     const today = `${year}-${mm}-${dd}`
     return props.benefits.filter(b => b.collectionDate > today)
 })
+
+const noAvailableDates = computed(
+    () => !isOutOfService.value && (
+        props.hasAvailableDates === false
+        || (availableFortnights.value.length === 0 && availableBenefits.value.length === 0)
+    )
+)
 
 // ── Selected benefit IDs tracking ─────────────────────────────────────────────
 const selectedBenefitIds = ref<Set<number>>(new Set())
@@ -259,7 +271,7 @@ const pdfOpened = ref(false)
 const applicationUrl = ref('')
 
 const submit = async () => {
-    if (isOutOfService.value) {
+    if (isOutOfService.value || noAvailableDates.value) {
         return
     }
 
@@ -332,6 +344,17 @@ function fieldError(key: string): string | undefined {
                     <div>
                         <h2 class="font-semibold text-base">Servicio temporalmente fuera de servicio</h2>
                         <p class="text-sm mt-1">{{ resolvedSuspensionMessage }}</p>
+                    </div>
+                </div>
+
+                <!-- ===== No available dates in current fiscal year notice ===== -->
+                <div v-else-if="noAvailableDates" role="alert" class="alert alert-warning rounded-box flex items-start gap-3 shadow-sm">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <div>
+                        <h2 class="font-semibold text-base">Sin fechas disponibles en el ejercicio actual</h2>
+                        <p class="text-sm mt-1">{{ resolvedWindowClosedMessage }}</p>
                     </div>
                 </div>
 
@@ -451,7 +474,7 @@ function fieldError(key: string): string | undefined {
                                         {{ fieldError('nomina.first_fortnight') }}
                                     </p>
                                     <p v-if="availableFortnights.length === 0" id="first-fortnight-hint" class="text-warning mt-1 text-sm">
-                                        No hay quincenas disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
+                                        No hay quincenas disponibles para el ejercicio fiscal {{ fiscalYear }} (tolerancia de 20 días antes del 31 de diciembre).
                                     </p>
                                     <p v-else id="first-fortnight-hint" class="text-base-content/60 mt-1 text-sm">
                                         Asignada automáticamente (tolerancia de 20 días).
@@ -501,7 +524,7 @@ function fieldError(key: string): string | undefined {
                             </div>
                             <div class="p-4 sm:p-5">
                                 <p v-if="availableBenefits.length === 0" class="text-sm text-warning">
-                                    No hay prestaciones disponibles (fecha límite de solicitud: 30 Nov {{ new Date().getFullYear() }}).
+                                    No hay prestaciones disponibles para el ejercicio fiscal {{ fiscalYear }}.
                                 </p>
                                 <div v-else class="space-y-2">
                                     <label

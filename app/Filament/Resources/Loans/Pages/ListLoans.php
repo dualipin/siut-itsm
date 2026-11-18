@@ -29,6 +29,7 @@ class ListLoans extends ListRecords
     public function content(Schema $schema): Schema
     {
         $stateService = app(LoanOperationalStateService::class);
+        $calendarService = app(LoanCalendarService::class);
 
         return $schema
             ->components([
@@ -37,6 +38,11 @@ class ListLoans extends ListRecords
                     ->danger()
                     ->icon(Heroicon::ExclamationTriangle)
                     ->visible(fn (): bool => $stateService->isTemporarilyOutOfService()),
+                Callout::make('Sin fechas disponibles en el ejercicio actual')
+                    ->description(fn (): string => $calendarService->applicationClosedReason())
+                    ->warning()
+                    ->icon(Heroicon::CalendarDays)
+                    ->visible(fn (): bool => ! $stateService->isTemporarilyOutOfService() && ! $calendarService->isApplicationWindowOpen()),
                 $this->getTabsContentComponent(),
                 RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
                 EmbeddedTable::make(),

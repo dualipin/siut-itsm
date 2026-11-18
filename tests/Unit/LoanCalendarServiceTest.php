@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\LoanOperationalState;
 use App\Models\Benefit;
+use App\Models\User;
 use App\Services\LoanCalendarService;
+use App\Services\LoanOperationalStateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -16,15 +19,48 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
-it('permits applications on or before November 30 and blocks from December 1', function () {
-    Carbon::setTestNow('2026-11-30 23:59:59');
+it('keeps application window open in december while Activo as long as at least one fortnight or future benefit exists', function () {
+    // Dec 5: 2026-12-05 + 20 days = 2026-12-25 -> Dec 31 fortnight is eligible even without benefits
+    Carbon::setTestNow('2026-12-05 12:00:00');
     expect($this->calendar->isApplicationWindowOpen())->toBeTrue();
 
-    Carbon::setTestNow('2026-12-01 00:00:00');
-    expect($this->calendar->isApplicationWindowOpen())->toBeFalse();
+    // Dec 10: 2026-12-10 + 20 days = 2026-12-30 -> Dec 31 fortnight is still eligible
+    Carbon::setTestNow('2026-12-10 12:00:00');
+    expect($this->calendar->isApplicationWindowOpen())->toBeTrue();
 
+    // Dec 15 without any future benefit: no fortnights and no benefits -> closed with no-dates message
     Carbon::setTestNow('2026-12-15 12:00:00');
-    expect($this->calendar->isApplicationWindowOpen())->toBeFalse();
+    expect($this->calendar->isApplicationWindowOpen())->toBeFalse()
+        ->and($this->calendar->applicationClosedReason())
+        ->toContain('No hay fechas disponibles')
+        ->toContain('Cierre de año')
+        ->not->toContain('30 de noviembre');
+
+    // Dec 15 WITH an active future benefit (Dec 20): open
+    Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    expect($this->calendar->isApplicationWindowOpen())->toBeTrue();
+});
+
+it('closes application window when operational state is TemporalmenteFueraDeServicio even with eligible dates', function () {
+    Carbon::setTestNow('2026-06-01');
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+
+    app(LoanOperationalStateService::class)->updateState(
+        $admin,
+        LoanOperationalState::TemporalmenteFueraDeServicio,
+        'Cierre temporal por mantenimiento.',
+    );
+
+    expect($this->calendar->isApplicationWindowOpen())->toBeFalse()
+        ->and($this->calendar->getEligibleFortnights())->toBeEmpty()
+        ->and($this->calendar->getEligibleBenefits())->toBeEmpty()
+        ->and($this->calendar->applicationClosedReason())->toBe('Cierre temporal por mantenimiento.');
 });
 
 it('calculates the first eligible fortnight respecting the 20-day tolerance exactly as specified', function () {
@@ -54,14 +90,17 @@ it('returns december fortnights up to december 31 when applying before or on nov
         ->and($fortnightsNov30[0]['date'])->toBe('2026-12-31');
 });
 
-it('does not return any fortnights when application window has closed on or after december 1', function () {
-    Carbon::setTestNow('2026-12-01');
-    $fortnights = $this->calendar->getEligibleFortnights();
-    expect($fortnights)->toBeEmpty();
+it('returns december 31 fortnight in early december while Activo and returns empty once 20-day tolerance passes december 31', function () {
+    Carbon::setTestNow('2026-12-05');
+    $fortnightsDec5 = $this->calendar->getEligibleFortnights();
+    expect($fortnightsDec5)->toHaveCount(1)
+        ->and($fortnightsDec5[0]['date'])->toBe('2026-12-31');
+
+    Carbon::setTestNow('2026-12-11');
+    expect($this->calendar->getEligibleFortnights())->toBeEmpty();
 
     Carbon::setTestNow('2026-12-15');
-    $fortnightsMidDec = $this->calendar->getEligibleFortnights();
-    expect($fortnightsMidDec)->toBeEmpty();
+    expect($this->calendar->getEligibleFortnights())->toBeEmpty();
 });
 
 it('returns eligible benefits whose collection date has not passed in current year', function () {
@@ -90,8 +129,8 @@ it('returns eligible benefits whose collection date has not passed in current ye
         ->not->toContain('Prestación Pasada');
 });
 
-it('does not return any eligible benefits when application window has closed on or after december 1', function () {
-    Carbon::setTestNow('2026-12-01');
+it('returns eligible benefits in december while Activo when collection date is after today in current year', function () {
+    Carbon::setTestNow('2026-12-05');
 
     Benefit::factory()->create([
         'name' => 'Aguinaldo Diciembre',
@@ -100,7 +139,15 @@ it('does not return any eligible benefits when application window has closed on 
         'is_active' => true,
     ]);
 
-    expect($this->calendar->getEligibleBenefits())->toBeEmpty();
+    Benefit::factory()->create([
+        'name' => 'Prestación Pasada',
+        'collection_month' => 12,
+        'collection_day' => 1,
+        'is_active' => true,
+    ]);
+
+    $eligible = $this->calendar->getEligibleBenefits();
+    expect($eligible->pluck('name')->all())->toBe(['Aguinaldo Diciembre']);
 });
 
 it('calculates the completion date for k fortnights correctly', function () {
