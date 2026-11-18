@@ -145,7 +145,9 @@ class LoanOperationalStateService
                 ]);
             });
 
-            return $setting->fresh('updatedBy');
+            $setting->load('updatedBy');
+
+            return $setting;
         });
     }
 }

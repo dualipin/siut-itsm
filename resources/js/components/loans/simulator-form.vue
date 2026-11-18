@@ -37,8 +37,7 @@ const closedYear = computed(
 )
 
 const resolvedSuspensionMessage = computed(
-    () => props.suspensionMessage?.trim()
-        || 'El servicio de préstamos se encuentra temporalmente fuera de servicio por mantenimiento o revisión administrativa. Por favor, intente más tarde.'
+    () => props.suspensionMessage?.trim() ?? ''
 )
 
 const resolvedWindowClosedMessage = computed(

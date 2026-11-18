@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\LoanGeneratedDocumentType;
 use App\Models\Loan;
+use App\Models\LoanBenefit;
 use App\Models\LoanGeneratedDocument;
 use App\Models\User;
 use App\Support\DocumentThemePalette;
@@ -126,7 +127,7 @@ class LoanPdfGenerationService
         if ($loan->financialSummary?->last_fortnight) {
             $lastPaymentDate = Carbon::parse($loan->financialSummary->last_fortnight)->format('d/m/Y');
         } elseif ($loan->loanBenefits->isNotEmpty()) {
-            $maxCollectionDate = $loan->loanBenefits->max(function ($lb) use ($fiscalYear): ?string {
+            $maxCollectionDate = $loan->loanBenefits->max(function (LoanBenefit $lb) use ($fiscalYear): ?string {
                 return $lb->collection_date?->format('Y-m-d')
                     ?? $lb->benefit?->collectionDateForYear($fiscalYear)->format('Y-m-d');
             });
@@ -134,6 +135,7 @@ class LoanPdfGenerationService
                 $lastPaymentDate = Carbon::parse($maxCollectionDate)->format('d/m/Y');
             }
         }
+        $lastPaymentDate ??= $loan->disbursed_at?->format('d/m/Y') ?? '31/12/'.$fiscalYear;
 
         // Summary & amortization data for corrida
         $summary = $loan->financialSummary ? [

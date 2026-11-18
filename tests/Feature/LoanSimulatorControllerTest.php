@@ -59,7 +59,8 @@ it('renders the combined simulation PDF view with its financial sections', funct
 it('GET /simulador-prestamo returns 200', function () {
     $response = $this->get('/simulador-prestamo');
 
-    $response->assertOk();
+    $response->assertOk()
+        ->assertViewHas('suspensionMessage', LoanOperationalStateService::DEFAULT_SUSPENSION_MESSAGE);
 });
 
 it('POST simulate with valid nomina data returns json with pdf_url', function () {
@@ -435,6 +436,20 @@ it('shows Cierre de año banner with projected 2027 benefits, calculates interes
         ]],
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['benefits.0.collection_date']);
+
+    $futureYearResponse = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 6,
+        'payment_type' => 'benefit',
+        'benefits' => [[
+            'benefit_id' => $aguinaldo->id,
+            'amount' => 5000,
+            'collection_date' => '2028-12-20',
+        ]],
+    ]);
+    $futureYearResponse->assertStatus(422)
+        ->assertJsonValidationErrors(['benefits.0.collection_date']);
+    expect($futureYearResponse->json('errors')['benefits.0.collection_date'][0])
+        ->toBe('La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.');
 
     // Accepts 2027-01-15 with 24 fortnights (Jan 15 .. Dec 31) and calculates from 2027-01-01
     $novSimulate = $this->postJson('/api/simulador-prestamo/simulate', [

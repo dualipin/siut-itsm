@@ -161,6 +161,29 @@ class LoanCalendarService
             ->values();
     }
 
+    /**
+     * Get active benefits formatted for the public loan simulator in the target fiscal year.
+     *
+     * @return Collection<int, array{id: int, name: string, collectionDay: int, collectionMonth: int, collectionDate: string}>
+     */
+    public function getSimulatorBenefits(?int $fiscalYear = null): Collection
+    {
+        $resolvedFiscalYear = $fiscalYear ?? $this->stateService()->effectiveFiscalYear();
+
+        return Benefit::active()
+            ->orderBy('collection_month')
+            ->orderBy('collection_day')
+            ->get(['id', 'name', 'collection_day', 'collection_month'])
+            ->map(fn (Benefit $benefit): array => [
+                'id' => $benefit->id,
+                'name' => $benefit->name,
+                'collectionDay' => $benefit->collection_day,
+                'collectionMonth' => $benefit->collection_month,
+                'collectionDate' => $benefit->collectionDateForYear($resolvedFiscalYear)->format('Y-m-d'),
+            ])
+            ->values();
+    }
+
     protected function formatFortnight(Carbon $date): array
     {
         $monthName = $date->translatedFormat('F');

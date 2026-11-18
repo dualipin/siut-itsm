@@ -151,7 +151,7 @@
           Debe(mos) y pagare(mos) incondicionalmente por este Pagaré a la orden de
           <span class="bold underline">Sindicato Único de Trabajadores del Instituto Tecnológico Superior de Macuspana</span>
           en <span class="underline bold">Macuspana, Tabasco</span> el
-          <span class="underline bold" style="padding: 0 30px;">{{ $lastPaymentDate ?? ($loan->disbursed_at?->format('d/m/Y') ?? '31/12/'.$year) }}</span>
+          <span class="underline bold" style="padding: 0 30px;">{{ $lastPaymentDate ?? '31/12/'.$year }}</span>
         </p>
         <p>
           La cantidad de:

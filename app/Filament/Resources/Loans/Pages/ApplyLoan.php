@@ -459,72 +459,12 @@ class ApplyLoan extends CreateRecord
 
     protected function beforeValidate(): void
     {
-        $calendarService = app(LoanCalendarService::class);
-        $stateService = app(LoanOperationalStateService::class);
-
-        if (! $calendarService->isApplicationWindowOpen()) {
-            $reason = $calendarService->applicationClosedReason();
-            $isOutOfService = $stateService->isTemporarilyOutOfService();
-
-            Notification::make()
-                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
-                ->body($reason)
-                ->danger()
-                ->persistent()
-                ->send();
-
-            throw new Halt;
-        }
-
-        $currentFiscalYear = $stateService->effectiveFiscalYear();
-        if ($this->mountedFiscalYear !== null && $this->mountedFiscalYear !== $currentFiscalYear) {
-            Notification::make()
-                ->title('Cambio de ejercicio fiscal')
-                ->body("El ejercicio fiscal vigente cambió de {$this->mountedFiscalYear} a {$currentFiscalYear}. Recarga la página o simula nuevamente bajo las condiciones actuales.")
-                ->warning()
-                ->persistent()
-                ->send();
-
-            throw new Halt;
-        }
+        $this->validateActiveOperationalWindow();
     }
 
     protected function handleRecordCreation(array $data): Model
     {
-        $calendarService = app(LoanCalendarService::class);
-        $stateService = app(LoanOperationalStateService::class);
-
-        if (! $calendarService->isApplicationWindowOpen()) {
-            $reason = $calendarService->applicationClosedReason();
-            $isOutOfService = $stateService->isTemporarilyOutOfService();
-
-            Notification::make()
-                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
-                ->body($reason)
-                ->danger()
-                ->persistent()
-                ->send();
-
-            throw ValidationException::withMessages([
-                'loan' => $reason,
-            ]);
-        }
-
-        $currentFiscalYear = $stateService->effectiveFiscalYear();
-        if ($this->mountedFiscalYear !== null && $this->mountedFiscalYear !== $currentFiscalYear) {
-            $message = "El ejercicio fiscal vigente cambió de {$this->mountedFiscalYear} a {$currentFiscalYear}. Recarga la página o simula nuevamente bajo las condiciones actuales.";
-
-            Notification::make()
-                ->title('Cambio de ejercicio fiscal')
-                ->body($message)
-                ->warning()
-                ->persistent()
-                ->send();
-
-            throw ValidationException::withMessages([
-                'loan' => $message,
-            ]);
-        }
+        $this->validateActiveOperationalWindow(halt: false);
 
         /** @var User $user */
         $user = auth()->user();
@@ -699,6 +639,52 @@ class ApplyLoan extends CreateRecord
         $html .= '</div>';
 
         return new HtmlString($html);
+    }
+
+    private function validateActiveOperationalWindow(bool $halt = true): void
+    {
+        $calendarService = app(LoanCalendarService::class);
+        $stateService = app(LoanOperationalStateService::class);
+
+        if (! $calendarService->isApplicationWindowOpen()) {
+            $reason = $calendarService->applicationClosedReason();
+            $isOutOfService = $stateService->isTemporarilyOutOfService();
+
+            Notification::make()
+                ->title($isOutOfService ? 'Servicio temporalmente fuera de servicio' : 'Sin fechas disponibles en el ejercicio actual')
+                ->body($reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            if ($halt) {
+                throw new Halt;
+            }
+
+            throw ValidationException::withMessages([
+                'loan' => $reason,
+            ]);
+        }
+
+        $currentFiscalYear = $stateService->effectiveFiscalYear();
+        if ($this->mountedFiscalYear !== null && $this->mountedFiscalYear !== $currentFiscalYear) {
+            $message = "El ejercicio fiscal vigente cambió de {$this->mountedFiscalYear} a {$currentFiscalYear}. Recarga la página o simula nuevamente bajo las condiciones actuales.";
+
+            Notification::make()
+                ->title('Cambio de ejercicio fiscal')
+                ->body($message)
+                ->warning()
+                ->persistent()
+                ->send();
+
+            if ($halt) {
+                throw new Halt;
+            }
+
+            throw ValidationException::withMessages([
+                'loan' => $message,
+            ]);
+        }
     }
 
     /**
