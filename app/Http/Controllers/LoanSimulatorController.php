@@ -73,7 +73,7 @@ class LoanSimulatorController extends Controller
         /** @var array{amortizationTable: array<int, array<string, mixed>>, summary: array<string, mixed>}|null $data */
         $data = Cache::get('loan_simulation_'.$token);
 
-        abort_if($data === null, 404, 'La simulación ha expirado o no existe.');
+        abort_if($data === null, 404, 'La simulación ha expirado o no existe. Vuelve al simulador para generar una nueva.');
 
         Cache::forget('loan_simulation_'.$token);
 

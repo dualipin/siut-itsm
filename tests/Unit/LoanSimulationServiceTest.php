@@ -312,3 +312,29 @@ it('aligns extra_days cutoff and fortnight dates without shifting December fortn
         ->and($summary['last_fortnight'])->toBe('2026-12-31')
         ->and($table[2]['date'])->toBe($summary['last_fortnight']);
 });
+
+it('does not double count benefit_growth interest in total_interest', function () {
+    $params = [
+        'monthly_rate' => 0.06,
+        'disbursement_date' => '2027-01-01',
+        'payment_methods' => [
+            'benefits' => [
+                [
+                    'benefit_id' => 1,
+                    'name' => 'Día del Servidor Público',
+                    'amount' => 1000.0,
+                    'collection_date' => '2027-06-30',
+                ],
+            ],
+        ],
+    ];
+
+    $table = $this->service->buildAmortizationTable($params);
+    $summary = $this->service->buildFinancialRunSummary($params);
+    $benefitRow = array_values(array_filter($table, fn ($r) => $r['type'] === 'benefit'))[0];
+
+    expect($summary['total_principal'])->toBe(1000.0)
+        ->and($summary['total_interest'])->toBe($benefitRow['interest'])
+        ->and($summary['total_interest'])->toBe(418.52)
+        ->and(round($summary['total_principal'] + $summary['total_interest'], 2))->toBe($summary['total_payment']);
+});

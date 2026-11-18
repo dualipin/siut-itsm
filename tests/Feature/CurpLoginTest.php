@@ -22,6 +22,22 @@ test('login page asks for curp instead of email', function () {
         ->assertSee('CURP');
 });
 
+test('login password field is masked and revealable', function () {
+    Livewire::test(Login::class)
+        ->assertFormFieldExists('password', fn ($field): bool => $field->isPassword());
+
+    $this->get('/portal/login')
+        ->assertSuccessful()
+        ->assertSee('isPasswordRevealed', false);
+});
+
+test('login page includes a link back to home', function () {
+    $this->get('/portal/login')
+        ->assertSuccessful()
+        ->assertSee('Volver al inicio')
+        ->assertSee(route('home'), false);
+});
+
 test('user can log in with an uppercase curp', function () {
     $user = User::factory()->create(['curp' => 'MELC950515HDFRRN09']);
 

@@ -24,7 +24,7 @@
         </p>
     </div>
 
-    @include('pdf.partials.loan-financial-summary')
+    @include('pdf.partials.loan-financial-summary', ['isOfficial' => true])
 
     {{-- ===== PAGE BREAK ===== --}}
     <div style="page-break-before: always; padding-top: 10px;"></div>

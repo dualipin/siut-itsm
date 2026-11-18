@@ -46,3 +46,11 @@
     @apply text-primary-600!;
   }
 }
+
+.custom-auth-empty-panel {
+    @apply min-h-36 lg:min-h-0;
+}
+
+.custom-auth-form-panel {
+    @apply py-8! lg:px-12! xl:px-16!;
+}

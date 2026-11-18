@@ -313,7 +313,8 @@ class LoanSimulationService
     {
         $table = $this->buildAmortizationTable($params);
 
-        $totalInterest = round(array_sum(array_column($table, 'interest')), 2);
+        $payableRows = array_filter($table, fn (array $row): bool => $row['type'] !== 'benefit_growth');
+        $totalInterest = round(array_sum(array_column($payableRows, 'interest')), 2);
         $totalPrincipal = round(array_sum(array_column($table, 'principal')), 2);
         $totalPayment = round(array_sum(array_column($table, 'payment')), 2);
 
