@@ -21,7 +21,9 @@ class PostDeployMaintenance extends Page
 
     protected static ?string $navigationLabel = 'Mantenimiento del Sistema';
 
-    protected static ?string $title = 'Mantenimiento del Sistema';
+    protected static ?string $title = 'Mantenimiento del Sistema y Despliegue';
+
+    protected ?string $subheading = 'Aplica migraciones, regenera cachés y verifica el almacenamiento tras subir cambios al servidor.';
 
     protected static ?string $breadcrumb = 'Mantenimiento';
 
@@ -163,7 +165,7 @@ class PostDeployMaintenance extends Page
     {
         @ini_set('max_execution_time', '240');
 
-        $this->addLogEntry('INICIO DESPLIEGUE COMPLETO', 'info', 0, 'Iniciando secuencia post-deploy recomendada para producción...');
+        $this->addLogEntry('Inicio de despliegue completo', 'info', 0, 'Ejecutando enlace de almacenamiento, migraciones, cachés y reinicio de colas...');
 
         $errorsCount = 0;
 
@@ -204,17 +206,17 @@ class PostDeployMaintenance extends Page
         }
 
         if ($errorsCount === 0) {
-            $this->addLogEntry('FIN DESPLIEGUE COMPLETO', 'success', 0, '¡Despliegue finalizado con éxito! Todos los pasos se completaron correctamente.');
+            $this->addLogEntry('Despliegue finalizado', 'success', 0, 'Todos los pasos se completaron sin errores.');
             Notification::make()
-                ->title('Despliegue completado con éxito')
-                ->body('Se ejecutaron migraciones, enlace de almacenamiento y cachés de producción.')
+                ->title('Despliegue completado')
+                ->body('Se actualizaron almacenamiento, migraciones, cachés y colas.')
                 ->success()
                 ->send();
         } else {
-            $this->addLogEntry('FIN DESPLIEGUE CON ADVERTENCIAS', 'error', 0, "Se completó la secuencia pero hubo {$errorsCount} advertencia(s) o error(es). Revisa el registro de la consola.");
+            $this->addLogEntry('Despliegue finalizado con observaciones', 'error', 0, "Se completó la secuencia con {$errorsCount} paso(s) con alertas. Revisa los registros anteriores.");
             Notification::make()
-                ->title('Despliegue finalizado con observaciones')
-                ->body("Hubo {$errorsCount} paso(s) con alertas. Revisa el detalle en la consola inferior.")
+                ->title('Despliegue completado con observaciones')
+                ->body("Revisa la consola de salida: {$errorsCount} paso(s) requieren atención.")
                 ->warning()
                 ->send();
         }
@@ -229,14 +231,14 @@ class PostDeployMaintenance extends Page
 
         if ($ok) {
             Notification::make()
-                ->title('Almacenamiento verificado')
-                ->body('Fotos y archivos configurados para servirse correctamente.')
+                ->title('Almacenamiento listo')
+                ->body('Las imágenes y archivos públicos quedaron configurados.')
                 ->success()
                 ->send();
         } else {
             Notification::make()
-                ->title('Atención al vincular almacenamiento')
-                ->body('Revisa el detalle en la consola.')
+                ->title('No se pudo vincular el almacenamiento')
+                ->body('Revisa el detalle en la consola de salida para identificar el error.')
                 ->warning()
                 ->send();
         }
@@ -251,14 +253,14 @@ class PostDeployMaintenance extends Page
 
         if ($ok) {
             Notification::make()
-                ->title('Almacenamiento verificado')
-                ->body('Las fotos y archivos son accesibles a través de /storage.')
+                ->title('Acceso a archivos verificado')
+                ->body('Los archivos públicos en /storage responden correctamente.')
                 ->success()
                 ->send();
         } else {
             Notification::make()
-                ->title('Error en prueba de almacenamiento')
-                ->body('No fue posible acceder al archivo de prueba.')
+                ->title('Fallo al verificar almacenamiento')
+                ->body('No fue posible leer o escribir el archivo de prueba. Revisa permisos en la consola.')
                 ->danger()
                 ->send();
         }
@@ -281,12 +283,12 @@ class PostDeployMaintenance extends Page
                 'php artisan storage:link',
                 'warning',
                 1.0,
-                "symlink() y exec() están deshabilitados en php.ini por Neubox.\nLas fotos se sirven automáticamente mediante la ruta de respaldo de Laravel (/storage/...) sin necesidad del comando."
+                "Las funciones symlink() y exec() están deshabilitadas en php.ini.\nLos archivos públicos se sirven automáticamente mediante la ruta /storage de Laravel."
             );
 
             Notification::make()
                 ->title('storage:link omitido')
-                ->body('Las funciones de symlink están deshabilitadas en tu hosting. La ruta de respaldo de Laravel se encarga de servir los archivos.')
+                ->body('symlink() y exec() están deshabilitadas en el servidor. Los archivos se sirven por la ruta /storage de Laravel.')
                 ->info()
                 ->send();
 
@@ -360,17 +362,25 @@ class PostDeployMaintenance extends Page
     {
         if (app()->isDownForMaintenance()) {
             $this->executeArtisan('up', [], 'php artisan up');
-            Notification::make()->title('Sitio en línea')->success()->send();
+            Notification::make()
+                ->title('Sitio reactivado')
+                ->body('El portal vuelve a estar disponible para todos los usuarios.')
+                ->success()
+                ->send();
         } else {
             $this->executeArtisan('down', [], 'php artisan down');
-            Notification::make()->title('Modo mantenimiento activado')->warning()->send();
+            Notification::make()
+                ->title('Modo mantenimiento activado')
+                ->body('El sitio público muestra temporalmente el aviso de mantenimiento.')
+                ->warning()
+                ->send();
         }
     }
 
     public function clearTerminalLogs(): void
     {
         $this->terminalLogs = [];
-        Notification::make()->title('Registro de consola limpiado')->info()->send();
+        Notification::make()->title('Consola limpiada')->info()->send();
     }
 
     /**
