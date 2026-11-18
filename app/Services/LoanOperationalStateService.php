@@ -37,10 +37,21 @@ class LoanOperationalStateService
 
     /**
      * Resolve the effective operational state at the given moment.
+     * Automatically transitions CierreAnio to Activo once the target fiscal year begins.
      */
     public function effectiveState(?Carbon $date = null): LoanOperationalState
     {
-        return $this->current($date)->state ?? LoanOperationalState::Activo;
+        $referenceDate = $date ? $date->copy() : now();
+        $setting = $this->current($referenceDate);
+        $storedState = $setting->state ?? LoanOperationalState::Activo;
+
+        if ($storedState === LoanOperationalState::CierreAnio
+            && $setting->target_fiscal_year !== null
+            && $referenceDate->year >= $setting->target_fiscal_year) {
+            return LoanOperationalState::Activo;
+        }
+
+        return $storedState;
     }
 
     /**
@@ -49,8 +60,13 @@ class LoanOperationalStateService
     public function effectiveFiscalYear(?Carbon $date = null): int
     {
         $referenceDate = $date ? $date->copy() : now();
+        $targetYear = $this->current($referenceDate)->target_fiscal_year;
 
-        return $this->current($referenceDate)->target_fiscal_year ?? $referenceDate->year;
+        if ($targetYear === null) {
+            return $referenceDate->year;
+        }
+
+        return max((int) $targetYear, $referenceDate->year);
     }
 
     /**
@@ -98,8 +114,9 @@ class LoanOperationalStateService
 
             $resolvedFiscalYear = $targetFiscalYear ?? match ($state) {
                 LoanOperationalState::CierreAnio => now()->year + 1,
-                default => $setting->exists && $setting->target_fiscal_year
-                    ? $setting->target_fiscal_year
+                LoanOperationalState::Activo => now()->year,
+                LoanOperationalState::TemporalmenteFueraDeServicio => $setting->exists && $setting->target_fiscal_year
+                    ? max((int) $setting->target_fiscal_year, now()->year)
                     : now()->year,
             };
 

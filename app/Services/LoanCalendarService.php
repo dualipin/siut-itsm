@@ -18,11 +18,13 @@ class LoanCalendarService
     }
 
     /**
-     * Get the payroll payment deadline for the given year (December 31, end of day).
+     * Get the payroll payment deadline for the given year (or active fiscal year if omitted).
      */
     public function paymentDeadline(?int $year = null): Carbon
     {
-        return Carbon::create($year ?? now()->year, 12, 31)->endOfDay();
+        $resolvedYear = $year ?? $this->stateService()->effectiveFiscalYear();
+
+        return Carbon::create($resolvedYear, 12, 31)->endOfDay();
     }
 
     /**
@@ -59,8 +61,8 @@ class LoanCalendarService
      * Get the list of eligible fortnights for nómina.
      * Must respect:
      * 1. Operational state is not TemporalmenteFueraDeServicio.
-     * 2. 20-day tolerance: candidate fortnight must be after now + 20 days.
-     * 3. Payment deadline: cannot exceed December 31 of current year.
+     * 2. Effective fiscal year boundaries (Jan 1 to Dec 31 of target fiscal year).
+     * 3. 20-day tolerance: candidate fortnight must be after max(today + 20 days, Jan 1 of target fiscal year).
      * 4. Fortnight days: 15th and the last real calendar day of each month.
      *
      * @return array<int, array{date: string, label: string, day: int, month: int, year: int}>
@@ -71,15 +73,24 @@ class LoanCalendarService
             return [];
         }
 
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $year = $date->year;
-        $paymentDeadline = $this->paymentDeadline($year);
+        $referenceDate = $date ? $date->copy()->startOfDay() : now()->startOfDay();
+        $fiscalYear = $this->stateService()->effectiveFiscalYear($referenceDate);
+        $paymentDeadline = $this->paymentDeadline($fiscalYear);
+        $fiscalYearStart = Carbon::create($fiscalYear, 1, 1)->startOfDay();
 
-        $minDate = $date->copy()->addDays(20);
+        $minDate = $referenceDate->copy()->addDays(20);
+        if ($minDate->lt($fiscalYearStart)) {
+            $minDate = $fiscalYearStart->copy();
+        }
+
         $result = [];
 
-        $current = $date->copy()->startOfMonth();
-        while ($current->year === $year && $current->month <= 12) {
+        $current = $referenceDate->copy()->startOfMonth();
+        if ($current->lt($fiscalYearStart)) {
+            $current = $fiscalYearStart->copy();
+        }
+
+        while ($current->year === $fiscalYear && $current->month <= 12) {
             // First fortnight: 15th
             $q1 = $current->copy()->setDay(15);
             if ($q1->isAfter($minDate) && $q1->lte($paymentDeadline)) {
@@ -112,8 +123,8 @@ class LoanCalendarService
     }
 
     /**
-     * Get active benefits eligible for loan payment in the current year.
-     * Only benefits whose collection date has not passed are returned.
+     * Get active benefits eligible for loan payment in the effective fiscal year.
+     * Only benefits whose collection date in the target fiscal year has not passed are returned.
      *
      * @return Collection<int, array{id: int, name: string, collection_date: string, collection_day: int, collection_month: int, calculation_method: string, requires_document: bool, document_instructions: ?string}>
      */
@@ -123,23 +134,23 @@ class LoanCalendarService
             return collect();
         }
 
-        $date = $date ? $date->copy()->startOfDay() : now()->startOfDay();
-        $year = $date->year;
+        $referenceDate = $date ? $date->copy()->startOfDay() : now()->startOfDay();
+        $fiscalYear = $this->stateService()->effectiveFiscalYear($referenceDate);
 
         return Benefit::active()
             ->orderBy('collection_month')
             ->orderBy('collection_day')
             ->get()
-            ->filter(function (Benefit $benefit) use ($date, $year) {
-                $collectionDate = $benefit->collectionDateForYear($year);
+            ->filter(function (Benefit $benefit) use ($referenceDate, $fiscalYear) {
+                $collectionDate = $benefit->collectionDateForYear($fiscalYear);
 
-                return $collectionDate->isAfter($date);
+                return $collectionDate->isAfter($referenceDate);
             })
-            ->map(function (Benefit $benefit) use ($year) {
+            ->map(function (Benefit $benefit) use ($fiscalYear) {
                 return [
                     'id' => $benefit->id,
                     'name' => $benefit->name,
-                    'collection_date' => $benefit->collectionDateForYear($year)->format('Y-m-d'),
+                    'collection_date' => $benefit->collectionDateForYear($fiscalYear)->format('Y-m-d'),
                     'collection_day' => $benefit->collection_day,
                     'collection_month' => $benefit->collection_month,
                     'calculation_method' => $benefit->calculation_method,

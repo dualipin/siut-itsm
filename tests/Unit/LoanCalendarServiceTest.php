@@ -171,3 +171,61 @@ it('calculates the completion date for k fortnights correctly', function () {
     $endMid2 = $this->calendar->calculateFortnightDate('2026-06-15', 2);
     expect($endMid2->format('Y-m-d'))->toBe('2026-06-30');
 });
+
+it('projects fortnights and benefits strictly to target fiscal year during Cierre de año and handles december 28 and january 1 transition', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $stateService = app(LoanOperationalStateService::class);
+
+    Benefit::factory()->create([
+        'name' => 'Día del Maestro',
+        'collection_month' => 5,
+        'collection_day' => 15,
+        'is_active' => true,
+    ]);
+    Benefit::factory()->create([
+        'name' => 'Aguinaldo',
+        'collection_month' => 12,
+        'collection_day' => 20,
+        'is_active' => true,
+    ]);
+
+    // 1. November 15, 2026 in Cierre de año (target 2027) -> excludes Dec 2026, projects all 24 fortnights & both benefits to 2027
+    Carbon::setTestNow('2026-11-15 10:00:00');
+    $stateService->updateState($admin, LoanOperationalState::CierreAnio);
+
+    $novFortnights = $this->calendar->getEligibleFortnights();
+    $novBenefits = $this->calendar->getEligibleBenefits();
+
+    expect($this->calendar->isApplicationWindowOpen())->toBeTrue()
+        ->and($this->calendar->paymentDeadline()->format('Y-m-d'))->toBe('2027-12-31')
+        ->and($novFortnights)->toHaveCount(24)
+        ->and($novFortnights[0]['date'])->toBe('2027-01-15')
+        ->and($novFortnights[23]['date'])->toBe('2027-12-31')
+        ->and($novBenefits->pluck('collection_date')->all())->toBe(['2027-05-15', '2027-12-20']);
+
+    // 2. December 15, 2026 in Cierre de año (target 2027) -> excludes 2026-12-20 Aguinaldo, starts at 2027-01-15
+    Carbon::setTestNow('2026-12-15 10:00:00');
+    $dec15Fortnights = $this->calendar->getEligibleFortnights();
+    $dec15Benefits = $this->calendar->getEligibleBenefits();
+
+    expect($dec15Fortnights)->toHaveCount(24)
+        ->and($dec15Fortnights[0]['date'])->toBe('2027-01-15')
+        ->and($dec15Benefits->pluck('collection_date')->all())->toBe(['2027-05-15', '2027-12-20']);
+
+    // 3. December 28, 2026 edge case (+20 days = 2027-01-17) -> skips 2027-01-15 and offers 2027-01-31
+    Carbon::setTestNow('2026-12-28 10:00:00');
+    $dec28Fortnights = $this->calendar->getEligibleFortnights();
+
+    expect($dec28Fortnights)->toHaveCount(23)
+        ->and($dec28Fortnights[0]['date'])->toBe('2027-01-31')
+        ->and($this->calendar->getFirstEligibleFortnight()?->format('Y-m-d'))->toBe('2027-01-31');
+
+    // 4. January 1, 2027 auto-transition -> Activo for 2027 (not 2028), first fortnight 2027-01-31
+    Carbon::setTestNow('2027-01-01 00:00:01');
+
+    expect($stateService->effectiveState())->toBe(LoanOperationalState::Activo)
+        ->and($stateService->effectiveFiscalYear())->toBe(2027)
+        ->and($this->calendar->paymentDeadline()->format('Y-m-d'))->toBe('2027-12-31')
+        ->and($this->calendar->getFirstEligibleFortnight()?->format('Y-m-d'))->toBe('2027-01-31')
+        ->and($this->calendar->getEligibleBenefits()->pluck('collection_date')->all())->toBe(['2027-05-15', '2027-12-20']);
+});

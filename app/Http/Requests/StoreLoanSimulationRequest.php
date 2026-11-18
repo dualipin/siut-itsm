@@ -26,9 +26,12 @@ class StoreLoanSimulationRequest extends FormRequest
         $hasNomina = in_array($paymentType, [LoanPaymentType::Nomina->value, LoanPaymentType::Mixed->value], true);
         $hasBenefits = in_array($paymentType, [LoanPaymentType::Benefit->value, LoanPaymentType::Mixed->value], true);
 
-        $paymentDeadline = $calendarService->paymentDeadline();
+        $fiscalYear = $operationalStateService->effectiveFiscalYear();
+        $fiscalYearStart = Carbon::create($fiscalYear, 1, 1)->startOfDay();
+        $paymentDeadline = $calendarService->paymentDeadline($fiscalYear);
         $decemberThirtyOne = $paymentDeadline->format('Y-m-d');
-        $minFirstFortnight = now()->addDays(20)->format('Y-m-d');
+        $twentyDaysDate = now()->startOfDay()->addDays(20);
+        $minFirstFortnight = ($twentyDaysDate->gt($fiscalYearStart) ? $twentyDaysDate : $fiscalYearStart)->format('Y-m-d');
         $firstEligibleFortnight = $calendarService->getFirstEligibleFortnight()?->format('Y-m-d');
 
         return [
@@ -106,7 +109,14 @@ class StoreLoanSimulationRequest extends FormRequest
                 Rule::exists('benefits', 'id')->where('is_active', true)->whereNull('deleted_at'),
             ],
             'benefits.*.amount' => [$hasBenefits ? 'required' : 'nullable', 'numeric', 'min:1'],
-            'benefits.*.collection_date' => [$hasBenefits ? 'required' : 'nullable', 'date', 'date_format:Y-m-d', 'after:today', 'before_or_equal:'.$decemberThirtyOne],
+            'benefits.*.collection_date' => [
+                $hasBenefits ? 'required' : 'nullable',
+                'date',
+                'date_format:Y-m-d',
+                'after:today',
+                'after_or_equal:'.$fiscalYearStart->format('Y-m-d'),
+                'before_or_equal:'.$decemberThirtyOne,
+            ],
         ];
     }
 
@@ -138,6 +148,7 @@ class StoreLoanSimulationRequest extends FormRequest
             'benefits.*.amount.min' => 'El monto por prestación debe ser mayor a cero.',
             'benefits.*.collection_date.required' => 'La fecha de cobro de la prestación es obligatoria.',
             'benefits.*.collection_date.after' => 'La fecha de cobro de la prestación debe ser posterior a hoy.',
+            'benefits.*.collection_date.after_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal vigente.',
             'benefits.*.collection_date.before_or_equal' => 'La fecha de cobro de la prestación debe corresponder al ejercicio fiscal en curso.',
         ];
     }

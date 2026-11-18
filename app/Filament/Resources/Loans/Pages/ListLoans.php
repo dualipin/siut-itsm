@@ -68,13 +68,18 @@ class ListLoans extends ListRecords
                     Select::make('state')
                         ->label('Estado operativo')
                         ->options(LoanOperationalState::class)
-                        ->default(fn (): string => $stateService->current()->state->value)
+                        ->default(fn (): string => $stateService->effectiveState()->value)
                         ->live()
                         ->required(),
 
                     Placeholder::make('cierre_anio_preview')
-                        ->label('Año fiscal destino')
-                        ->content(fn (): string => 'Al activar Cierre de año, el año fiscal objetivo se fijará automáticamente en '.(now()->year + 1).'.')
+                        ->label('Año fiscal destino (fijado automáticamente)')
+                        ->content(fn (): string => sprintf(
+                            'Al activar Cierre de año, el ejercicio %d quedará cerrado y el año fiscal objetivo se fijará automáticamente en %d (sin captura manual). Todas las nuevas simulaciones y operaciones aplicarán al ejercicio %d.',
+                            now()->year,
+                            now()->year + 1,
+                            now()->year + 1,
+                        ))
                         ->visible(function (Get $get): bool {
                             $state = $get('state');
                             $value = $state instanceof LoanOperationalState ? $state->value : $state;
