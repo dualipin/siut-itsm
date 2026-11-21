@@ -9,36 +9,41 @@ class TransparencyRecordPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function view(User $user, TransparencyRecord $record): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function create(User $user): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function update(User $user, TransparencyRecord $record): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function delete(User $user, TransparencyRecord $record): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function restore(User $user, TransparencyRecord $record): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
     }
 
     public function forceDelete(User $user, TransparencyRecord $record): bool
     {
-        return $user->isLeaderOrAdmin();
+        return $this->isActiveDirectiva($user);
+    }
+
+    private function isActiveDirectiva(User $user): bool
+    {
+        return (bool) $user->is_active && $user->isLeaderOrAdmin();
     }
 }

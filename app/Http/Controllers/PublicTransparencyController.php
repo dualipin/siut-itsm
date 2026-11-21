@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
-use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PublicTransparencyController extends Controller
@@ -23,22 +23,18 @@ class PublicTransparencyController extends Controller
             abort(404, 'Tipo de registro de transparencia no encontrado.');
         }
 
-        // Fetch all transparency records of the specified type.
-        // We fetch ALL records regardless of status because the user requested:
-        // "se van a mostrar todas pero no se podran acceder a las que no sean publicas"
+        // ADR-0001: list both Publico and Interno records; download links render only for Publico.
         $records = TransparencyRecord::query()
             ->where('type', $typeEnum)
-            ->with(['documents' => function ($query) {
-                $query->orderBy('published_at', 'desc')->orderBy('name', 'asc');
-            }])
+            ->with('media')
             ->orderBy('fiscal_year', 'desc')
+            ->orderBy('document_date', 'desc')
             ->orderBy('period', 'asc')
             ->orderBy('name', 'asc')
             ->get();
 
-        // Group records by fiscal_year and then by period
         $groupedRecords = $records->groupBy('fiscal_year')->map(function ($yearRecords) {
-            return $yearRecords->groupBy('period');
+            return $yearRecords->groupBy(fn (TransparencyRecord $record): string => $record->period ?: 'General');
         });
 
         $availableYears = $records->pluck('fiscal_year')->unique()->sortDesc()->values();
@@ -52,23 +48,31 @@ class PublicTransparencyController extends Controller
     }
 
     /**
-     * Securely download a public document of a public transparency record.
+     * Securely download a media file belonging to a public transparency record.
      */
-    public function download(TransparencyDocument $document): BinaryFileResponse
+    public function download(TransparencyRecord $record, Media $media): BinaryFileResponse
     {
-        // Enforce safety checks:
-        // 1. The document must be public (is_public = true)
-        // 2. The associated record must be published (status = TransparencyRecordStatus::Publicado)
-        if (! $document->is_public || ! $document->record || ! $document->record->isPublished()) {
-            abort(403, 'Acceso denegado: este documento no es público o el registro asociado no ha sido publicado.');
+        if (! $record->isPublic()
+            || $media->model_type !== TransparencyRecord::class
+            || (int) $media->model_id !== (int) $record->getKey()
+            || $media->collection_name !== 'documents') {
+            abort(403, 'Acceso denegado: este documento no está disponible para descarga pública.');
         }
 
-        $media = $document->getFirstMedia('file');
+        $path = $media->getPath();
 
-        if ($media === null) {
+        if (! is_file($path)) {
             abort(404, 'Archivo no encontrado.');
         }
 
-        return response()->download($media->getPath(), $media->file_name);
+        $downloadName = $media->file_name;
+
+        if ($record->getMedia('documents')->count() === 1) {
+            $extension = pathinfo($media->file_name, PATHINFO_EXTENSION);
+            $slugName = Str::slug($record->name) ?: 'documento';
+            $downloadName = $extension !== '' ? "{$slugName}.{$extension}" : $slugName;
+        }
+
+        return response()->download($path, $downloadName);
     }
 }

@@ -7,84 +7,117 @@ use Filament\Support\Contracts\HasLabel;
 
 enum TransparencyRecordType: string implements HasColor, HasLabel
 {
-    case FINANCIERO = 'FINANCIERO';
-    case ADMINISTRATIVO = 'ADMINISTRATIVO';
-    case LEGAL = 'LEGAL';
-    case SINDICAL = 'SINDICAL';
-    case GESTORIA = 'GESTORIA';
-    case GREMIALES = 'GREMIALES';
-    case TRAMITES = 'TRAMITES';
-    case MINUTAS = 'MINUTAS';
-    case OTRO = 'OTRO';
+    case Financiero = 'financiero';
+    case Oficios = 'oficios';
+    case Actas = 'actas';
+    case Legal = 'legal';
+    case Otros = 'otros';
 
     public function getLabel(): ?string
     {
         return match ($this) {
-            self::FINANCIERO => 'Financiero',
-            self::ADMINISTRATIVO => 'Administrativo',
-            self::LEGAL => 'Legal',
-            self::SINDICAL => 'Sindical',
-            self::GESTORIA => 'Gestoría',
-            self::GREMIALES => 'Gremiales',
-            self::TRAMITES => 'Trámites',
-            self::MINUTAS => 'Minutas',
-            self::OTRO => 'Otro',
+            self::Financiero => 'Financiero',
+            self::Oficios => 'Oficios y Gestiones',
+            self::Actas => 'Actas y Minutas',
+            self::Legal => 'Normativo y Legal',
+            self::Otros => 'Otros',
         };
     }
 
     public function getColor(): string|array|null
     {
         return match ($this) {
-            self::FINANCIERO => 'success',
-            self::ADMINISTRATIVO => 'info',
-            self::LEGAL => 'warning',
-            self::SINDICAL => 'primary',
-            self::GESTORIA => 'secondary',
-            self::GREMIALES => 'danger',
-            self::TRAMITES => 'warning',
-            self::MINUTAS => 'info',
-            self::OTRO => 'gray',
+            self::Financiero => 'success',
+            self::Oficios => 'info',
+            self::Actas => 'primary',
+            self::Legal => 'warning',
+            self::Otros => 'gray',
         };
     }
 
     public function getSlug(): string
     {
-        return strtolower($this->value);
+        return $this->value;
     }
 
     public function getDescription(): string
     {
         return match ($this) {
-            self::FINANCIERO => 'Consulta los balances contables, presupuestos de operación anuales y dictámenes de egresos del sindicato.',
-            self::ADMINISTRATIVO => 'Consulta documentos de gestión interna, acuerdos administrativos y comunicados institucionales.',
-            self::LEGAL => 'Consulta los convenios jurídicos, acuerdos legales y resoluciones normativas de la organización.',
-            self::SINDICAL => 'Consulta acuerdos estatutarios, resoluciones de la directiva y actas de la vida sindical.',
-            self::GESTORIA => 'Consulta trámites, solicitudes e informes de gestoría sindical realizados en favor de los agremiados.',
-            self::GREMIALES => 'Consulta información sobre convenios gremiales, acuerdos colectivos y beneficios para los trabajadores.',
-            self::TRAMITES => 'Consulta guías, solicitudes y formatos para la realización de trámites y gestiones sindicales.',
-            self::MINUTAS => 'Consulta las actas oficiales, minutas y resoluciones emanadas de nuestras asambleas y sesiones de comité.',
-            self::OTRO => 'Consulta otros documentos informativos, archivos históricos y de transparencia general de la organización.',
+            self::Financiero => 'Balances contables, presupuestos de operación, estados financieros y reportes periódicos del sindicato.',
+            self::Oficios => 'Oficios enviados y recibidos, gestiones institucionales, solicitudes y correspondencia sindical.',
+            self::Actas => 'Actas oficiales, minutas y acuerdos emanados de asambleas y sesiones del comité.',
+            self::Legal => 'Estatutos, reglamentos, convenios colectivos, contratos y resoluciones normativas.',
+            self::Otros => 'Documentos informativos, memorias históricas y archivo general de transparencia.',
         };
     }
 
     public function getIcon(): string
     {
         return match ($this) {
-            self::FINANCIERO => 'bi-cash-coin',
-            self::ADMINISTRATIVO => 'bi-building-gear',
-            self::LEGAL => 'bi-file-earmark-ruled',
-            self::SINDICAL => 'bi-people',
-            self::GESTORIA => 'bi-briefcase',
-            self::GREMIALES => 'bi-diagram-3',
-            self::TRAMITES => 'bi-clipboard-check',
-            self::MINUTAS => 'bi-file-earmark-check',
-            self::OTRO => 'bi-folder2-open',
+            self::Financiero => 'bi-cash-coin',
+            self::Oficios => 'bi-briefcase',
+            self::Actas => 'bi-file-earmark-check',
+            self::Legal => 'bi-file-earmark-ruled',
+            self::Otros => 'bi-folder2-open',
         };
+    }
+
+    public function usesPeriod(): bool
+    {
+        return $this === self::Financiero;
+    }
+
+    public function usesDocumentDate(): bool
+    {
+        return $this !== self::Financiero;
+    }
+
+    public function usesFolio(): bool
+    {
+        return in_array($this, [self::Oficios, self::Actas, self::Legal], true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function allowedExtensions(): array
+    {
+        $base = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+
+        if ($this === self::Financiero) {
+            return [...$base, 'xlsx', 'xls', 'csv'];
+        }
+
+        return $base;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function allowedMimeTypes(): array
+    {
+        $base = [
+            'application/pdf',
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+        ];
+
+        if ($this === self::Financiero) {
+            return [
+                ...$base,
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-excel',
+                'text/csv',
+                'application/csv',
+            ];
+        }
+
+        return $base;
     }
 
     public static function fromSlug(string $slug): ?self
     {
-        return self::tryFrom(strtoupper(trim($slug)))
-            ?? self::tryFrom(trim($slug));
+        return self::tryFrom(strtolower(trim($slug)));
     }
 }

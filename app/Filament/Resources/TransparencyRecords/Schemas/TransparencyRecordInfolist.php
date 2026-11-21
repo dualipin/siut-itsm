@@ -5,6 +5,7 @@ namespace App\Filament\Resources\TransparencyRecords\Schemas;
 use App\Models\TransparencyRecord;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class TransparencyRecordInfolist
 {
@@ -12,24 +13,46 @@ class TransparencyRecordInfolist
     {
         return $schema
             ->components([
-                TextEntry::make('name')->label('Nombre'),
+                TextEntry::make('name')->label('Nombre / Asunto'),
+                TextEntry::make('reference_number')
+                    ->label('Folio')
+                    ->placeholder('-'),
                 TextEntry::make('summary')
-                    ->label('Resumen')
+                    ->label('Descripción breve')
                     ->placeholder('-')
                     ->columnSpanFull(),
                 TextEntry::make('fiscal_year')
                     ->label('Año Fiscal')
                     ->numeric(thousandsSeparator: false),
-                TextEntry::make('period')->label('Periodo'),
+                TextEntry::make('period')
+                    ->label('Periodo')
+                    ->placeholder('-'),
+                TextEntry::make('document_date')
+                    ->label('Fecha del Documento')
+                    ->date()
+                    ->placeholder('-'),
                 TextEntry::make('type')
-                    ->label('Tipo')
+                    ->label('Categoría')
                     ->badge(),
                 TextEntry::make('status')
-                    ->label('Estado')
+                    ->label('Visibilidad')
                     ->badge(),
                 TextEntry::make('observations')
-                    ->label('Observaciones')
+                    ->label('Motivo de acceso interno')
                     ->placeholder('Ninguna')
+                    ->columnSpanFull(),
+                TextEntry::make('documents_list')
+                    ->label('Documentos Adjuntos')
+                    ->state(fn (TransparencyRecord $record): array => $record->getMedia('documents')
+                        ->map(fn (Media $media): string => sprintf(
+                            '<a href="%s" target="_blank" class="text-primary-600 hover:underline">%s</a>',
+                            e(route('portal.transparency.documents.show', ['record' => $record, 'media' => $media])),
+                            e($media->file_name)
+                        ))
+                        ->all())
+                    ->html()
+                    ->listWithLineBreaks()
+                    ->placeholder('Sin documentos adjuntos')
                     ->columnSpanFull(),
                 TextEntry::make('creator.full_name')
                     ->label('Creado por')
