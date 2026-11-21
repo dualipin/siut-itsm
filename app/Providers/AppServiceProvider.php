@@ -47,6 +47,10 @@ class AppServiceProvider extends ServiceProvider
             return null;
         });
 
+        if (config('livewire.temporary_file_upload.rules') === null) {
+            config()->set('livewire.temporary_file_upload.rules', ['required', 'file', 'max:20480']);
+        }
+
         // Prevenir ErrorException "Undefined array key 'children'" en Livewire
         // cuando un snapshot llega sin la clave 'children' en el memo (bug en SupportNestingComponents)
         if (function_exists('Livewire\on')) {

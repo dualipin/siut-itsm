@@ -120,4 +120,36 @@ enum TransparencyRecordType: string implements HasColor, HasLabel
     {
         return self::tryFrom(strtolower(trim($slug)));
     }
+
+    /**
+     * Closed list of financial period options.
+     *
+     * @return array<string, string>
+     */
+    public static function periodOptions(): array
+    {
+        $periods = [
+            'Anual',
+            '1er Trimestre',
+            '2do Trimestre',
+            '3er Trimestre',
+            '4to Trimestre',
+            '1er Semestre',
+            '2do Semestre',
+            'Enero',
+            'Febrero',
+            'Marzo',
+            'Abril',
+            'Mayo',
+            'Junio',
+            'Julio',
+            'Agosto',
+            'Septiembre',
+            'Octubre',
+            'Noviembre',
+            'Diciembre',
+        ];
+
+        return array_combine($periods, $periods);
+    }
 }
