@@ -7,28 +7,30 @@ use Filament\Support\Contracts\HasLabel;
 
 enum TransparencyRecordStatus: string implements HasColor, HasLabel
 {
-    case Borrador = 'borrador';
-    case Revision = 'revision';
-    case Publicado = 'publicado';
-    case Archivado = 'archivado';
+    case Interno = 'interno';
+    case Publico = 'publico';
 
     public function getLabel(): ?string
     {
         return match ($this) {
-            self::Borrador => 'Borrador',
-            self::Revision => 'En Revisión',
-            self::Publicado => 'Publicado',
-            self::Archivado => 'Archivado',
+            self::Interno => 'Consulta Interna',
+            self::Publico => 'Público',
         };
     }
 
     public function getColor(): string|array|null
     {
         return match ($this) {
-            self::Borrador => 'gray',
-            self::Revision => 'warning',
-            self::Publicado => 'success',
-            self::Archivado => 'danger',
+            self::Interno => 'warning',
+            self::Publico => 'success',
+        };
+    }
+
+    public function getDescription(): string
+    {
+        return match ($this) {
+            self::Interno => 'El registro aparece listado en el portal, pero sus archivos quedan bloqueados al público y solo la Directiva puede consultarlos.',
+            self::Publico => 'El registro aparece listado en el portal y cualquier visitante puede descargar sus archivos adjuntos.',
         };
     }
 }

@@ -9,7 +9,6 @@ use App\Models\ConversationParticipant;
 use App\Models\Loan;
 use App\Models\LoanEvidence;
 use App\Models\LoanGeneratedDocument;
-use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Filament\Facades\Filament;
@@ -36,19 +35,12 @@ test('inactive user cannot access the panel and is blocked across all download e
     $this->get('/portal')->assertForbidden();
 
     // Transparency documents download
-    $record = TransparencyRecord::factory()->published()->create();
-    $doc = TransparencyDocument::create([
-        'transparency_record_id' => $record->id,
-        'name' => 'Doc Inactivo',
-        'published_at' => now(),
-        'is_public' => true,
-        'uploaded_by' => $inactiveUser->id,
-    ]);
-    $doc->addMedia(UploadedFile::fake()->createWithContent('file.pdf', '%PDF-1.4'))
+    $record = TransparencyRecord::factory()->publico()->create();
+    $media = $record->addMedia(UploadedFile::fake()->createWithContent('file.pdf', '%PDF-1.4'))
         ->setFileName('file.pdf')
-        ->toMediaCollection('file');
+        ->toMediaCollection('documents');
 
-    $this->get(route('portal.transparency.documents.show', $doc))->assertForbidden();
+    $this->get(route('portal.transparency.documents.show', ['record' => $record, 'media' => $media]))->assertForbidden();
 
     // User affiliation document
     $this->get(route('portal.users.documents.show', ['user' => $inactiveUser, 'type' => UserDocumentType::Afiliacion->value]))

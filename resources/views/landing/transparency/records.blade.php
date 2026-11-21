@@ -27,7 +27,7 @@
         <div class="alert bg-base-200 border-base-300 rounded-2xl mb-8 flex items-start gap-3 shadow-xs animate-fade-in-up">
             <i class="bi bi-info-circle text-primary text-lg mt-0.5 shrink-0"></i>
             <div class="text-xs sm:text-sm leading-relaxed text-base-content/80">
-               En cumplimiento de nuestras políticas de transparencia, listamos la totalidad de los registros organizacionales en esta categoría. No obstante, el acceso y descarga directa de los archivos adjuntos queda estrictamente limitado a aquellos registros que hayan sido formalmente autorizados y declarados como <strong>Publicados</strong>.
+               En cumplimiento de nuestras políticas de transparencia, listamos la totalidad de los registros organizacionales en esta categoría. No obstante, el acceso y descarga directa de los archivos adjuntos queda estrictamente limitado a aquellos registros declarados como <strong>Público</strong>.
             </div>
         </div>
 
@@ -79,10 +79,10 @@
                                                                 {{ $record->name }}
                                                             </h3>
                                                             <!-- Badge de Estado de Transparencia -->
-                                                            @if($record->isPublished())
+                                                            @if($record->isPublic())
                                                                 <span class="badge badge-xs badge-success gap-1 font-semibold py-1.5 px-2 rounded-lg">
                                                                     <span class="w-1.5 h-1.5 rounded-full bg-success-content animate-pulse"></span>
-                                                                    Publicado
+                                                                    {{ $record->status->getLabel() }}
                                                                 </span>
                                                             @else
                                                                 <span class="badge badge-xs badge-neutral/20 text-base-content/60 border-0 gap-1 font-semibold py-1.5 px-2 rounded-lg">
@@ -108,29 +108,24 @@
 
                                                     <!-- Botón de Descarga / Estado Cerrado -->
                                                     <div class="flex flex-col items-start md:items-end justify-center shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-base-200">
-                                                        @if($record->isPublished())
-                                                            @if($record->documents->count() > 0)
+                                                        @if($record->isPublic())
+                                                            @php($documents = $record->getMedia('documents'))
+                                                            @if($documents->count() > 0)
                                                                 <div class="space-y-2 w-full md:w-auto">
-                                                                    @foreach($record->documents as $document)
+                                                                    @foreach($documents as $media)
                                                                         <div class="flex items-center justify-between gap-3 text-xs">
-                                                                            <span class="text-base-content/70 truncate max-w-48 font-medium" title="{{ $document->name }}">
-                                                                                <i class="bi bi-file-earmark-pdf text-red-500 mr-1"></i>
-                                                                                {{ $document->name }}
-                                                                            </span>
-                                                                            @if($document->is_public)
-                                                                                <a href="{{ route('transparency.documents.download', $document) }}" 
-                                                                                   class="btn btn-xs btn-primary rounded-lg gap-1.5 shadow-2xs font-medium"
-                                                                                   title="Descargar archivo">
-                                                                                    <i class="bi bi-arrow-down-tray"></i>
-                                                                                    Descargar
-                                                                                </a>
-                                                                            @else
-                                                                                <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-base-content/40 bg-base-200 py-1 px-2 rounded-lg"
-                                                                                      title="Documento de acceso interno o confidencial">
-                                                                                    <i class="bi bi-lock-fill"></i>
-                                                                                    Restringido
+                                                                            @if($documents->count() > 1)
+                                                                                <span class="text-base-content/70 truncate max-w-48 font-medium" title="{{ $media->file_name }}">
+                                                                                    <i class="bi bi-file-earmark-pdf text-red-500 mr-1"></i>
+                                                                                    {{ $media->file_name }}
                                                                                 </span>
                                                                             @endif
+                                                                            <a href="{{ route('transparency.documents.download', [$record, $media]) }}"
+                                                                               class="btn btn-xs btn-primary rounded-lg gap-1.5 shadow-2xs font-medium"
+                                                                               title="Descargar archivo">
+                                                                                <i class="bi bi-arrow-down-tray"></i>
+                                                                                {{ $documents->count() === 1 ? 'Descargar documento' : 'Descargar' }}
+                                                                            </a>
                                                                         </div>
                                                                     @endforeach
                                                                 </div>

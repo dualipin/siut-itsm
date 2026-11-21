@@ -18,6 +18,10 @@ class TransparencyRecordsTable
     {
         return $table
             ->columns([
+                TextColumn::make('reference_number')
+                    ->label('Folio')
+                    ->placeholder('-')
+                    ->searchable(),
                 TextColumn::make('name')
                     ->label('Nombre')
                     ->searchable(),
@@ -27,17 +31,23 @@ class TransparencyRecordsTable
                     ->sortable(),
                 TextColumn::make('period')
                     ->label('Periodo')
+                    ->placeholder('-')
                     ->searchable(),
+                TextColumn::make('document_date')
+                    ->label('Fecha del Documento')
+                    ->date()
+                    ->placeholder('-')
+                    ->sortable(),
                 TextColumn::make('type')
-                    ->label('Tipo')
+                    ->label('Categoría')
                     ->badge()
                     ->searchable(),
                 TextColumn::make('status')
-                    ->label('Estado')
+                    ->label('Visibilidad')
                     ->badge()
                     ->searchable(),
-                TextColumn::make('documents_count')
-                    ->counts('documents')
+                TextColumn::make('media_count')
+                    ->counts('media')
                     ->label('Documentos')
                     ->badge()
                     ->color('info')

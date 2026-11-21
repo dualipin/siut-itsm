@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
-use App\Models\TransparencyDocument;
 use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -17,8 +16,7 @@ class TransparencyRecordSeeder extends Seeder
      */
     public function run(): void
     {
-        $users = User::all();
-        $admin = $users->first() ?? User::factory()->create();
+        $admin = User::query()->first() ?? User::factory()->create();
 
         $recordsData = [
             [
@@ -26,88 +24,71 @@ class TransparencyRecordSeeder extends Seeder
                 'summary' => 'Detalle pormenorizado de los ingresos por cuotas gremiales y gastos operativos del primer trimestre.',
                 'fiscal_year' => 2025,
                 'period' => '1er Trimestre',
-                'type' => TransparencyRecordType::FINANCIERO,
-                'status' => TransparencyRecordStatus::Publicado,
+                'document_date' => null,
+                'reference_number' => null,
+                'type' => TransparencyRecordType::Financiero,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
                 'name' => 'Informe Financiero Segundo Trimestre 2025',
                 'summary' => 'Informe consolidado de egresos, fondos de resistencia y actividades sindicales del periodo.',
                 'fiscal_year' => 2025,
                 'period' => '2do Trimestre',
-                'type' => TransparencyRecordType::FINANCIERO,
-                'status' => TransparencyRecordStatus::Publicado,
+                'document_date' => null,
+                'reference_number' => null,
+                'type' => TransparencyRecordType::Financiero,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
-                'name' => 'Convenio Colectivo de Trabajo Revisión Salarial 2025-2027',
-                'summary' => 'Acuerdo signado con la directiva institucional referente a incrementos y condiciones laborales.',
+                'name' => 'Oficio de Gestión Salarial ante Dirección General',
+                'summary' => 'Solicitud formal de revisión y ajuste de prestaciones económicas para el personal sindicalizado.',
                 'fiscal_year' => 2025,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::LEGAL,
-                'status' => TransparencyRecordStatus::Publicado,
-            ],
-            [
-                'name' => 'Estatuto y Normativa Administrativa Interna Vigente',
-                'summary' => 'Disposiciones y lineamientos administrativos que rigen el funcionamiento del sindicato.',
-                'fiscal_year' => 2024,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::ADMINISTRATIVO,
-                'status' => TransparencyRecordStatus::Publicado,
+                'period' => null,
+                'document_date' => '2025-03-18',
+                'reference_number' => 'SIUT-ITSM/018/2025',
+                'type' => TransparencyRecordType::Oficios,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
                 'name' => 'Acta de Asamblea General Ordinaria Diciembre 2025',
                 'summary' => 'Resolutivos y acuerdos tomados durante la asamblea ordinaria de fin de año.',
                 'fiscal_year' => 2025,
-                'period' => '4to Trimestre',
-                'type' => TransparencyRecordType::MINUTAS,
-                'status' => TransparencyRecordStatus::Publicado,
+                'period' => null,
+                'document_date' => '2025-12-10',
+                'reference_number' => 'ACTA-AGO/2025-04',
+                'type' => TransparencyRecordType::Actas,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
-                'name' => 'Informe de Gestoría de Trámites y Asesorías 2025',
-                'summary' => 'Relación de gestiones realizadas ante la institución y dependencias correspondientes.',
+                'name' => 'Convenio Colectivo de Trabajo Revisión Salarial 2025-2027',
+                'summary' => 'Acuerdo signado con la directiva institucional referente a incrementos y condiciones laborales.',
                 'fiscal_year' => 2025,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::GESTORIA,
-                'status' => TransparencyRecordStatus::Publicado,
-            ],
-            [
-                'name' => 'Padrón e Informe de Actividades Gremiales 2025',
-                'summary' => 'Registro de afiliados e informe de eventos y actividades gremiales organizadas.',
-                'fiscal_year' => 2025,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::GREMIALES,
-                'status' => TransparencyRecordStatus::Publicado,
-            ],
-            [
-                'name' => 'Guía de Trámites y Servicios Sindicales 2025',
-                'summary' => 'Procedimientos, requisitos y plazos para la solicitud de prestaciones y trámites.',
-                'fiscal_year' => 2025,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::TRAMITES,
-                'status' => TransparencyRecordStatus::Publicado,
-            ],
-            [
-                'name' => 'Resoluciones del Pleno del Comité Sindical 2025',
-                'summary' => 'Acuerdos tomados por el órgano directivo en torno a las peticiones gremiales.',
-                'fiscal_year' => 2025,
-                'period' => '3er Trimestre',
-                'type' => TransparencyRecordType::SINDICAL,
-                'status' => TransparencyRecordStatus::Publicado,
+                'period' => null,
+                'document_date' => '2025-02-01',
+                'reference_number' => 'CCT-2025-2027',
+                'type' => TransparencyRecordType::Legal,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
                 'name' => 'Memoria Histórica y Fotográfica Institucional',
                 'summary' => 'Recopilación documental de aniversarios, eventos y vida institucional.',
                 'fiscal_year' => 2024,
-                'period' => 'Anual',
-                'type' => TransparencyRecordType::OTRO,
-                'status' => TransparencyRecordStatus::Publicado,
+                'period' => null,
+                'document_date' => '2024-11-15',
+                'reference_number' => null,
+                'type' => TransparencyRecordType::Otros,
+                'status' => TransparencyRecordStatus::Publico,
             ],
             [
-                'name' => 'Informe Financiero Cuarto Trimestre 2025 (En Revisión)',
-                'summary' => 'Borrador de balance y arqueo de caja pendiente de dictamen contable.',
+                'name' => 'Oficio de Comisión Interna con Datos Personales',
+                'summary' => 'Correspondencia interna relativa a situación laboral individual.',
                 'fiscal_year' => 2025,
-                'period' => '4to Trimestre',
-                'type' => TransparencyRecordType::FINANCIERO,
-                'status' => TransparencyRecordStatus::Revision,
+                'period' => null,
+                'document_date' => '2025-06-05',
+                'reference_number' => 'SIUT-ITSM/042/2025',
+                'observations' => 'Contiene datos personales de agremiados.',
+                'type' => TransparencyRecordType::Oficios,
+                'status' => TransparencyRecordStatus::Interno,
             ],
         ];
 
@@ -117,33 +98,24 @@ class TransparencyRecordSeeder extends Seeder
                 'created_by' => $admin->id,
             ]);
 
-            // Generar 1 a 3 documentos por registro
-            $count = fake()->numberBetween(1, 3);
+            $count = fake()->numberBetween(1, 2);
             for ($i = 0; $i < $count; $i++) {
-                $extension = fake()->randomElement(['pdf', 'xlsx', 'docx']);
-                $docName = fake()->words(3, true);
-                $fileName = fake()->word().'.'.$extension;
-                $file = UploadedFile::fake()->createWithContent($fileName, 'Contenido de prueba');
+                $extension = $record->type === TransparencyRecordType::Financiero
+                    ? fake()->randomElement(['pdf', 'xlsx'])
+                    : 'pdf';
+                $fileName = fake()->unique()->slug(2).'.'.$extension;
+                $file = UploadedFile::fake()->createWithContent($fileName, '%PDF-1.4 Contenido de prueba');
 
-                $document = TransparencyDocument::query()->create([
-                    'transparency_record_id' => $record->id,
-                    'name' => $docName,
-                    'published_at' => now()->subDays(fake()->numberBetween(1, 30)),
-                    'is_public' => $record->status === TransparencyRecordStatus::Publicado,
-                    'uploaded_by' => $admin->id,
-                ]);
-
-                $document->addMedia($file)
-                    ->setName($docName)
+                $record->addMedia($file)
+                    ->setName($record->name)
                     ->setFileName($fileName)
-                    ->toMediaCollection('file');
+                    ->toMediaCollection('documents');
             }
         }
 
-        // Generar registros adicionales variados vía factory
         TransparencyRecord::factory()
-            ->count(12)
-            ->withDocuments(fake()->numberBetween(1, 2))
+            ->count(8)
+            ->withDocuments(1)
             ->create([
                 'created_by' => $admin->id,
             ]);
