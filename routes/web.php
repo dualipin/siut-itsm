@@ -5,6 +5,7 @@ use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\MessageAttachmentController;
 use App\Http\Controllers\PublicPetitionController;
 use App\Http\Controllers\TransparencyDocumentController;
+use App\Http\Controllers\UserBulkImportController;
 use App\Http\Controllers\UserDocumentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -19,6 +20,16 @@ Route::middleware(['web', 'auth'])->group(function () {
 
     Route::get('/portal/users/{user}/documents/{type}', [UserDocumentController::class, 'show'])
         ->name('portal.users.documents.show');
+
+    Route::post('/portal/users/import/chunk', [UserBulkImportController::class, 'storeChunk'])
+        ->name('portal.users.import.chunk');
+
+    Route::post('/portal/users/import/process', [UserBulkImportController::class, 'processBatch'])
+        ->name('portal.users.import.process');
+
+    Route::delete('/portal/users/import/{batchId}', [UserBulkImportController::class, 'cleanup'])
+        ->where('batchId', '[a-zA-Z0-9_-]+')
+        ->name('portal.users.import.cleanup');
 
     Route::get('/portal/transparency-documents/{document}', [TransparencyDocumentController::class, 'show'])
         ->name('portal.transparency.documents.show');

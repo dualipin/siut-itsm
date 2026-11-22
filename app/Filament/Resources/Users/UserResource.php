@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Users;
 
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
+use App\Filament\Resources\Users\Pages\ImportUsers;
 use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Filament\Resources\Users\Pages\ReviewDocuments;
 use App\Filament\Resources\Users\Schemas\UserForm;
@@ -56,6 +57,7 @@ class UserResource extends Resource
         return [
             'index' => ListUsers::route('/'),
             'create' => CreateUser::route('/create'),
+            'import' => ImportUsers::route('/import'),
             'edit' => EditUser::route('/{record}/edit'),
             'review-documents' => ReviewDocuments::route('/{record}/review-documents'),
         ];
