@@ -29,11 +29,15 @@ class UserDocumentController extends Controller
             'No tienes autorización para consultar este documento.'
         );
 
-        $documentType = UserDocumentType::tryFrom($type);
+        if ($type === User::INE_BACK_COLLECTION) {
+            $media = $user->getIneBackMedia();
+        } else {
+            $documentType = UserDocumentType::tryFrom($type);
 
-        abort_unless($documentType !== null, 404, 'Tipo de documento no válido.');
+            abort_unless($documentType !== null, 404, 'Tipo de documento no válido.');
 
-        $media = $user->getDocumentMedia($documentType);
+            $media = $user->getDocumentMedia($documentType);
+        }
 
         abort_unless($media !== null, 404, 'El documento solicitado no ha sido subido.');
 

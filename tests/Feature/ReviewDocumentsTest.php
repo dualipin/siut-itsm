@@ -163,3 +163,34 @@ test('review documents page orders navigation by name and handles null surnames'
         ->assertSeeHtml(UserResource::getUrl('review-documents', ['record' => $firstUser]))
         ->assertSeeHtml(UserResource::getUrl('review-documents', ['record' => $thirdUser]));
 });
+
+test('approving or rejecting INE syncs status to complementary ine_reverso media', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create([
+        'role' => UserRole::Agremiado,
+    ]);
+
+    $user->addMedia(UploadedFile::fake()->image('ine-front.jpg', 600, 400))
+        ->toMediaCollection(UserDocumentType::Ine->value);
+    $user->addMedia(UploadedFile::fake()->image('ine-back.jpg', 600, 400))
+        ->toMediaCollection(User::INE_BACK_COLLECTION);
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->assertSee('Parte Frontal')
+        ->assertSee('Parte Posterior (Reverso)')
+        ->callAction('approveDocument', arguments: ['type' => UserDocumentType::Ine->value]);
+
+    $user->refresh();
+    expect($user->getDocumentStatus(UserDocumentType::Ine))->toBe(DocumentStatus::Valid)
+        ->and($user->getIneBackMedia()?->getCustomProperty('status'))->toBe(DocumentStatus::Valid->value);
+
+    Livewire::test(ReviewDocuments::class, ['record' => $user->getRouteKey()])
+        ->callAction('rejectDocument', data: [
+            'rejection_reason' => 'Reverso borroso.',
+        ], arguments: ['type' => UserDocumentType::Ine->value]);
+
+    $user->refresh();
+    expect($user->getIneBackMedia()?->getCustomProperty('status'))->toBe(DocumentStatus::Invalid->value)
+        ->and($user->getIneBackMedia()?->getCustomProperty('rejection_reason'))->toBe('Reverso borroso.');
+});

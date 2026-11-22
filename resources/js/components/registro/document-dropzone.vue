@@ -11,7 +11,7 @@ import {
     Loader2
 } from '@lucide/vue'
 
-export type DocumentKind = 'ine' | 'nomina' | 'photo'
+export type DocumentKind = 'ine' | 'ine_reverso' | 'nomina' | 'photo'
 
 export interface UploadedDocState {
     kind: DocumentKind
@@ -205,7 +205,7 @@ function formatBytes(bytes: number): string {
                 <!-- Success -->
                 <div v-if="state.aiStatus === 'success'" class="badge badge-success badge-sm gap-1 font-medium max-w-full">
                     <CheckCircle2 class="size-3.5 shrink-0" />
-                    <span class="truncate">Datos leídos por IA</span>
+                    <span class="truncate">{{ kind === 'ine_reverso' ? 'Reverso verificado por IA' : 'Verificado y leído por IA' }}</span>
                 </div>
 
                 <!-- Warning (e.g. vigencia/fecha) -->

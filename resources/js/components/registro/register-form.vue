@@ -6,7 +6,7 @@ import CredentialPreview from './credential-preview.vue'
 import StepDocuments from './step-documents.vue'
 import StepData from './step-data.vue'
 import StepAccount from './step-account.vue'
-import type { UploadedDocState } from './document-dropzone.vue'
+import type { DocumentKind, UploadedDocState } from './document-dropzone.vue'
 import type { RegistrationFormData, FieldSource } from './step-data.vue'
 
 interface RegistrationProps {
@@ -24,53 +24,31 @@ const currentStep = ref<1 | 2 | 3>(1)
 const isScanning = ref(false)
 
 const ineUpload = useIslandUpload()
+const ineReversoUpload = useIslandUpload()
 const nominaUpload = useIslandUpload()
 const photoUpload = useIslandUpload()
 
-const ineState = reactive<UploadedDocState>({
-    kind: 'ine',
-    file: null,
-    fileName: '',
-    fileSize: 0,
-    previewUrl: null,
-    token: null,
-    aiStatus: 'idle',
-    warnings: [],
-    fields: {},
-    uploading: false,
-    progress: 0,
-    error: null,
-})
+function createDocState(kind: DocumentKind): UploadedDocState {
+    return reactive<UploadedDocState>({
+        kind,
+        file: null,
+        fileName: '',
+        fileSize: 0,
+        previewUrl: null,
+        token: null,
+        aiStatus: 'idle',
+        warnings: [],
+        fields: {},
+        uploading: false,
+        progress: 0,
+        error: null,
+    })
+}
 
-const nominaState = reactive<UploadedDocState>({
-    kind: 'nomina',
-    file: null,
-    fileName: '',
-    fileSize: 0,
-    previewUrl: null,
-    token: null,
-    aiStatus: 'idle',
-    warnings: [],
-    fields: {},
-    uploading: false,
-    progress: 0,
-    error: null,
-})
-
-const photoState = reactive<UploadedDocState>({
-    kind: 'photo',
-    file: null,
-    fileName: '',
-    fileSize: 0,
-    previewUrl: null,
-    token: null,
-    aiStatus: 'idle',
-    warnings: [],
-    fields: {},
-    uploading: false,
-    progress: 0,
-    error: null,
-})
+const ineState = createDocState('ine')
+const ineReversoState = createDocState('ine_reverso')
+const nominaState = createDocState('nomina')
+const photoState = createDocState('photo')
 
 const fieldSources = reactive<Record<string, FieldSource>>({})
 
@@ -88,13 +66,32 @@ const form = useIslandForm<RegistrationFormData>({
     password: '',
     password_confirmation: '',
     ine_token: '',
+    ine_reverso_token: '',
     nomina_token: '',
     photo_token: '',
 })
 
 const isUploadingAny = computed(() => {
-    return ineUpload.uploading.value || nominaUpload.uploading.value || photoUpload.uploading.value
+    return (
+        ineUpload.uploading.value ||
+        ineReversoUpload.uploading.value ||
+        nominaUpload.uploading.value ||
+        photoUpload.uploading.value
+    )
 })
+
+function getUploadParts(kind: DocumentKind) {
+    switch (kind) {
+        case 'ine':
+            return { uploadService: ineUpload, state: ineState, tokenField: 'ine_token' as const }
+        case 'ine_reverso':
+            return { uploadService: ineReversoUpload, state: ineReversoState, tokenField: 'ine_reverso_token' as const }
+        case 'nomina':
+            return { uploadService: nominaUpload, state: nominaState, tokenField: 'nomina_token' as const }
+        case 'photo':
+            return { uploadService: photoUpload, state: photoState, tokenField: 'photo_token' as const }
+    }
+}
 
 function triggerScanEffect() {
     isScanning.value = true
@@ -103,9 +100,8 @@ function triggerScanEffect() {
     }, 1400)
 }
 
-async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
-    const uploadService = kind === 'ine' ? ineUpload : kind === 'nomina' ? nominaUpload : photoUpload
-    const state = kind === 'ine' ? ineState : kind === 'nomina' ? nominaState : photoState
+async function handleUploadFile(kind: DocumentKind, file: File) {
+    const { uploadService, state, tokenField } = getUploadParts(kind)
 
     state.file = file
     state.fileName = file.name
@@ -113,13 +109,24 @@ async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
     state.uploading = true
     state.progress = 0
     state.error = null
+    state.warnings = []
+    state.token = null
+    form.data[tokenField] = ''
+    delete form.errors[tokenField]
 
     if (kind === 'photo') {
         if (state.previewUrl) URL.revokeObjectURL(state.previewUrl)
         state.previewUrl = URL.createObjectURL(file)
     }
 
-    const res = await uploadService.upload(props.documentsUrl, file, { kind })
+    const extraFields: Record<string, string> = { kind }
+    if (kind === 'ine' && form.data.ine_reverso_token) {
+        extraFields.paired_token = form.data.ine_reverso_token
+    } else if (kind === 'ine_reverso' && form.data.ine_token) {
+        extraFields.paired_token = form.data.ine_token
+    }
+
+    const res = await uploadService.upload(props.documentsUrl, file, extraFields)
 
     state.uploading = false
     state.progress = 100
@@ -129,9 +136,9 @@ async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
         state.aiStatus = (res.ai_status as any) || 'success'
         state.warnings = res.warnings || []
         state.fields = res.fields || {}
+        form.data[tokenField] = res.token
 
         if (kind === 'ine') {
-            form.data.ine_token = res.token
             if (res.fields) {
                 if (res.fields.nombre && !form.data.name) {
                     form.data.name = res.fields.nombre
@@ -155,8 +162,9 @@ async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
                 }
             }
             triggerScanEffect()
+        } else if (kind === 'ine_reverso') {
+            triggerScanEffect()
         } else if (kind === 'nomina') {
-            form.data.nomina_token = res.token
             if (res.fields) {
                 if (res.fields.nss && !form.data.nss) {
                     form.data.nss = res.fields.nss
@@ -180,17 +188,16 @@ async function handleUploadFile(kind: 'ine' | 'nomina' | 'photo', file: File) {
                 }
             }
             triggerScanEffect()
-        } else if (kind === 'photo') {
-            form.data.photo_token = res.token
         }
     } else {
+        state.token = null
+        form.data[tokenField] = ''
         state.error = uploadService.error.value || 'Error al procesar el archivo.'
     }
 }
 
-function handleRemoveFile(kind: 'ine' | 'nomina' | 'photo') {
-    const uploadService = kind === 'ine' ? ineUpload : kind === 'nomina' ? nominaUpload : photoUpload
-    const state = kind === 'ine' ? ineState : kind === 'nomina' ? nominaState : photoState
+function handleRemoveFile(kind: DocumentKind) {
+    const { uploadService, state, tokenField } = getUploadParts(kind)
 
     uploadService.reset()
     state.file = null
@@ -201,15 +208,12 @@ function handleRemoveFile(kind: 'ine' | 'nomina' | 'photo') {
     state.warnings = []
     state.fields = {}
     state.error = null
+    form.data[tokenField] = ''
+    delete form.errors[tokenField]
 
     if (kind === 'photo') {
         if (state.previewUrl) URL.revokeObjectURL(state.previewUrl)
         state.previewUrl = null
-        form.data.photo_token = ''
-    } else if (kind === 'ine') {
-        form.data.ine_token = ''
-    } else if (kind === 'nomina') {
-        form.data.nomina_token = ''
     }
 }
 
@@ -233,7 +237,7 @@ async function submitFinalForm() {
         },
         onError: (errs) => {
             // Jump to first step containing error
-            const s1Fields = ['ine_token', 'nomina_token', 'photo_token']
+            const s1Fields = ['ine_token', 'ine_reverso_token', 'nomina_token', 'photo_token']
             const s2Fields = ['name', 'surnames', 'curp', 'birth_date', 'nss', 'phone', 'category', 'salary', 'address']
             if (s1Fields.some((f) => errs[f as keyof RegistrationFormData])) {
                 goToStep(1)
@@ -247,6 +251,7 @@ async function submitFinalForm() {
 function handleBeforeUnload(e: BeforeUnloadEvent) {
     const hasData = Boolean(
         form.data.ine_token ||
+        form.data.ine_reverso_token ||
         form.data.name ||
         form.data.curp ||
         form.data.email
@@ -299,6 +304,7 @@ onBeforeUnmount(() => {
                 <StepDocuments
                     v-if="currentStep === 1"
                     :ine-state="ineState"
+                    :ine-reverso-state="ineReversoState"
                     :nomina-state="nominaState"
                     :photo-state="photoState"
                     :errors="form.errors"

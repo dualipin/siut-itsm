@@ -1,4 +1,4 @@
-export type DocumentKind = 'ine' | 'nomina' | 'photo'
+export type DocumentKind = 'ine' | 'ine_reverso' | 'nomina' | 'photo'
 
 export type AIStatus = 'idle' | 'uploading' | 'processing' | 'success' | 'warning' | 'failed' | 'not_applicable'
 
@@ -62,6 +62,7 @@ export interface RegistrationFormData {
     password: string
     password_confirmation: string
     ine_token: string
+    ine_reverso_token: string
     nomina_token: string
     photo_token: string
     [key: string]: any

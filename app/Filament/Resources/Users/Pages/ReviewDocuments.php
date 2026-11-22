@@ -112,6 +112,14 @@ class ReviewDocuments extends ViewRecord
                         $media->setCustomProperty('reviewed_at', now()->toIso8601String());
                         $media->forgetCustomProperty('rejection_reason');
                         $media->save();
+
+                        if ($type === UserDocumentType::Ine && ($ineBack = $user->getIneBackMedia()) !== null) {
+                            $ineBack->setCustomProperty('status', DocumentStatus::Valid->value);
+                            $ineBack->setCustomProperty('reviewed_by', auth()->id());
+                            $ineBack->setCustomProperty('reviewed_at', now()->toIso8601String());
+                            $ineBack->forgetCustomProperty('rejection_reason');
+                            $ineBack->save();
+                        }
                         AuditService::log('review_documents', auth()->id(), $user->id, [
                             'document_type' => $type->value,
                             'status' => DocumentStatus::Valid->value,
@@ -275,6 +283,14 @@ class ReviewDocuments extends ViewRecord
                 $media->forgetCustomProperty('rejection_reason');
                 $media->save();
 
+                if ($type === UserDocumentType::Ine && ($ineBack = $user->getIneBackMedia()) !== null) {
+                    $ineBack->setCustomProperty('status', DocumentStatus::Valid->value);
+                    $ineBack->setCustomProperty('reviewed_by', auth()->id());
+                    $ineBack->setCustomProperty('reviewed_at', now()->toIso8601String());
+                    $ineBack->forgetCustomProperty('rejection_reason');
+                    $ineBack->save();
+                }
+
                 AuditService::log('review_documents', auth()->id(), $user->id, [
                     'document_type' => $type->value,
                     'status' => DocumentStatus::Valid->value,
@@ -331,6 +347,14 @@ class ReviewDocuments extends ViewRecord
                 $media->setCustomProperty('rejection_reason', $data['rejection_reason']);
                 $media->save();
 
+                if ($type === UserDocumentType::Ine && ($ineBack = $user->getIneBackMedia()) !== null) {
+                    $ineBack->setCustomProperty('status', DocumentStatus::Invalid->value);
+                    $ineBack->setCustomProperty('reviewed_by', auth()->id());
+                    $ineBack->setCustomProperty('reviewed_at', now()->toIso8601String());
+                    $ineBack->setCustomProperty('rejection_reason', $data['rejection_reason']);
+                    $ineBack->save();
+                }
+
                 AuditService::log('review_documents', auth()->id(), $user->id, [
                     'document_type' => $type->value,
                     'status' => DocumentStatus::Invalid->value,
@@ -357,20 +381,38 @@ class ReviewDocuments extends ViewRecord
             ->label('Reemplazar archivo')
             ->icon('heroicon-m-arrow-path')
             ->color('gray')
-            ->modalHeading(fn (array $arguments): string => 'Subir o reemplazar archivo: '.(UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? ''))
-            ->modalDescription('Sube el archivo PDF correspondiente. Se guardará en el expediente y el estado se establecerá a Pendiente.')
-            ->form(fn (array $arguments): array => [
-                FileUpload::make('document_file')
-                    ->label(UserDocumentType::tryFrom($arguments['type'] ?? $this->activeDocumentType)?->getLabel() ?? 'Archivo PDF')
-                    ->disk('local')
-                    ->directory('temp-uploads')
-                    ->visibility('private')
-                    ->acceptedFileTypes(['application/pdf'])
-                    ->required(),
-            ])
+            ->modalHeading(function (array $arguments): string {
+                $typeKey = $arguments['type'] ?? $this->activeDocumentType;
+
+                if ($typeKey === User::INE_BACK_COLLECTION) {
+                    return 'Subir o reemplazar archivo: INE / Identificación Oficial (Reverso)';
+                }
+
+                return 'Subir o reemplazar archivo: '.(UserDocumentType::tryFrom($typeKey)?->getLabel() ?? '');
+            })
+            ->modalDescription('Sube el archivo correspondiente. Se guardará en el expediente y el estado se establecerá a Pendiente.')
+            ->form(function (array $arguments): array {
+                $typeKey = $arguments['type'] ?? $this->activeDocumentType;
+                $isIneBack = $typeKey === User::INE_BACK_COLLECTION;
+                $docType = $isIneBack ? null : UserDocumentType::tryFrom($typeKey);
+                $acceptsImages = $isIneBack || ($docType !== null && in_array($docType, User::imageAcceptingDocumentTypes(), true));
+
+                return [
+                    FileUpload::make('document_file')
+                        ->label($isIneBack ? 'INE / Identificación Oficial (Reverso)' : ($docType?->getLabel() ?? 'Archivo PDF'))
+                        ->disk('local')
+                        ->directory('temp-uploads')
+                        ->visibility('private')
+                        ->acceptedFileTypes($acceptsImages ? ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] : ['application/pdf'])
+                        ->required(),
+                ];
+            })
             ->action(function (array $data, array $arguments): void {
                 $typeKey = $arguments['type'] ?? $this->activeDocumentType;
-                $type = UserDocumentType::from($typeKey);
+                $isIneBack = $typeKey === User::INE_BACK_COLLECTION;
+                $collection = $isIneBack ? User::INE_BACK_COLLECTION : UserDocumentType::from($typeKey)->value;
+                $label = $isIneBack ? 'INE / Identificación Oficial (Reverso)' : UserDocumentType::from($typeKey)->getLabel();
+
                 /** @var User $user */
                 $user = $this->getRecord();
 
@@ -380,13 +422,13 @@ class ReviewDocuments extends ViewRecord
                         'replaced_by' => auth()->id(),
                         'replaced_at' => now()->toIso8601String(),
                     ])
-                    ->toMediaCollection($type->value);
+                    ->toMediaCollection($collection);
 
                 $user->unsetRelation('media');
 
                 Notification::make()
                     ->title('Archivo guardado')
-                    ->body("{$type->getLabel()} ha sido actualizado correctamente.")
+                    ->body("{$label} ha sido actualizado correctamente.")
                     ->success()
                     ->send();
             });

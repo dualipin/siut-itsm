@@ -272,6 +272,11 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
     }
 
     /**
+     * Complementary Spatie media collection for the back (reverso) side of the user's INE.
+     */
+    public const INE_BACK_COLLECTION = 'ine_reverso';
+
+    /**
      * Document types that also accept image uploads in addition to PDF.
      * INE and payslip support images for AI extraction at registration time.
      *
@@ -284,7 +289,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
 
     /**
      * Register Spatie media collections for affiliation documents.
-     * INE and comprobante_pago accept PDF, JPEG, PNG and WebP.
+     * INE (front and complementary back) and comprobante_pago accept PDF, JPEG, PNG and WebP.
      * The other three documents remain PDF-only.
      */
     public function registerMediaCollections(): void
@@ -301,6 +306,11 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
                 ->singleFile()
                 ->acceptsMimeTypes($acceptedMimes);
         }
+
+        $this->addMediaCollection(self::INE_BACK_COLLECTION)
+            ->useDisk('local')
+            ->singleFile()
+            ->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/x-empty']);
     }
 
     /**
@@ -311,6 +321,14 @@ class User extends Authenticatable implements FilamentUser, HasAvatar, HasMedia
         $collection = $type instanceof UserDocumentType ? $type->value : $type;
 
         return $this->getFirstMedia($collection);
+    }
+
+    /**
+     * Get the complementary media record for the back (reverso) side of the user's INE.
+     */
+    public function getIneBackMedia(): ?Media
+    {
+        return $this->getFirstMedia(self::INE_BACK_COLLECTION);
     }
 
     /**

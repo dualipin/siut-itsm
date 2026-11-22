@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Rules\UniqueCurp;
+use App\Services\IneValidationService;
 use App\Services\RegistrationStaging;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,6 +35,7 @@ class RegisterAgremiadoRequest extends FormRequest
             'address' => ['nullable', 'string', 'max:500'],
             'password' => ['required', 'string', 'confirmed', Password::defaults()],
             'ine_token' => ['required', 'string'],
+            'ine_reverso_token' => ['required', 'string'],
             'nomina_token' => ['required', 'string'],
             'photo_token' => ['required', 'string'],
         ];
@@ -60,7 +62,8 @@ class RegisterAgremiadoRequest extends FormRequest
             'salary.min' => 'El salario no puede ser negativo.',
             'password.required' => 'La contraseña es obligatoria.',
             'password.confirmed' => 'La confirmación de la contraseña no coincide.',
-            'ine_token.required' => 'Debes subir tu identificación INE.',
+            'ine_token.required' => 'Debes subir la parte frontal de tu identificación INE.',
+            'ine_reverso_token.required' => 'Debes subir la parte posterior (reverso) de tu identificación INE.',
             'nomina_token.required' => 'Debes subir tu comprobante de pago.',
             'photo_token.required' => 'La fotografía de perfil es obligatoria para tu credencial digital.',
         ];
@@ -74,23 +77,31 @@ class RegisterAgremiadoRequest extends FormRequest
         $validator->after(function (Validator $validator) {
             /** @var RegistrationStaging $staging */
             $staging = app(RegistrationStaging::class);
+            /** @var IneValidationService $ineValidator */
+            $ineValidator = app(IneValidationService::class);
 
             $ineToken = (string) $this->input('ine_token', '');
+            $ineReversoToken = (string) $this->input('ine_reverso_token', '');
             $nominaToken = (string) $this->input('nomina_token', '');
             $photoToken = (string) $this->input('photo_token', '');
 
-            $ine = $staging->resolve($ineToken, 'ine');
-            if (! $ine) {
-                $validator->errors()->add('ine_token', 'El documento INE no es válido o ha expirado. Por favor súbelo nuevamente.');
+            $ine = $ineToken !== '' ? $staging->resolve($ineToken, 'ine') : null;
+            if ($ineToken !== '' && ! $ine) {
+                $validator->errors()->add('ine_token', 'La parte frontal de tu INE no es válida o ha expirado. Por favor súbela nuevamente.');
             }
 
-            $nomina = $staging->resolve($nominaToken, 'nomina');
-            if (! $nomina) {
+            $ineReverso = $ineReversoToken !== '' ? $staging->resolve($ineReversoToken, 'ine_reverso') : null;
+            if ($ineReversoToken !== '' && ! $ineReverso) {
+                $validator->errors()->add('ine_reverso_token', 'La parte posterior (reverso) de tu INE no es válida o ha expirado. Por favor súbela nuevamente.');
+            }
+
+            $nomina = $nominaToken !== '' ? $staging->resolve($nominaToken, 'nomina') : null;
+            if ($nominaToken !== '' && ! $nomina) {
                 $validator->errors()->add('nomina_token', 'El comprobante de pago no es válido o ha expirado. Por favor súbelo nuevamente.');
             }
 
-            $photo = $staging->resolve($photoToken, 'photo');
-            if (! $photo) {
+            $photo = $photoToken !== '' ? $staging->resolve($photoToken, 'photo') : null;
+            if ($photoToken !== '' && ! $photo) {
                 $validator->errors()->add('photo_token', 'La fotografía de perfil no es válida o ha expirado. Por favor súbela nuevamente.');
             }
 
@@ -111,11 +122,25 @@ class RegisterAgremiadoRequest extends FormRequest
                 }
             }
 
-            // Deterministic: INE vigencia check from AI preview (server session)
+            // Strict INE validation: front, back, and front/back consistency
             if ($ine) {
-                $vigencia = data_get($ine, 'ai.extracted_fields.vigencia', '');
-                if (filled($vigencia) && is_numeric($vigencia) && (int) $vigencia < now()->year) {
-                    $validator->errors()->add('ine_token', 'La INE parece estar vencida (vigencia: '.$vigencia.'). Sube una credencial vigente.');
+                $frontError = $ineValidator->validateFront(is_array($ine['ai'] ?? null) ? $ine['ai'] : null);
+                if ($frontError !== null) {
+                    $validator->errors()->add('ine_token', $frontError);
+                }
+            }
+
+            if ($ineReverso) {
+                $backError = $ineValidator->validateBack(is_array($ineReverso['ai'] ?? null) ? $ineReverso['ai'] : null);
+                if ($backError !== null) {
+                    $validator->errors()->add('ine_reverso_token', $backError);
+                }
+            }
+
+            if ($ine && $ineReverso) {
+                $pairError = $ineValidator->validatePair($ine, $ineReverso);
+                if ($pairError !== null) {
+                    $validator->errors()->add('ine_reverso_token', $pairError);
                 }
             }
 

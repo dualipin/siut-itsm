@@ -5,6 +5,7 @@
 <div
     x-data="{
         activeDoc: @entangle('activeDocumentType'),
+        ineSide: 'front',
         labels: {
             @foreach($documentData as $k => $d)
                 '{{ $k }}': '{{ addslashes($d['label']) }}',
@@ -342,6 +343,22 @@
 
                             {{-- Side-by-side photo comparison (INE only) --}}
                             @if ($key === 'ine' && $doc['documentUrl'])
+                                @if (!empty($doc['backExtractedData']['extracted_fields']))
+                                    <div class="border-t border-gray-100 pt-3 dark:border-white/5">
+                                        <p class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Datos extraídos del reverso (INE)</p>
+                                        <dl class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                                            @foreach ($doc['backExtractedData']['extracted_fields'] as $efKey => $efVal)
+                                                @if (filled($efVal))
+                                                    <div>
+                                                        <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ ucfirst(str_replace('_', ' ', $efKey)) }}</dt>
+                                                        <dd class="mt-0.5 break-all text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{{ $efVal }}</dd>
+                                                    </div>
+                                                @endif
+                                            @endforeach
+                                        </dl>
+                                    </div>
+                                @endif
+
                                 <div class="border-t border-gray-100 pt-3 dark:border-white/5">
                                     <p class="mb-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">Comparación de fotografías</p>
                                     <div class="grid grid-cols-2 gap-4">
@@ -382,9 +399,135 @@
                     </div>
                 @endif
 
+                {{-- Selector Frente / Reverso para INE --}}
+                @if ($key === 'ine')
+                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200/80 bg-white px-4 py-2.5 shadow-xs dark:border-white/10 dark:bg-gray-900">
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                @click="ineSide = 'front'"
+                                class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+                                :class="ineSide === 'front'
+                                    ? 'bg-primary-600 text-white shadow-xs'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
+                            >
+                                Parte Frontal
+                            </button>
+                            <button
+                                type="button"
+                                @click="ineSide = 'back'"
+                                class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+                                :class="ineSide === 'back'
+                                    ? 'bg-primary-600 text-white shadow-xs'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
+                            >
+                                Parte Posterior (Reverso)
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2" x-show="ineSide === 'back'">
+                            <x-filament::button
+                                wire:click="mountAction('replaceDocument', { type: 'ine_reverso' })"
+                                color="gray"
+                                size="xs"
+                                icon="heroicon-m-arrow-path"
+                                outlined
+                            >
+                                {{ $doc['backMedia'] ? 'Reemplazar reverso' : 'Subir reverso' }}
+                            </x-filament::button>
+
+                            @if ($doc['backDocumentUrl'])
+                                <x-filament::button
+                                    :href="$doc['backDocumentUrl']"
+                                    tag="a"
+                                    target="_blank"
+                                    color="gray"
+                                    size="xs"
+                                    icon="heroicon-m-arrow-top-right-on-square"
+                                    outlined
+                                >
+                                    Abrir reverso
+                                </x-filament::button>
+                            @endif
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Visor de Documento o Estado Vacío --}}
                 <div class="relative flex-1 overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50 shadow-xs dark:border-white/10 dark:bg-gray-950">
-                    @if ($doc['documentUrl'])
+                    @if ($key === 'ine')
+                        <div x-show="ineSide === 'front'">
+                            @if ($doc['documentUrl'])
+                                <iframe
+                                    wire:key="document-viewer-{{ $key }}-front-{{ $doc['media']->getKey() }}"
+                                    src="{{ $doc['documentUrl'] }}"
+                                    class="w-full rounded-xl border-0 bg-white dark:bg-gray-900"
+                                    style="height: calc(100vh - 17.5rem); min-height: 560px;"
+                                    title="{{ $doc['label'] }} (Frente)"
+                                ></iframe>
+                            @else
+                                <div
+                                    class="flex flex-col items-center justify-center p-12 text-center"
+                                    style="height: calc(100vh - 17.5rem); min-height: 560px;"
+                                >
+                                    <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+                                        <x-filament::icon icon="heroicon-o-document-arrow-up" class="h-7 w-7" />
+                                    </div>
+                                    <h3 class="mb-1 text-base font-semibold text-gray-900 dark:text-gray-100" style="text-wrap: balance;">
+                                        Frente de INE aún no subido
+                                    </h3>
+                                    <p class="mx-auto mb-5 max-w-sm text-sm text-gray-500 dark:text-gray-400" style="text-wrap: pretty;">
+                                        El agremiado aún no ha cargado la parte frontal de su INE.
+                                    </p>
+                                    <x-filament::button
+                                        wire:click="mountAction('replaceDocument', { type: 'ine' })"
+                                        color="gray"
+                                        size="sm"
+                                        icon="heroicon-m-arrow-up-tray"
+                                        outlined
+                                    >
+                                        Subir frente en nombre del socio
+                                    </x-filament::button>
+                                </div>
+                            @endif
+                        </div>
+
+                        <div x-show="ineSide === 'back'" x-cloak>
+                            @if ($doc['backDocumentUrl'])
+                                <iframe
+                                    wire:key="document-viewer-{{ $key }}-back-{{ $doc['backMedia']->getKey() }}"
+                                    src="{{ $doc['backDocumentUrl'] }}"
+                                    class="w-full rounded-xl border-0 bg-white dark:bg-gray-900"
+                                    style="height: calc(100vh - 17.5rem); min-height: 560px;"
+                                    title="{{ $doc['label'] }} (Reverso)"
+                                ></iframe>
+                            @else
+                                <div
+                                    class="flex flex-col items-center justify-center p-12 text-center"
+                                    style="height: calc(100vh - 17.5rem); min-height: 560px;"
+                                >
+                                    <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+                                        <x-filament::icon icon="heroicon-o-document-arrow-up" class="h-7 w-7" />
+                                    </div>
+                                    <h3 class="mb-1 text-base font-semibold text-gray-900 dark:text-gray-100" style="text-wrap: balance;">
+                                        Reverso de INE no cargado
+                                    </h3>
+                                    <p class="mx-auto mb-5 max-w-sm text-sm text-gray-500 dark:text-gray-400" style="text-wrap: pretty;">
+                                        Este expediente aún no cuenta con la parte posterior de la credencial INE.
+                                    </p>
+                                    <x-filament::button
+                                        wire:click="mountAction('replaceDocument', { type: 'ine_reverso' })"
+                                        color="gray"
+                                        size="sm"
+                                        icon="heroicon-m-arrow-up-tray"
+                                        outlined
+                                    >
+                                        Subir reverso en nombre del socio
+                                    </x-filament::button>
+                                </div>
+                            @endif
+                        </div>
+                    @elseif ($doc['documentUrl'])
                         <iframe
                             wire:key="document-viewer-{{ $key }}-{{ $doc['media']->getKey() }}"
                             src="{{ $doc['documentUrl'] }}"

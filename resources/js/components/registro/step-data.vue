@@ -18,6 +18,7 @@ export interface RegistrationFormData {
     password: string
     password_confirmation: string
     ine_token: string
+    ine_reverso_token: string
     nomina_token: string
     photo_token: string
     [key: string]: any

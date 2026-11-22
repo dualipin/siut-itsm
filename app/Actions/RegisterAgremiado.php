@@ -29,6 +29,7 @@ class RegisterAgremiado
     {
         return DB::transaction(function () use ($data): User {
             $ineEntry = $this->staging->resolve((string) ($data['ine_token'] ?? ''), 'ine');
+            $ineReversoEntry = $this->staging->resolve((string) ($data['ine_reverso_token'] ?? ''), 'ine_reverso');
             $nominaEntry = $this->staging->resolve((string) ($data['nomina_token'] ?? ''), 'nomina');
             $photoEntry = $this->staging->resolve((string) ($data['photo_token'] ?? ''), 'photo');
 
@@ -64,26 +65,31 @@ class RegisterAgremiado
             /** @var User $user */
             $user = User::create($userData);
 
-            // Save INE document as Pending media with AI metadata
+            // Save INE front and complementary back as Pending media with AI metadata
             if ($ineEntry) {
-                $this->attachDocument($user, UserDocumentType::Ine, $ineEntry);
+                $this->attachDocument($user, UserDocumentType::Ine->value, $ineEntry);
+            }
+
+            if ($ineReversoEntry) {
+                $this->attachDocument($user, User::INE_BACK_COLLECTION, $ineReversoEntry);
             }
 
             // Save Nómina document as Pending media with AI metadata
             if ($nominaEntry) {
-                $this->attachDocument($user, UserDocumentType::ComprobantePago, $nominaEntry);
+                $this->attachDocument($user, UserDocumentType::ComprobantePago->value, $nominaEntry);
             }
 
             // Send welcome database notification
             Notification::make()
                 ->title('¡Bienvenido al portal SIUT!')
-                ->body('Tu cuenta de Agremiado ha sido creada. Tus documentos INE y nómina están en revisión. Para completar tu expediente, sube los 3 documentos restantes (Afiliación, Comprobante de Domicilio y CURP) desde "Mi Perfil".')
+                ->body('Tu cuenta de Agremiado ha sido creada. Tus documentos INE (frente y reverso) y nómina están en revisión. Para completar tu expediente, sube los 3 documentos restantes (Afiliación, Comprobante de Domicilio y CURP) desde "Mi Perfil".')
                 ->info()
                 ->sendToDatabase($user);
 
             // Clean up temporary files on disk
             $pathsToDelete = array_filter([
                 $ineEntry['path'] ?? null,
+                $ineReversoEntry['path'] ?? null,
                 $nominaEntry['path'] ?? null,
                 $photoEntry['path'] ?? null,
             ]);
@@ -114,16 +120,16 @@ class RegisterAgremiado
     /**
      * Attach a staged document to the user's media collection.
      *
-     * @param  array{token: string, kind: string, path: string, ai: ?array<string, mixed>, warnings: list<string>, exp: int}  $stagedEntry
+     * @param  array{token: string, kind: string, path: string, hash?: ?string, ai: ?array<string, mixed>, warnings: list<string>, exp: int}  $stagedEntry
      */
-    protected function attachDocument(User $user, UserDocumentType $type, array $stagedEntry): void
+    protected function attachDocument(User $user, string $collection, array $stagedEntry): void
     {
         $path = $stagedEntry['path'];
         $fullPath = Storage::disk('local')->path($path);
 
         if (! file_exists($fullPath)) {
             Log::warning('RegisterAgremiado: archivo temporal no encontrado.', [
-                'type' => $type->value,
+                'collection' => $collection,
                 'path' => $path,
             ]);
 
@@ -151,10 +157,10 @@ class RegisterAgremiado
         try {
             $user->addMedia($fullPath)
                 ->withCustomProperties($customProperties)
-                ->toMediaCollection($type->value);
+                ->toMediaCollection($collection);
         } catch (\Exception $e) {
             Log::error('RegisterAgremiado: error al guardar documento en media library.', [
-                'type' => $type->value,
+                'collection' => $collection,
                 'user_id' => $user->id,
                 'error' => Str::limit($e->getMessage(), 200),
             ]);

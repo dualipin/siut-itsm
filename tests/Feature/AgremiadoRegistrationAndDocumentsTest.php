@@ -70,10 +70,12 @@ test('guest can register as agremiado with documents and profile data', function
     $staging = app(RegistrationStaging::class);
 
     $inePath = 'temp-uploads/registro/test-ine.jpg';
+    $ineReversoPath = 'temp-uploads/registro/test-ine-reverso.jpg';
     $nominaPath = 'temp-uploads/registro/test-nomina.jpg';
     $photoPath = 'temp-uploads/registro/test-photo.jpg';
 
     Storage::disk('local')->put($inePath, (string) fakeIneJpg()->getContent());
+    Storage::disk('local')->put($ineReversoPath, (string) UploadedFile::fake()->image('ine-back.jpg', 800, 500)->getContent());
     Storage::disk('local')->put($nominaPath, (string) fakeNominaJpg()->getContent());
     Storage::disk('local')->put($photoPath, (string) UploadedFile::fake()->image('carlos.jpg')->getContent());
 
@@ -81,12 +83,24 @@ test('guest can register as agremiado with documents and profile data', function
         'is_valid_document' => true,
         'document_type' => 'ine',
         'extracted_fields' => [
+            'lado_detectado' => 'frente',
             'nombre' => 'Carlos',
             'apellidos' => 'Mendoza Lopez',
             'curp' => 'MELC950515HDFRRN09',
             'vigencia' => '2030',
         ],
-    ]);
+    ], [], hash('sha256', 'front'));
+
+    $ineReversoToken = $staging->stage('ine_reverso', $ineReversoPath, [
+        'is_valid_document' => true,
+        'document_type' => 'ine_reverso',
+        'extracted_fields' => [
+            'lado_detectado' => 'reverso',
+            'nombre_mrz' => 'MENDOZA LOPEZ CARLOS',
+            'fecha_nacimiento_mrz' => '1995-05-15',
+            'vigencia_mrz' => '2030',
+        ],
+    ], [], hash('sha256', 'back'));
 
     $nominaToken = $staging->stage('nomina', $nominaPath, [
         'is_valid_document' => true,
@@ -110,6 +124,7 @@ test('guest can register as agremiado with documents and profile data', function
         'password' => 'SecurePassword123!',
         'password_confirmation' => 'SecurePassword123!',
         'ine_token' => $ineToken,
+        'ine_reverso_token' => $ineReversoToken,
         'nomina_token' => $nominaToken,
         'photo_token' => $photoToken,
     ])->assertOk();
@@ -135,7 +150,7 @@ test('guest can register as agremiado with documents and profile data', function
 
 // ── INE and nómina required ───────────────────────────────────────────────────
 
-test('registration requires ine_token, nomina_token, and photo_token', function () {
+test('registration requires ine_token, ine_reverso_token, nomina_token, and photo_token', function () {
     $this->postJson('/api/registro', [
         'name' => 'Sin',
         'surnames' => 'Documentos',
@@ -144,7 +159,7 @@ test('registration requires ine_token, nomina_token, and photo_token', function 
         'password' => 'SecurePassword123!',
         'password_confirmation' => 'SecurePassword123!',
     ])->assertStatus(422)
-        ->assertJsonValidationErrors(['ine_token', 'nomina_token', 'photo_token']);
+        ->assertJsonValidationErrors(['ine_token', 'ine_reverso_token', 'nomina_token', 'photo_token']);
 });
 
 // ── CURP validation ───────────────────────────────────────────────────────────
@@ -268,12 +283,14 @@ test('registration blocks when AI detects expired INE', function () {
 
 test('registration continues in manual mode when AI is down', function () {
     $staging = app(RegistrationStaging::class);
-    Storage::disk('local')->put('temp/ine.jpg', 'content');
-    Storage::disk('local')->put('temp/nom.jpg', 'content');
-    Storage::disk('local')->put('temp/pho.jpg', 'content');
+    Storage::disk('local')->put('temp/ine.jpg', 'content-front');
+    Storage::disk('local')->put('temp/ine-back.jpg', 'content-back');
+    Storage::disk('local')->put('temp/nom.jpg', 'content-nom');
+    Storage::disk('local')->put('temp/pho.jpg', 'content-pho');
 
     // Documents staged without AI extraction result (null ai)
-    $ineToken = $staging->stage('ine', 'temp/ine.jpg', null, ['No fue posible verificar el documento automáticamente.']);
+    $ineToken = $staging->stage('ine', 'temp/ine.jpg', null, ['No fue posible verificar el documento automáticamente.'], hash('sha256', 'content-front'));
+    $ineReversoToken = $staging->stage('ine_reverso', 'temp/ine-back.jpg', null, ['No fue posible verificar el documento automáticamente.'], hash('sha256', 'content-back'));
     $nominaToken = $staging->stage('nomina', 'temp/nom.jpg', null);
     $photoToken = $staging->stage('photo', 'temp/pho.jpg');
 
@@ -287,6 +304,7 @@ test('registration continues in manual mode when AI is down', function () {
         'password' => 'SecurePassword123!',
         'password_confirmation' => 'SecurePassword123!',
         'ine_token' => $ineToken,
+        'ine_reverso_token' => $ineReversoToken,
         'nomina_token' => $nominaToken,
         'photo_token' => $photoToken,
     ])->assertOk();
@@ -385,11 +403,13 @@ test('registration strictly enforces agremiado role', function () {
     config()->set('services.document_ai.enabled', false);
 
     $staging = app(RegistrationStaging::class);
-    Storage::disk('local')->put('temp/i.jpg', 'content');
-    Storage::disk('local')->put('temp/n.jpg', 'content');
-    Storage::disk('local')->put('temp/p.jpg', 'content');
+    Storage::disk('local')->put('temp/i.jpg', 'content-front');
+    Storage::disk('local')->put('temp/ib.jpg', 'content-back');
+    Storage::disk('local')->put('temp/n.jpg', 'content-nom');
+    Storage::disk('local')->put('temp/p.jpg', 'content-pho');
 
-    $t1 = $staging->stage('ine', 'temp/i.jpg');
+    $t1 = $staging->stage('ine', 'temp/i.jpg', null, [], hash('sha256', 'content-front'));
+    $t1b = $staging->stage('ine_reverso', 'temp/ib.jpg', null, [], hash('sha256', 'content-back'));
     $t2 = $staging->stage('nomina', 'temp/n.jpg');
     $t3 = $staging->stage('photo', 'temp/p.jpg');
 
@@ -402,6 +422,7 @@ test('registration strictly enforces agremiado role', function () {
         'password' => 'SecurePassword123!',
         'password_confirmation' => 'SecurePassword123!',
         'ine_token' => $t1,
+        'ine_reverso_token' => $t1b,
         'nomina_token' => $t2,
         'photo_token' => $t3,
         'role' => 'admin',

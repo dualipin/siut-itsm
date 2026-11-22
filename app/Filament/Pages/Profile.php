@@ -182,12 +182,13 @@ class Profile extends BaseEditProfile
                     ]),
 
                 Section::make('Documentos de Afiliación')
-                    ->description('Sube y gestiona tus documentos obligatorios. INE y comprobante de pago también aceptan imagen (JPG, PNG, WebP). Los demás documentos solo en PDF.')
+                    ->description('Sube y gestiona tus documentos obligatorios. INE (frente y reverso) y comprobante de pago también aceptan imagen (JPG, PNG, WebP). Los demás documentos solo en PDF.')
                     ->icon(Heroicon::DocumentCheck)
                     ->schema([
                         $this->buildDocumentUploadField(UserDocumentType::Afiliacion, '1. Comprobante de Afiliación'),
                         $this->buildDocumentUploadField(UserDocumentType::ComprobanteDomicilio, '2. Comprobante de Domicilio'),
-                        $this->buildDocumentUploadField(UserDocumentType::Ine, '3. INE / Identificación Oficial'),
+                        $this->buildDocumentUploadField(UserDocumentType::Ine, '3. INE / Identificación Oficial (Frente)'),
+                        $this->buildIneBackUploadField(),
                         $this->buildDocumentUploadField(UserDocumentType::ComprobantePago, '4. Comprobante de Pago'),
                         $this->buildDocumentUploadField(UserDocumentType::Curp, '5. CURP (Documento Oficial)'),
                     ]),
@@ -321,6 +322,31 @@ class Profile extends BaseEditProfile
     }
 
     /**
+     * Build the complementary Spatie Media upload component for the back (reverso) side of the user's INE.
+     */
+    protected function buildIneBackUploadField(): SpatieMediaLibraryFileUpload
+    {
+        return SpatieMediaLibraryFileUpload::make(User::INE_BACK_COLLECTION)
+            ->label('3b. INE / Identificación Oficial (Reverso)')
+            ->collection(User::INE_BACK_COLLECTION)
+            ->visibility('private')
+            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+            ->maxSize(10240)
+            ->downloadable()
+            ->openable()
+            ->hintAction(
+                Action::make('open_'.User::INE_BACK_COLLECTION)
+                    ->label('Abrir documento')
+                    ->icon(Heroicon::ArrowTopRightOnSquare)
+                    ->visible(fn (?Model $record): bool => $record instanceof User && $record->getIneBackMedia() !== null)
+                    ->url(fn (?Model $record): ?string => $record instanceof User ? route('portal.users.documents.show', ['user' => $record, 'type' => User::INE_BACK_COLLECTION]) : null)
+                    ->openUrlInNewTab()
+            )
+            ->disabled(fn (?Model $record): bool => $record instanceof User && $record->getDocumentStatus(UserDocumentType::Ine) === DocumentStatus::Valid)
+            ->helperText('Parte posterior (reverso) de tu credencial INE. Acepta PDF o imagen (JPG, PNG, WebP).');
+    }
+
+    /**
      * Run AI analysis synchronously and stage the result for persistence at save time.
      * Never throws — any failure is logged and ignored.
      */
@@ -419,6 +445,18 @@ class Profile extends BaseEditProfile
 
             $media->save();
             $updatedAny = true;
+        }
+
+        // Sync complementary INE back media status when newly uploaded or replaced
+        $ineBackMedia = $record->getIneBackMedia();
+        if ($ineBackMedia !== null) {
+            $backStatus = $ineBackMedia->getCustomProperty('status');
+            if (! $backStatus || $backStatus === DocumentStatus::Invalid->value) {
+                $ineBackMedia->setCustomProperty('status', DocumentStatus::Pending->value);
+                $ineBackMedia->forgetCustomProperty('rejection_reason');
+                $ineBackMedia->save();
+                $updatedAny = true;
+            }
         }
 
         if ($updatedAny) {

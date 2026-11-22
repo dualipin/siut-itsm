@@ -16,7 +16,7 @@ class RegistrationStaging
      * @param  array<string, mixed>|null  $aiResult
      * @param  list<string>  $warnings
      */
-    public function stage(string $kind, string $path, ?array $aiResult = null, array $warnings = []): string
+    public function stage(string $kind, string $path, ?array $aiResult = null, array $warnings = [], ?string $hash = null): string
     {
         $token = (string) Str::uuid();
 
@@ -26,6 +26,7 @@ class RegistrationStaging
             'token' => $token,
             'kind' => $kind,
             'path' => $path,
+            'hash' => $hash,
             'ai' => $aiResult,
             'warnings' => $warnings,
             'exp' => now()->addHours(2)->timestamp,
@@ -39,7 +40,7 @@ class RegistrationStaging
     /**
      * Resolve a staged document by token and expected kind.
      *
-     * @return array{token: string, kind: string, path: string, ai: ?array<string, mixed>, warnings: list<string>, exp: int}|null
+     * @return array{token: string, kind: string, path: string, hash?: ?string, ai: ?array<string, mixed>, warnings: list<string>, exp: int}|null
      */
     public function resolve(string $token, string $kind): ?array
     {

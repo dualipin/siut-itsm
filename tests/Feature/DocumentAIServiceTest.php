@@ -314,3 +314,72 @@ test('normalizeForStorage produces a JPEG no wider than 1600px', function () {
 
     expect(max($width, $height))->toBeLessThanOrEqual(1600);
 });
+
+// ── extractIneBack & reviewIneBack ────────────────────────────────────────────
+
+function ineBackJson(array $overrides = []): string
+{
+    return json_encode(array_replace([
+        'is_valid_document' => true,
+        'document_type' => 'ine_reverso',
+        'extracted_fields' => [
+            'lado_detectado' => 'reverso',
+            'mrz_linea_1' => 'IDMEX1234567890<<1234567890123',
+            'mrz_linea_2' => '9505152M3012315MEX<02<<12345<6',
+            'mrz_linea_3' => 'MENDOZA<LOPEZ<<CARLOS<<<<<<<<<',
+            'cic' => '123456789',
+            'ocr' => '1234567890123',
+            'nombre_mrz' => 'MENDOZA LOPEZ CARLOS',
+            'fecha_nacimiento_mrz' => '1995-05-15',
+            'vigencia_mrz' => '2030',
+        ],
+        'confidence_score' => 0.96,
+        'observations' => '',
+    ], $overrides));
+}
+
+test('extractIneBack returns structured MRZ and CIC fields using dedicated back prompt', function () {
+    Http::fake(['ai.test/*' => aiCompletion(ineBackJson())]);
+
+    $result = app(DocumentAIService::class)->extractIneBack(fakePngBytes(800, 500), 'image/png');
+
+    expect($result->isValidDocument)->toBeTrue()
+        ->and($result->documentType)->toBe('ine_reverso')
+        ->and($result->extractedFields['lado_detectado'])->toBe('reverso')
+        ->and($result->extractedFields['cic'])->toBe('123456789')
+        ->and($result->extractedFields['vigencia_mrz'])->toBe('2030')
+        ->and($result->extractedFields['nombre_mrz'])->toBe('MENDOZA LOPEZ CARLOS');
+
+    Http::assertSent(function (Request $request): bool {
+        $systemContent = $request['messages'][0]['content'];
+
+        return str_contains($systemContent, 'REVERSO')
+            && str_contains($systemContent, 'mrz_linea_1');
+    });
+});
+
+test('extractIneBack marks document invalid if AI detects front side instead of back', function () {
+    Http::fake(['ai.test/*' => aiCompletion(ineBackJson([
+        'is_valid_document' => true,
+        'extracted_fields' => [
+            'lado_detectado' => 'frente',
+        ],
+    ]))]);
+
+    $result = app(DocumentAIService::class)->extractIneBack(fakePngBytes(300, 200), 'image/png');
+
+    expect($result->isValidDocument)->toBeFalse()
+        ->and($result->extractedFields['lado_detectado'])->toBe('frente');
+});
+
+test('reviewIneBack returns null when AI is disabled', function () {
+    config()->set('services.document_ai.enabled', false);
+    Http::fake();
+
+    $response = app(DocumentAIService::class)->reviewIneBack(fakePngBytes(300, 200), 'image/png', 'ip:1.2.3.4');
+
+    expect($response['result'])->toBeNull()
+        ->and($response['warnings'])->toBeEmpty();
+
+    Http::assertNothingSent();
+});

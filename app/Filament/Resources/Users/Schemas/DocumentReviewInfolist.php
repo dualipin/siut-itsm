@@ -70,6 +70,8 @@ class DocumentReviewInfolist
                             ? Storage::disk('public')->url($record->photo_path)
                             : null;
 
+                        $backMedia = $type === UserDocumentType::Ine ? $record->getIneBackMedia() : null;
+
                         $documentData[$type->value] = [
                             'type' => $type,
                             'label' => $type->getLabel(),
@@ -83,6 +85,18 @@ class DocumentReviewInfolist
                                     'v' => $media->getKey(),
                                 ])
                                 : null,
+                            'backMedia' => $backMedia,
+                            'backFileName' => $backMedia?->file_name,
+                            'backDocumentUrl' => $backMedia
+                                ? route('portal.users.documents.show', [
+                                    'user' => $record,
+                                    'type' => User::INE_BACK_COLLECTION,
+                                    'v' => $backMedia->getKey(),
+                                ])
+                                : null,
+                            'backExtractedData' => $backMedia?->getCustomProperty('extracted_data'),
+                            'backAiFlagged' => (bool) ($backMedia?->getCustomProperty('ai_flagged', false)),
+                            'backAiError' => $backMedia?->getCustomProperty('ai_error'),
                             'status' => $status,
                             'statusLabel' => $status === 'sin_subir' ? 'Sin subir' : $status->getLabel(),
                             'statusColor' => $status === 'sin_subir' ? 'gray' : $status->getColor(),

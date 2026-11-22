@@ -31,6 +31,11 @@ function fakeRegistrationIne(): UploadedFile
     return UploadedFile::fake()->image('ine.jpg', 800, 500);
 }
 
+function fakeRegistrationIneBack(): UploadedFile
+{
+    return UploadedFile::fake()->image('ine-reverso.jpg', 810, 510);
+}
+
 function fakeRegistrationNomina(): UploadedFile
 {
     return UploadedFile::fake()->image('nomina.jpg', 800, 600);
@@ -184,10 +189,15 @@ test('successful registration creates Agremiado user, attaches media with sessio
 
     // Prepare staged files on local disk
     $inePath = 'temp-uploads/registro/fake-ine.jpg';
+    $ineReversoPath = 'temp-uploads/registro/fake-ine-reverso.jpg';
     $nominaPath = 'temp-uploads/registro/fake-nomina.jpg';
     $photoPath = 'temp-uploads/registro/fake-photo.jpg';
 
-    Storage::disk('local')->put($inePath, (string) fakeRegistrationIne()->getContent());
+    $frontBytes = (string) fakeRegistrationIne()->getContent();
+    $backBytes = (string) fakeRegistrationIneBack()->getContent();
+
+    Storage::disk('local')->put($inePath, $frontBytes);
+    Storage::disk('local')->put($ineReversoPath, $backBytes);
     Storage::disk('local')->put($nominaPath, (string) fakeRegistrationNomina()->getContent());
     Storage::disk('local')->put($photoPath, (string) fakeRegistrationPhoto()->getContent());
 
@@ -195,12 +205,26 @@ test('successful registration creates Agremiado user, attaches media with sessio
         'is_valid_document' => true,
         'document_type' => 'ine',
         'extracted_fields' => [
+            'lado_detectado' => 'frente',
             'nombre' => 'CARLOS',
             'apellidos' => 'MENDOZA LOPEZ',
             'curp' => 'MELC950515HDFRRN09',
+            'fecha_nacimiento' => '1995-05-15',
             'vigencia' => '2030',
         ],
-    ]);
+    ], [], hash('sha256', $frontBytes));
+
+    $ineReversoToken = $staging->stage('ine_reverso', $ineReversoPath, [
+        'is_valid_document' => true,
+        'document_type' => 'ine_reverso',
+        'extracted_fields' => [
+            'lado_detectado' => 'reverso',
+            'cic' => '123456789',
+            'nombre_mrz' => 'MENDOZA LOPEZ CARLOS',
+            'fecha_nacimiento_mrz' => '1995-05-15',
+            'vigencia_mrz' => '2030',
+        ],
+    ], [], hash('sha256', $backBytes));
 
     $nominaToken = $staging->stage('nomina', $nominaPath, [
         'is_valid_document' => true,
@@ -228,6 +252,7 @@ test('successful registration creates Agremiado user, attaches media with sessio
         'password' => 'SecurePassword123!',
         'password_confirmation' => 'SecurePassword123!',
         'ine_token' => $ineToken,
+        'ine_reverso_token' => $ineReversoToken,
         'nomina_token' => $nominaToken,
         'photo_token' => $photoToken,
         'role' => 'admin', // Malicious attempt to escalate role
@@ -250,6 +275,7 @@ test('successful registration creates Agremiado user, attaches media with sessio
 
     // Temporary files deleted
     Storage::disk('local')->assertMissing($inePath);
+    Storage::disk('local')->assertMissing($ineReversoPath);
     Storage::disk('local')->assertMissing($nominaPath);
     Storage::disk('local')->assertMissing($photoPath);
 
@@ -259,13 +285,17 @@ test('successful registration creates Agremiado user, attaches media with sessio
     // Welcome notification created
     expect($user->notifications()->count())->toBeGreaterThanOrEqual(1);
 
-    // Spatie media documents attached
+    // Spatie media documents attached (including complementary INE back)
     $ineMedia = $user->getDocumentMedia(UserDocumentType::Ine);
+    $ineBackMedia = $user->getIneBackMedia();
     $nominaMedia = $user->getDocumentMedia(UserDocumentType::ComprobantePago);
 
     expect($ineMedia)->not->toBeNull()
         ->and($ineMedia->getCustomProperty('status'))->toBe(DocumentStatus::Pending->value)
         ->and($ineMedia->getCustomProperty('extracted_data.extracted_fields.nombre'))->toBe('CARLOS')
+        ->and($ineBackMedia)->not->toBeNull()
+        ->and($ineBackMedia->getCustomProperty('status'))->toBe(DocumentStatus::Pending->value)
+        ->and($ineBackMedia->getCustomProperty('extracted_data.extracted_fields.cic'))->toBe('123456789')
         ->and($nominaMedia)->not->toBeNull();
 });
 
@@ -462,4 +492,278 @@ test('purge command deletes files older than 3 hours and keeps fresh ones', func
 
     Storage::disk('local')->assertMissing($oldFile);
     Storage::disk('local')->assertExists($freshFile);
+});
+
+test('uploading valid INE reverso validates via AI and stages result', function () {
+    config()->set('services.document_ai.enabled', true);
+    config()->set('services.document_ai.base_url', 'https://ai.test/v1');
+    config()->set('services.document_ai.api_key', 'test-key');
+    config()->set('services.document_ai.model', 'test-model');
+
+    Http::fake([
+        'https://ai.test/v1/chat/completions' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'is_valid_document' => true,
+                            'document_type' => 'ine_reverso',
+                            'extracted_fields' => [
+                                'lado_detectado' => 'reverso',
+                                'mrz_linea_1' => 'IDMEX1234567890<<1234567890123',
+                                'mrz_linea_2' => '9505152M3012315MEX<02<<12345<6',
+                                'mrz_linea_3' => 'MENDOZA<LOPEZ<<CARLOS<<<<<<<<<',
+                                'cic' => '123456789',
+                                'ocr' => '1234567890123',
+                                'nombre_mrz' => 'MENDOZA LOPEZ CARLOS',
+                                'fecha_nacimiento_mrz' => '1995-05-15',
+                                'vigencia_mrz' => (string) (now()->year + 4),
+                            ],
+                            'confidence_score' => 0.96,
+                            'observations' => '',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $response = $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine_reverso',
+        'file' => fakeRegistrationIneBack(),
+    ]);
+
+    $response->assertOk()
+        ->assertJson([
+            'ai_status' => 'success',
+            'fields' => [
+                'lado_detectado' => 'reverso',
+                'cic' => '123456789',
+            ],
+        ]);
+
+    $token = $response->json('token');
+    $entry = app(RegistrationStaging::class)->resolve($token, 'ine_reverso');
+
+    expect($entry)->not->toBeNull()
+        ->and($entry['hash'])->not->toBeEmpty();
+});
+
+test('uploading invalid INE front or wrong side returns 422 and cleans up temp file', function () {
+    config()->set('services.document_ai.enabled', true);
+    config()->set('services.document_ai.base_url', 'https://ai.test/v1');
+    config()->set('services.document_ai.api_key', 'test-key');
+    config()->set('services.document_ai.model', 'test-model');
+
+    Http::fake([
+        'https://ai.test/v1/chat/completions' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'is_valid_document' => false,
+                            'document_type' => 'ine',
+                            'extracted_fields' => [
+                                'lado_detectado' => 'reverso',
+                            ],
+                            'confidence_score' => 0.94,
+                            'observations' => 'Subiste el reverso en lugar del frente.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine',
+        'file' => fakeRegistrationIne(),
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['file']);
+
+    expect(Storage::disk('local')->files('temp-uploads/registro'))->toBeEmpty();
+});
+
+test('uploading invalid INE reverso returns 422 and cleans up temp file', function () {
+    config()->set('services.document_ai.enabled', true);
+    config()->set('services.document_ai.base_url', 'https://ai.test/v1');
+    config()->set('services.document_ai.api_key', 'test-key');
+    config()->set('services.document_ai.model', 'test-model');
+
+    Http::fake([
+        'https://ai.test/v1/chat/completions' => Http::response([
+            'choices' => [
+                [
+                    'message' => [
+                        'content' => json_encode([
+                            'is_valid_document' => false,
+                            'document_type' => 'ine_reverso',
+                            'extracted_fields' => [
+                                'lado_detectado' => 'frente',
+                            ],
+                            'confidence_score' => 0.95,
+                            'observations' => 'Esta imagen corresponde al frente de la credencial.',
+                        ]),
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine_reverso',
+        'file' => fakeRegistrationIne(),
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['file']);
+
+    expect(Storage::disk('local')->files('temp-uploads/registro'))->toBeEmpty();
+});
+
+test('uploading identical file for INE front and back is blocked with 422 even without AI', function () {
+    config()->set('services.document_ai.enabled', false);
+
+    $sameImage = UploadedFile::fake()->image('duplicate.jpg', 800, 500);
+    $sameBytes = (string) $sameImage->getContent();
+
+    $frontResponse = $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine',
+        'file' => UploadedFile::fake()->createWithContent('front.jpg', $sameBytes),
+    ])->assertOk();
+
+    $frontToken = (string) $frontResponse->json('token');
+
+    $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine_reverso',
+        'paired_token' => $frontToken,
+        'file' => UploadedFile::fake()->createWithContent('back.jpg', $sameBytes),
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['file']);
+});
+
+test('uploading mismatched INE reverso with paired_token returns 422', function () {
+    config()->set('services.document_ai.enabled', true);
+    config()->set('services.document_ai.base_url', 'https://ai.test/v1');
+    config()->set('services.document_ai.api_key', 'test-key');
+    config()->set('services.document_ai.model', 'test-model');
+
+    $futureYear = (string) (now()->year + 4);
+
+    Http::fake([
+        'https://ai.test/v1/chat/completions' => Http::sequence()
+            ->push([
+                'choices' => [[
+                    'message' => [
+                        'content' => json_encode([
+                            'is_valid_document' => true,
+                            'document_type' => 'ine',
+                            'extracted_fields' => [
+                                'lado_detectado' => 'frente',
+                                'nombre' => 'CARLOS',
+                                'apellidos' => 'MENDOZA LOPEZ',
+                                'curp' => 'MELC950515HDFRRN09',
+                                'fecha_nacimiento' => '1995-05-15',
+                                'vigencia' => $futureYear,
+                            ],
+                            'confidence_score' => 0.96,
+                            'observations' => '',
+                        ]),
+                    ],
+                ]],
+            ], 200)
+            ->push([
+                'choices' => [[
+                    'message' => [
+                        'content' => json_encode([
+                            'is_valid_document' => true,
+                            'document_type' => 'ine_reverso',
+                            'extracted_fields' => [
+                                'lado_detectado' => 'reverso',
+                                'nombre_mrz' => 'GARCIA RAMIREZ LAURA',
+                                'fecha_nacimiento_mrz' => '1988-03-10',
+                                'vigencia_mrz' => $futureYear,
+                            ],
+                            'confidence_score' => 0.96,
+                            'observations' => '',
+                        ]),
+                    ],
+                ]],
+            ], 200),
+    ]);
+
+    $frontResponse = $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine',
+        'file' => fakeRegistrationIne(),
+    ])->assertOk();
+
+    $this->postJson('/api/registro/documentos', [
+        'kind' => 'ine_reverso',
+        'paired_token' => $frontResponse->json('token'),
+        'file' => fakeRegistrationIneBack(),
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['file']);
+});
+
+test('registration blocks submission when staged INE front and back do not match', function () {
+    $staging = app(RegistrationStaging::class);
+    $futureYear = (string) (now()->year + 4);
+
+    Storage::disk('local')->put('temp/ine-front.jpg', 'front-content');
+    Storage::disk('local')->put('temp/ine-back.jpg', 'back-content');
+    Storage::disk('local')->put('temp/nom.jpg', 'nom-content');
+    Storage::disk('local')->put('temp/pho.jpg', 'pho-content');
+
+    $ineToken = $staging->stage('ine', 'temp/ine-front.jpg', [
+        'is_valid_document' => true,
+        'extracted_fields' => [
+            'lado_detectado' => 'frente',
+            'nombre' => 'CARLOS',
+            'apellidos' => 'MENDOZA LOPEZ',
+            'fecha_nacimiento' => '1995-05-15',
+            'vigencia' => $futureYear,
+        ],
+    ], [], hash('sha256', 'front-content'));
+
+    $ineReversoToken = $staging->stage('ine_reverso', 'temp/ine-back.jpg', [
+        'is_valid_document' => true,
+        'extracted_fields' => [
+            'lado_detectado' => 'reverso',
+            'nombre_mrz' => 'OTRA PERSONA DISTINTA',
+            'fecha_nacimiento_mrz' => '1980-01-01',
+            'vigencia_mrz' => $futureYear,
+        ],
+    ], [], hash('sha256', 'back-content'));
+
+    $nominaToken = $staging->stage('nomina', 'temp/nom.jpg');
+    $photoToken = $staging->stage('photo', 'temp/pho.jpg');
+
+    $this->postJson('/api/registro', [
+        'name' => 'Carlos',
+        'surnames' => 'Mendoza',
+        'email' => 'mismatch@siut.org',
+        'birth_date' => '1995-05-15',
+        'curp' => 'MELC950515HDFRRN09',
+        'password' => 'Secret123!',
+        'password_confirmation' => 'Secret123!',
+        'ine_token' => $ineToken,
+        'ine_reverso_token' => $ineReversoToken,
+        'nomina_token' => $nominaToken,
+        'photo_token' => $photoToken,
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['ine_reverso_token']);
+});
+
+test('owner and admin can view ine_reverso document while another agremiado receives 403', function () {
+    $owner = User::factory()->create(['role' => UserRole::Agremiado]);
+    $other = User::factory()->create(['role' => UserRole::Agremiado]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $tmp = tempnam(sys_get_temp_dir(), 'ineb_').'.jpg';
+    file_put_contents($tmp, (string) fakeRegistrationIneBack()->getContent());
+    $owner->addMedia($tmp)->toMediaCollection(User::INE_BACK_COLLECTION);
+
+    $url = route('portal.users.documents.show', ['user' => $owner, 'type' => User::INE_BACK_COLLECTION]);
+
+    $this->actingAs($owner)->get($url)->assertOk();
+    $this->actingAs($admin)->get($url)->assertOk();
+    $this->actingAs($other)->get($url)->assertForbidden();
 });

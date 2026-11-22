@@ -20,13 +20,14 @@ class StoreRegistrationDocumentRequest extends FormRequest
 
         $fileRules = match ($kind) {
             'photo' => ['required', 'file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:10240'],
-            'ine', 'nomina' => ['required', 'file', 'mimes:pdf,jpeg,jpg,png,webp', 'max:10240'],
+            'ine', 'ine_reverso', 'nomina' => ['required', 'file', 'mimes:pdf,jpeg,jpg,png,webp', 'max:10240'],
             default => ['required', 'file', 'max:10240'],
         };
 
         return [
-            'kind' => ['required', 'string', 'in:ine,nomina,photo'],
+            'kind' => ['required', 'string', 'in:ine,ine_reverso,nomina,photo'],
             'file' => $fileRules,
+            'paired_token' => ['nullable', 'string', 'max:64'],
         ];
     }
 
@@ -37,7 +38,7 @@ class StoreRegistrationDocumentRequest extends FormRequest
     {
         return [
             'kind.required' => 'El tipo de documento es obligatorio.',
-            'kind.in' => 'El tipo de documento debe ser ine, nomina o photo.',
+            'kind.in' => 'El tipo de documento debe ser ine, ine_reverso, nomina o photo.',
             'file.required' => 'Debes seleccionar un archivo.',
             'file.mimes' => 'El formato del archivo no es válido. Solo se aceptan PDF, JPG, PNG o WebP.',
             'file.image' => 'La fotografía debe ser una imagen válida (JPG, PNG o WebP).',
