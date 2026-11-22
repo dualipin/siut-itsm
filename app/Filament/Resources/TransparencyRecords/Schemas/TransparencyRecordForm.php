@@ -4,18 +4,19 @@ namespace App\Filament\Resources\TransparencyRecords\Schemas;
 
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
-use App\Models\TransparencyDocument;
-use Filament\Actions\Action;
+use App\Models\TransparencyRecord;
+use Closure;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
@@ -26,108 +27,248 @@ class TransparencyRecordForm
         return $schema
             ->components([
                 Section::make('Información del Registro')
-                    ->description('Datos generales de identificación y clasificación.')
+                    ->description('Selecciona la categoría documental para capturar únicamente los datos necesarios.')
                     ->icon(Heroicon::DocumentText)
                     ->schema([
-                        TextInput::make('name')
-                            ->label('Nombre del Registro')
+                        Select::make('type')
+                            ->label('Categoría')
+                            ->options(TransparencyRecordType::class)
                             ->required()
+                            ->live()
+                            ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                                $type = self::resolveType($state);
+
+                                if (! ($type?->usesPeriod() ?? false)) {
+                                    $set('period', null);
+                                }
+
+                                if (! ($type?->usesDocumentDate() ?? false)) {
+                                    $set('document_date', null);
+                                }
+
+                                if (! ($type?->usesFolio() ?? false)) {
+                                    $set('reference_number', null);
+                                }
+                            })
+                            ->helperText(static fn (Get $get): string => $get->enum('type', TransparencyRecordType::class)?->getDescription()
+                                ?? 'Financiero: balances y reportes; Oficios: correspondencia; Actas: asambleas; Normativo y Legal: estatutos y convenios; Otros: archivo general.')
+                            ->rule(static function (Get $get, ?TransparencyRecord $record): Closure {
+                                return static function (string $attribute, mixed $value, Closure $fail) use ($get, $record): void {
+                                    $type = self::resolveType($value);
+
+                                    if (! $type || ! ($record instanceof TransparencyRecord)) {
+                                        return;
+                                    }
+
+                                    $allowedExtensions = $type->allowedExtensions();
+                                    $incompatibleFiles = [];
+
+                                    foreach ($get->array('documents') as $file) {
+                                        if (! is_string($file)) {
+                                            continue;
+                                        }
+
+                                        $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
+                                            ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
+
+                                        if (! $media) {
+                                            continue;
+                                        }
+
+                                        $extension = strtolower(pathinfo((string) $media->file_name, PATHINFO_EXTENSION));
+
+                                        if ($extension !== '' && ! in_array($extension, $allowedExtensions, true)) {
+                                            $incompatibleFiles[] = $media->file_name;
+                                        }
+                                    }
+
+                                    if ($incompatibleFiles !== []) {
+                                        $fail(sprintf(
+                                            'No se puede cambiar a la categoría %s mientras existan archivos incompatibles adjuntos (%s). Elimínalos o mantén la categoría Financiero.',
+                                            $type->getLabel(),
+                                            implode(', ', $incompatibleFiles),
+                                        ));
+                                    }
+                                };
+                            })
                             ->columnSpanFull(),
+
+                        TextInput::make('name')
+                            ->label('Nombre / Asunto')
+                            ->required()
+                            ->maxLength(255)
+                            ->columnSpanFull(),
+
                         Textarea::make('summary')
-                            ->label('Resumen')
+                            ->label('Descripción breve')
                             ->rows(3)
                             ->columnSpanFull(),
+
                         Grid::make(2)
                             ->schema([
                                 TextInput::make('fiscal_year')
                                     ->label('Año Fiscal')
                                     ->required()
-                                    ->numeric(),
-                                TextInput::make('period')
+                                    ->default(now()->year)
+                                    ->numeric()
+                                    ->integer()
+                                    ->visible(static fn (Get $get): bool => $get->enum('type', TransparencyRecordType::class)?->usesPeriod() ?? false),
+
+                                Select::make('period')
                                     ->label('Periodo')
-                                    ->required(),
-                                Select::make('type')
-                                    ->label('Tipo')
-                                    ->options(TransparencyRecordType::class)
-                                    ->required(),
-                                Select::make('status')
-                                    ->label('Estado')
-                                    ->options(TransparencyRecordStatus::class)
-                                    ->default(TransparencyRecordStatus::Borrador)
-                                    ->required(),
+                                    ->options(TransparencyRecordType::periodOptions())
+                                    ->required()
+                                    ->searchable()
+                                    ->visible(static fn (Get $get): bool => $get->enum('type', TransparencyRecordType::class)?->usesPeriod() ?? false),
+
+                                DatePicker::make('document_date')
+                                    ->label('Fecha del Documento')
+                                    ->required()
+                                    ->native(false)
+                                    ->helperText('Fecha original del documento. Si solo se conoce el año, selecciona el 1 de enero de ese año.')
+                                    ->visible(static fn (Get $get): bool => $get->enum('type', TransparencyRecordType::class)?->usesDocumentDate() ?? false),
+
+                                TextInput::make('reference_number')
+                                    ->label('No. de Oficio / Folio')
+                                    ->trim()
+                                    ->unique(ignoreRecord: true)
+                                    ->maxLength(255)
+                                    ->validationMessages([
+                                        'unique' => 'Este número de oficio o folio ya está registrado en otro documento.',
+                                    ])
+                                    ->visible(static fn (Get $get): bool => $get->enum('type', TransparencyRecordType::class)?->usesFolio() ?? false),
                             ]),
-                        Textarea::make('observations')
-                            ->label('Observaciones')
-                            ->rows(2)
-                            ->columnSpanFull(),
+
                         Hidden::make('created_by')
-                            ->default(fn () => auth()->id()),
+                            ->default(static fn (): ?int => auth()->id())
+                            ->dehydrated(static fn (?TransparencyRecord $record): bool => ! ($record?->exists ?? false)),
                     ]),
 
                 Section::make('Documentos Adjuntos')
-                    ->description('Sube y administra los archivos y expedientes digitales correspondientes a este registro.')
+                    ->description('Sube uno o más archivos digitalizados (máximo 15 MB por archivo).')
                     ->icon(Heroicon::DocumentCheck)
                     ->schema([
-                        Repeater::make('documents')
-                            ->relationship('documents')
-                            ->label('Documentos del Registro')
-                            ->addActionLabel('Agregar Documento')
-                            ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null) ? $state['name'] : 'Nuevo Documento')
-                            ->defaultItems(0)
-                            ->schema([
-                                Grid::make(2)
-                                    ->schema([
-                                        TextInput::make('name')
-                                            ->label('Nombre del Documento')
-                                            ->placeholder('Ej. Contrato Colectivo 2026, Informe Trimestral')
-                                            ->required()
-                                            ->maxLength(255),
-                                        DatePicker::make('published_at')
-                                            ->label('Fecha de Publicación / Vigencia')
-                                            ->default(now()),
+                        SpatieMediaLibraryFileUpload::make('documents')
+                            ->label('Archivos')
+                            ->collection(TransparencyRecord::DOCUMENTS_COLLECTION)
+                            ->multiple()
+                            ->maxSize(15360)
+                            ->acceptedFileTypes(static fn (Get $get): array => (
+                                $get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros
+                            )->allowedMimeTypes())
+                            ->rule(static function (Get $get): string {
+                                $extensions = ($get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros)
+                                    ->allowedExtensions();
+
+                                return 'extensions:'.implode(',', $extensions);
+                            })
+                            ->downloadable()
+                            ->openable()
+                            ->columnSpanFull()
+                            ->validationMessages([
+                                'max' => 'Cada archivo adjunto no debe superar los 15 MB.',
+                                'mimetypes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                                'mimes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                                'extensions' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                            ])
+                            ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
+                                $record = $component->getRecord();
+                                if (! $record instanceof TransparencyRecord) {
+                                    return null;
+                                }
+
+                                $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
+                                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
+
+                                if (! $media) {
+                                    return null;
+                                }
+
+                                return [
+                                    'name' => $media->getAttributeValue('name') ?? $media->getAttributeValue('file_name'),
+                                    'size' => $media->getAttributeValue('size'),
+                                    'type' => $media->getAttributeValue('mime_type'),
+                                    'url' => route('portal.transparency.documents.show', [
+                                        'record' => $record,
+                                        'media' => $media,
                                     ]),
-                                Toggle::make('is_public')
-                                    ->label('¿Es Público?')
-                                    ->helperText('Determina si este documento estará disponible para descarga en el portal público')
-                                    ->default(true),
-                                SpatieMediaLibraryFileUpload::make('file')
-                                    ->label('Archivo')
-                                    ->collection('file')
-                                    ->downloadable()
-                                    ->openable()
-                                    ->required()
-                                    ->columnSpanFull()
-                                    ->hintAction(
-                                        Action::make('open_file')
-                                            ->label('Abrir Documento')
-                                            ->icon(Heroicon::ArrowTopRightOnSquare)
-                                            ->visible(fn (?TransparencyDocument $record): bool => $record !== null && $record->hasMedia('file'))
-                                            ->url(fn (?TransparencyDocument $record): ?string => $record !== null && $record->hasMedia('file') ? route('portal.transparency.documents.show', $record) : null)
-                                            ->openUrlInNewTab()
-                                    )
-                                    ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
-                                        $record = $component->getRecord();
-                                        if (! $record instanceof TransparencyDocument) {
-                                            return null;
-                                        }
+                                ];
+                            }),
+                    ]),
 
-                                        $media = $record->getRelationValue('media')?->firstWhere('uuid', $file);
+                Section::make('Visibilidad en el Portal')
+                    ->description('Define quién puede descargar los archivos adjuntos.')
+                    ->icon(Heroicon::Eye)
+                    ->schema([
+                        ToggleButtons::make('status')
+                            ->label('Visibilidad')
+                            ->options(TransparencyRecordStatus::class)
+                            ->icons([
+                                TransparencyRecordStatus::Interno->value => Heroicon::LockClosed,
+                                TransparencyRecordStatus::Publico->value => Heroicon::GlobeAlt,
+                            ])
+                            ->inline()
+                            ->default(TransparencyRecordStatus::Interno)
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                                $status = self::resolveStatus($state);
 
-                                        if (! $media) {
-                                            return null;
-                                        }
+                                if ($status !== TransparencyRecordStatus::Interno) {
+                                    $set('observations', null);
+                                }
+                            })
+                            ->helperText(static fn (Get $get): string => $get->enum('status', TransparencyRecordStatus::class)?->getDescription()
+                                ?? TransparencyRecordStatus::Interno->getDescription())
+                            ->rule(static function (Get $get, ?TransparencyRecord $record): Closure {
+                                return static function (string $attribute, mixed $value, Closure $fail) use ($get, $record): void {
+                                    $status = self::resolveStatus($value);
 
-                                        return [
-                                            'name' => $media->getAttributeValue('name') ?? $media->getAttributeValue('file_name'),
-                                            'size' => $media->getAttributeValue('size'),
-                                            'type' => $media->getAttributeValue('mime_type'),
-                                            'url' => route('portal.transparency.documents.show', ['document' => $record]),
-                                        ];
-                                    }),
-                                Hidden::make('uploaded_by')
-                                    ->default(fn () => auth()->id()),
-                            ]),
+                                    if ($status !== TransparencyRecordStatus::Publico) {
+                                        return;
+                                    }
+
+                                    if (filled($get->array('documents'))) {
+                                        return;
+                                    }
+
+                                    if ($record instanceof TransparencyRecord
+                                        && $record->exists
+                                        && $record->isPublico()
+                                        && $record->hasAttachedDocuments()) {
+                                        return;
+                                    }
+
+                                    $fail('Para publicar como Público debes adjuntar al menos un archivo. Si aún no cuentas con él, guárdalo en Consulta Interna.');
+                                };
+                            })
+                            ->columnSpanFull(),
+
+                        Textarea::make('observations')
+                            ->label('Motivo de acceso interno')
+                            ->rows(2)
+                            ->placeholder('Ej. Contiene datos personales de agremiados o correspondencia interna.')
+                            ->visible(static fn (Get $get): bool => $get->enum('status', TransparencyRecordStatus::class) === TransparencyRecordStatus::Interno)
+                            ->columnSpanFull(),
                     ]),
             ]);
+    }
+
+    private static function resolveType(mixed $value): ?TransparencyRecordType
+    {
+        if ($value instanceof TransparencyRecordType) {
+            return $value;
+        }
+
+        return filled($value) ? TransparencyRecordType::tryFrom((string) $value) : null;
+    }
+
+    private static function resolveStatus(mixed $value): ?TransparencyRecordStatus
+    {
+        if ($value instanceof TransparencyRecordStatus) {
+            return $value;
+        }
+
+        return filled($value) ? TransparencyRecordStatus::tryFrom((string) $value) : null;
     }
 }

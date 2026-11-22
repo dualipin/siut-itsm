@@ -2,32 +2,33 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\TransparencyDocument;
+use App\Models\TransparencyRecord;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-class TransparencyDocumentController extends Controller
+class TransparencyRecordMediaController extends Controller
 {
     /**
-     * Safely display or download a transparency document file.
+     * Safely display or download a transparency record media file for active Directiva members.
      */
-    public function show(Request $request, TransparencyDocument $document): StreamedResponse
+    public function show(Request $request, TransparencyRecord $record, Media $media): StreamedResponse
     {
         /** @var User|null $currentUser */
         $currentUser = $request->user();
 
         abort_unless($currentUser !== null, 401);
-
-        // Only active users with portal access can access portal documents
         abort_unless($currentUser->is_active, 403, 'Tu cuenta se encuentra inactiva.');
 
-        Gate::authorize('view', $document);
+        Gate::authorize('view', $record);
 
-        $media = $document->getFirstMedia('file');
-
-        abort_unless($media !== null, 404, 'El documento solicitado no cuenta con un archivo adjunto.');
+        abort_unless(
+            $record->ownsDocumentMedia($media),
+            404,
+            'El archivo solicitado no pertenece a este registro.'
+        );
 
         if ($request->boolean('download')) {
             return $media->toResponse($request);

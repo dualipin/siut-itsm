@@ -69,36 +69,20 @@ return [
                             'href' => '/transparencia/financiero',
                         ],
                         [
-                            'label' => 'Administrativo',
-                            'href' => '/transparencia/administrativo',
+                            'label' => 'Oficios y Gestiones',
+                            'href' => '/transparencia/oficios',
                         ],
                         [
-                            'label' => 'Legal',
+                            'label' => 'Actas y Minutas',
+                            'href' => '/transparencia/actas',
+                        ],
+                        [
+                            'label' => 'Normativo y Legal',
                             'href' => '/transparencia/legal',
                         ],
                         [
-                            'label' => 'Sindical',
-                            'href' => '/transparencia/sindical',
-                        ],
-                        [
-                            'label' => 'Gestoría',
-                            'href' => '/transparencia/gestoria',
-                        ],
-                        [
-                            'label' => 'Gremiales',
-                            'href' => '/transparencia/gremiales',
-                        ],
-                        [
-                            'label' => 'Trámites',
-                            'href' => '/transparencia/tramites',
-                        ],
-                        [
-                            'label' => 'Minutas',
-                            'href' => '/transparencia/minutas',
-                        ],
-                        [
                             'label' => 'Otros',
-                            'href' => '/transparencia/otro',
+                            'href' => '/transparencia/otros',
                         ],
                     ],
                 ],

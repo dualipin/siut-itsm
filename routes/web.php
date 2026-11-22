@@ -4,7 +4,7 @@ use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanSimulatorController;
 use App\Http\Controllers\MessageAttachmentController;
 use App\Http\Controllers\PublicPetitionController;
-use App\Http\Controllers\TransparencyDocumentController;
+use App\Http\Controllers\TransparencyRecordMediaController;
 use App\Http\Controllers\UserBulkImportController;
 use App\Http\Controllers\UserDocumentController;
 use Illuminate\Http\Request;
@@ -31,7 +31,7 @@ Route::middleware(['web', 'auth'])->group(function () {
         ->where('batchId', '[a-zA-Z0-9_-]+')
         ->name('portal.users.import.cleanup');
 
-    Route::get('/portal/transparency-documents/{document}', [TransparencyDocumentController::class, 'show'])
+    Route::get('/portal/transparency-records/{record}/documents/{media}', [TransparencyRecordMediaController::class, 'show'])
         ->name('portal.transparency.documents.show');
 
     // Módulo de Préstamos - Solicitud y Documentos

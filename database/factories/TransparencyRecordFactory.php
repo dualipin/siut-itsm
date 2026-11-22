@@ -21,63 +21,73 @@ class TransparencyRecordFactory extends Factory
      */
     public function definition(): array
     {
-        $status = fake()->randomElement(TransparencyRecordStatus::cases());
+        $type = fake()->randomElement(TransparencyRecordType::cases());
+        $documentDate = $type->usesDocumentDate()
+            ? fake()->dateTimeBetween('2023-01-01', '2026-12-31')
+            : null;
+        $fiscalYear = $documentDate !== null
+            ? (int) $documentDate->format('Y')
+            : fake()->numberBetween(2023, 2026);
 
         return [
             'name' => fake()->randomElement([
                 'Informe Financiero de Ingresos y Egresos',
                 'Presupuesto de Operación Anual',
-                'Tabulador Salarial y Prestaciones',
-                'Auditoría y Dictamen Contable',
+                'Oficio de Gestión Sindical',
                 'Acta de Asamblea General Extraordinaria',
                 'Convenio de Colaboración Institucional',
                 'Reglamento Interior de Trabajo',
-                'Padrón de Afiliados Actualizado',
             ]).' '.fake()->numberBetween(2023, 2026),
             'summary' => fake()->paragraph(),
-            'fiscal_year' => fake()->numberBetween(2023, 2026),
-            'period' => fake()->randomElement(['1er Trimestre', '2do Trimestre', '3er Trimestre', '4to Trimestre', 'Anual']),
+            'fiscal_year' => $fiscalYear,
+            'period' => $type->usesPeriod()
+                ? fake()->randomElement(['1er Trimestre', '2do Trimestre', '3er Trimestre', '4to Trimestre', 'Anual'])
+                : null,
+            'document_date' => $documentDate?->format('Y-m-d'),
+            'reference_number' => $type->usesFolio()
+                ? fake()->optional(0.5)->numerify('SIUT-###/'.fake()->unique()->numberBetween(1000, 9999))
+                : null,
             'observations' => fake()->optional(0.4)->sentence(),
-            'type' => fake()->randomElement(TransparencyRecordType::cases()),
-            'status' => $status,
+            'type' => $type,
+            'status' => TransparencyRecordStatus::Interno,
             'created_by' => User::factory(),
         ];
     }
 
     /**
-     * Indicate that the record is published.
+     * Indicate that the record is publicly downloadable.
      */
-    public function published(): static
+    public function publico(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => TransparencyRecordStatus::Publicado,
+            'status' => TransparencyRecordStatus::Publico,
         ]);
     }
 
     /**
-     * Indicate that the record is a draft.
+     * Indicate that the record is internal consultation only.
      */
-    public function draft(): static
+    public function interno(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => TransparencyRecordStatus::Borrador,
+            'status' => TransparencyRecordStatus::Interno,
         ]);
     }
 
     /**
-     * Configure the factory to create associated documents.
+     * Configure the factory to attach media documents directly to the record.
      */
     public function withDocuments(int $count = 3): static
     {
         return $this->afterCreating(function (TransparencyRecord $record) use ($count) {
             for ($i = 0; $i < $count; $i++) {
-                $fileName = fake()->word().'.pdf';
-                $file = UploadedFile::fake()->createWithContent($fileName, 'Contenido de prueba');
+                $fileName = fake()->unique()->word().'.pdf';
+                $file = UploadedFile::fake()->createWithContent($fileName, "%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF");
 
                 $record->addMedia($file)
                     ->setName(fake()->word())
                     ->setFileName($fileName)
-                    ->toMediaCollection('documents');
+                    ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
             }
         });
     }
