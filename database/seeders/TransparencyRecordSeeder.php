@@ -109,7 +109,7 @@ class TransparencyRecordSeeder extends Seeder
                 $record->addMedia($file)
                     ->setName($record->name)
                     ->setFileName($fileName)
-                    ->toMediaCollection('documents');
+                    ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
             }
         }
 

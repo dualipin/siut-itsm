@@ -36,7 +36,7 @@
             <!-- Buscador instantáneo en cliente -->
             <div class="mb-6 animate-fade-in-up">
                 <label for="transparency-search" class="sr-only">Buscar registros en {{ $type->getLabel() }}</label>
-                <label class="input input-bordered w-full rounded-xl bg-base-200/40 focus-within:bg-base-100 focus-within:border-primary shadow-2xs flex items-center gap-2">
+                <div class="input input-bordered w-full rounded-xl bg-base-200/40 focus-within:bg-base-100 focus-within:border-primary shadow-2xs flex items-center gap-2">
                     <i class="bi bi-search text-base-content/50 shrink-0" aria-hidden="true"></i>
                     <input
                         id="transparency-search"
@@ -54,7 +54,7 @@
                     >
                         <i class="bi bi-x-lg text-xs" aria-hidden="true"></i>
                     </button>
-                </label>
+                </div>
                 <p data-search-status class="mt-2 text-xs text-base-content/60 hidden" aria-live="polite"></p>
             </div>
 
@@ -119,7 +119,7 @@
                                                                 </h3>
 
                                                                 <!-- Badge de Visibilidad -->
-                                                                @if($record->isPublic())
+                                                                @if($record->isPublico())
                                                                     <span class="badge badge-xs badge-success gap-1 font-semibold py-2 px-2.5 rounded-lg">
                                                                         <span class="w-1.5 h-1.5 rounded-full bg-success-content"></span>
                                                                         {{ $record->status->getLabel() }}
@@ -164,8 +164,8 @@
 
                                                         <!-- Botón de Descarga / Estado Cerrado -->
                                                         <div class="flex flex-col items-start md:items-end justify-center shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-base-200">
-                                                            @if($record->isPublic())
-                                                                @php($documents = $record->getMedia('documents'))
+                                                            @if($record->isPublico())
+                                                                @php($documents = $record->getMedia(\App\Models\TransparencyRecord::DOCUMENTS_COLLECTION))
                                                                 @if($documents->count() === 1)
                                                                     @php($singleMedia = $documents->first())
                                                                     <a href="{{ route('transparency.documents.download', [$record, $singleMedia]) }}"

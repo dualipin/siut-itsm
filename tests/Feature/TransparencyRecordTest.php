@@ -14,6 +14,8 @@ use Database\Seeders\TransparencyRecordSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -121,10 +123,10 @@ test('transparency record attaches multiple documents directly via medialibrary 
     $publicRecord->addMedia(UploadedFile::fake()->createWithContent('dos.pdf', '%PDF-1.4 2'))
         ->toMediaCollection('documents');
 
-    expect($publicRecord->getMedia('documents'))->toHaveCount(2)
-        ->and($publicRecord->getMedia('documents')->first())->toBeInstanceOf(Media::class)
-        ->and($publicRecord->isPublic())->toBeTrue()
-        ->and($internoRecord->isPublic())->toBeFalse()
+    expect($publicRecord->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION))->toHaveCount(2)
+        ->and($publicRecord->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->first())->toBeInstanceOf(Media::class)
+        ->and($publicRecord->isPublico())->toBeTrue()
+        ->and($internoRecord->isPublico())->toBeFalse()
         ->and($internoRecord->isInterno())->toBeTrue()
         ->and(TransparencyRecord::publico()->count())->toBe(1)
         ->and(TransparencyRecord::interno()->count())->toBe(1);
@@ -205,4 +207,45 @@ test('agremiado cannot access transparency record filament resource pages', func
     $this->get(TransparencyRecordResource::getUrl('create'))->assertForbidden();
     $this->get(TransparencyRecordResource::getUrl('view', ['record' => $record]))->assertForbidden();
     $this->get(TransparencyRecordResource::getUrl('edit', ['record' => $record]))->assertForbidden();
+});
+
+test('ownsDocumentMedia verifies record ownership and documents collection', function () {
+    $record = TransparencyRecord::factory()->create();
+    $otherRecord = TransparencyRecord::factory()->create();
+
+    $ownedMedia = $record->addMedia(UploadedFile::fake()->createWithContent('owned.pdf', '%PDF-1.4'))
+        ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+    $otherCollectionMedia = $record->addMedia(UploadedFile::fake()->createWithContent('other-col.pdf', '%PDF-1.4'))
+        ->toMediaCollection('other_collection');
+    $foreignMedia = $otherRecord->addMedia(UploadedFile::fake()->createWithContent('foreign.pdf', '%PDF-1.4'))
+        ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    expect($record->ownsDocumentMedia($ownedMedia))->toBeTrue()
+        ->and($record->ownsDocumentMedia($otherCollectionMedia))->toBeFalse()
+        ->and($record->ownsDocumentMedia($foreignMedia))->toBeFalse();
+});
+
+test('migration rollback backfills null period to anual when non-financiero records exist', function () {
+    $author = User::factory()->create();
+
+    $nonFinancial = TransparencyRecord::factory()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'fiscal_year' => 2025,
+        'period' => null,
+        'document_date' => '2025-05-01',
+        'created_by' => $author->id,
+    ]);
+
+    try {
+        Artisan::call('migrate:rollback', ['--step' => 1]);
+
+        expect(Schema::hasTable('transparency_documents'))->toBeTrue()
+            ->and(Schema::hasColumns('transparency_records', ['reference_number', 'document_date']))->toBeFalse()
+            ->and(DB::table('transparency_records')->where('id', $nonFinancial->id)->value('period'))->toBe('Anual');
+    } finally {
+        Artisan::call('migrate');
+    }
+
+    expect(Schema::hasTable('transparency_documents'))->toBeFalse()
+        ->and(Schema::hasColumns('transparency_records', ['reference_number', 'document_date']))->toBeTrue();
 });

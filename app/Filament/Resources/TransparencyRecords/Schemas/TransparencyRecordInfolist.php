@@ -61,7 +61,7 @@ class TransparencyRecordInfolist
                     ->schema([
                         TextEntry::make('documents_list')
                             ->label('Archivos')
-                            ->state(static fn (TransparencyRecord $record): array => $record->getMedia('documents')
+                            ->state(static fn (TransparencyRecord $record): array => $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)
                                 ->map(static fn (Media $media): string => sprintf(
                                     '<span>%s</span> <span class="text-gray-500">(%s)</span> — <a href="%s" target="_blank" rel="noopener noreferrer" class="text-primary-600 hover:underline font-medium">Abrir</a> · <a href="%s" class="text-primary-600 hover:underline font-medium">Descargar</a>',
                                     e($media->file_name),

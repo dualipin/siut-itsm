@@ -25,9 +25,7 @@ class TransparencyRecordMediaController extends Controller
         Gate::authorize('view', $record);
 
         abort_unless(
-            $media->model_type === TransparencyRecord::class
-                && (int) $media->model_id === (int) $record->getKey()
-                && $media->collection_name === 'documents',
+            $record->ownsDocumentMedia($media),
             404,
             'El archivo solicitado no pertenece a este registro.'
         );

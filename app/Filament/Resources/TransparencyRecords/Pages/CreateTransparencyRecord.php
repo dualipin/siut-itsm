@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\TransparencyRecords\Pages;
 
-use App\Filament\Resources\TransparencyRecords\Schemas\TransparencyRecordForm;
 use App\Filament\Resources\TransparencyRecords\TransparencyRecordResource;
+use App\Models\TransparencyRecord;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateTransparencyRecord extends CreateRecord
@@ -18,6 +18,6 @@ class CreateTransparencyRecord extends CreateRecord
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        return TransparencyRecordForm::sanitizeData($data);
+        return TransparencyRecord::sanitizeAttributes($data);
     }
 }

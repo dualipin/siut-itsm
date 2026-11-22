@@ -44,7 +44,7 @@ class TransparencyRecordsTable
                 TextColumn::make('date_or_period')
                     ->label('Fecha / Periodo')
                     ->state(function (TransparencyRecord $record): string {
-                        if ($record->type === TransparencyRecordType::Financiero) {
+                        if ($record->type?->usesPeriod()) {
                             return filled($record->period)
                                 ? "{$record->fiscal_year} · {$record->period}"
                                 : (string) $record->fiscal_year;
@@ -101,22 +101,20 @@ class TransparencyRecordsTable
             ])
             ->recordActions([
                 Action::make('toggle_visibility')
-                    ->label(fn (TransparencyRecord $record): string => $record->isPublic()
+                    ->label(fn (TransparencyRecord $record): string => $record->isPublico()
                         ? 'Pasar a Consulta Interna'
                         : 'Hacer Público')
-                    ->icon(fn (TransparencyRecord $record): Heroicon => $record->isPublic()
+                    ->icon(fn (TransparencyRecord $record): Heroicon => $record->isPublico()
                         ? Heroicon::LockClosed
                         : Heroicon::GlobeAlt)
-                    ->color(fn (TransparencyRecord $record): string => $record->isPublic()
+                    ->color(fn (TransparencyRecord $record): string => $record->isPublico()
                         ? 'warning'
                         : 'success')
                     ->authorize('update')
                     ->visible(fn (TransparencyRecord $record): bool => ! $record->trashed())
                     ->action(function (TransparencyRecord $record): void {
-                        if ($record->isPublic()) {
-                            $record->update([
-                                'status' => TransparencyRecordStatus::Interno,
-                            ]);
+                        if ($record->isPublico()) {
+                            $record->unpublish();
 
                             Notification::make()
                                 ->title('Registro marcado como Consulta Interna')
@@ -127,7 +125,7 @@ class TransparencyRecordsTable
                             return;
                         }
 
-                        if ($record->getMedia('documents')->isEmpty()) {
+                        if (! $record->publish()) {
                             Notification::make()
                                 ->title('No se puede hacer público')
                                 ->body('Adjunta al menos un archivo antes de cambiar la visibilidad a Público.')
@@ -136,11 +134,6 @@ class TransparencyRecordsTable
 
                             return;
                         }
-
-                        $record->update([
-                            'status' => TransparencyRecordStatus::Publico,
-                            'observations' => null,
-                        ]);
 
                         Notification::make()
                             ->title('Registro marcado como Público')

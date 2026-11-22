@@ -87,7 +87,7 @@ class TransparencyRecordFactory extends Factory
                 $record->addMedia($file)
                     ->setName(fake()->word())
                     ->setFileName($fileName)
-                    ->toMediaCollection('documents');
+                    ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
             }
         });
     }

@@ -12,6 +12,7 @@ use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -315,7 +316,7 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
 
-    // File > 15 MB (15361 KB) rejected
+    // File > 15 MB (15361 KB) rejected with Spanish message
     $oversizedPdf = UploadedFile::fake()->create('enorme.pdf', 15361, 'application/pdf');
     Livewire::test(CreateTransparencyRecord::class)
         ->fillForm([
@@ -326,7 +327,18 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
             'documents' => [$oversizedPdf],
         ])
         ->call('create')
-        ->assertHasFormErrors(['documents']);
+        ->assertHasFormErrors(['documents'])
+        ->assertSee('Cada archivo adjunto no debe superar los 15 MB.');
+
+    $livewireOversized = UploadedFile::fake()->create('demasiado-grande.pdf', 20481, 'application/pdf');
+    $validator = Validator::make(
+        ['files' => [$livewireOversized]],
+        ['files.*' => config('livewire.temporary_file_upload.rules')],
+    );
+
+    expect($validator->fails())->toBeTrue()
+        ->and($validator->errors()->first('files.0'))
+        ->toBe('El campo archivo no debe pesar más de 20480 kilobytes.');
 
     // Spreadsheet (.xlsx) rejected in Oficios
     $xlsxForOficios = UploadedFile::fake()->create(
@@ -345,13 +357,42 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
         ->call('create')
         ->assertHasFormErrors(['documents']);
 
-    // Spreadsheet (.xlsx) and .csv accepted in Financiero
+    // Spreadsheet (.xlsx) rejected when type is not selected yet (defaults to base document MIMEs)
+    $xlsxWithoutType = UploadedFile::fake()->create(
+        'sin-tipo.xlsx',
+        120,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'name' => 'Registro sin categoría',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$xlsxWithoutType],
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['type', 'documents']);
+
+    // Arbitrary .txt rejected in Financiero even though text/plain MIME is allowed for CSVs
+    $txtForFinanciero = UploadedFile::fake()->createWithContent('notas.txt', 'texto plano');
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Financiero->value,
+            'name' => 'Financiero con TXT inválido',
+            'fiscal_year' => 2025,
+            'period' => 'Anual',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$txtForFinanciero],
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['documents']);
+
+    // Spreadsheet (.xlsx) and real text/plain .csv accepted in Financiero
     $xlsxForFinanciero = UploadedFile::fake()->create(
         'balanza-2025.xlsx',
         120,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    $csvForFinanciero = UploadedFile::fake()->create('desglose.csv', 40, 'text/csv');
+    $csvForFinanciero = UploadedFile::fake()->createWithContent('desglose.csv', "concepto,monto\ningresos,1000\n");
 
     Livewire::test(CreateTransparencyRecord::class)
         ->fillForm([
@@ -365,8 +406,29 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
         ->call('create')
         ->assertHasNoFormErrors();
 
-    expect(TransparencyRecord::where('name', 'Estado Financiero 2025')->firstOrFail()->getMedia('documents'))
+    expect(TransparencyRecord::where('name', 'Estado Financiero 2025')->firstOrFail()->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION))
         ->toHaveCount(2);
+});
+
+test('fiscal_year accepts historical years prior to 1990', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Financiero->value,
+            'name' => 'Balance Histórico 1985',
+            'fiscal_year' => 1985,
+            'period' => 'Anual',
+            'status' => TransparencyRecordStatus::Interno->value,
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'name' => 'Balance Histórico 1985',
+        'fiscal_year' => 1985,
+    ]);
 });
 
 test('changing category from financiero to non-financial blocks saving while spreadsheet media remains attached', function () {

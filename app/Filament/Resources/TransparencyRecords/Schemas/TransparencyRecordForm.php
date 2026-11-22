@@ -19,7 +19,6 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Support\Carbon;
 
 class TransparencyRecordForm
 {
@@ -70,7 +69,7 @@ class TransparencyRecordForm
                                         }
 
                                         $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
-                                            ?? $record->getMedia('documents')->firstWhere('uuid', $file);
+                                            ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
 
                                         if (! $media) {
                                             continue;
@@ -113,8 +112,6 @@ class TransparencyRecordForm
                                     ->default(now()->year)
                                     ->numeric()
                                     ->integer()
-                                    ->minValue(1990)
-                                    ->maxValue(now()->year + 1)
                                     ->visible(static fn (Get $get): bool => $get->enum('type', TransparencyRecordType::class)?->usesPeriod() ?? false),
 
                                 Select::make('period')
@@ -153,12 +150,18 @@ class TransparencyRecordForm
                     ->schema([
                         SpatieMediaLibraryFileUpload::make('documents')
                             ->label('Archivos')
-                            ->collection('documents')
+                            ->collection(TransparencyRecord::DOCUMENTS_COLLECTION)
                             ->multiple()
                             ->maxSize(15360)
                             ->acceptedFileTypes(static fn (Get $get): array => (
-                                $get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Financiero
+                                $get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros
                             )->allowedMimeTypes())
+                            ->rule(static function (Get $get): string {
+                                $extensions = ($get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros)
+                                    ->allowedExtensions();
+
+                                return 'extensions:'.implode(',', $extensions);
+                            })
                             ->downloadable()
                             ->openable()
                             ->columnSpanFull()
@@ -166,6 +169,7 @@ class TransparencyRecordForm
                                 'max' => 'Cada archivo adjunto no debe superar los 15 MB.',
                                 'mimetypes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
                                 'mimes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                                'extensions' => 'El formato del archivo no está permitido para la categoría seleccionada.',
                             ])
                             ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
                                 $record = $component->getRecord();
@@ -174,7 +178,7 @@ class TransparencyRecordForm
                                 }
 
                                 $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
-                                    ?? $record->getMedia('documents')->firstWhere('uuid', $file);
+                                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
 
                                 if (! $media) {
                                     return null;
@@ -230,8 +234,8 @@ class TransparencyRecordForm
 
                                     if ($record instanceof TransparencyRecord
                                         && $record->exists
-                                        && $record->isPublic()
-                                        && $record->getMedia('documents')->isNotEmpty()) {
+                                        && $record->isPublico()
+                                        && $record->hasAttachedDocuments()) {
                                         return;
                                     }
 
@@ -248,38 +252,6 @@ class TransparencyRecordForm
                             ->columnSpanFull(),
                     ]),
             ]);
-    }
-
-    /**
-     * Clear out-of-context attributes and derive fiscal_year from document_date outside Financiero.
-     *
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    public static function sanitizeData(array $data): array
-    {
-        $type = self::resolveType($data['type'] ?? null);
-        $status = self::resolveStatus($data['status'] ?? null);
-
-        if ($type?->usesPeriod()) {
-            $data['document_date'] = null;
-        } else {
-            $data['period'] = null;
-
-            if (filled($data['document_date'] ?? null)) {
-                $data['fiscal_year'] = Carbon::parse($data['document_date'])->year;
-            }
-        }
-
-        if (! ($type?->usesFolio() ?? false)) {
-            $data['reference_number'] = null;
-        }
-
-        if ($status !== TransparencyRecordStatus::Interno) {
-            $data['observations'] = null;
-        }
-
-        return $data;
     }
 
     private static function resolveType(mixed $value): ?TransparencyRecordType

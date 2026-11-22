@@ -197,6 +197,8 @@ return [
         'attachments' => 'archivos adjuntos',
         'year' => 'año',
         'file' => 'archivo',
+        'files' => 'archivos',
+        'files.*' => 'archivo',
         'fiscal_year' => 'año fiscal',
         'period' => 'periodo',
         'document_date' => 'fecha del documento',

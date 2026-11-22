@@ -110,6 +110,7 @@ enum TransparencyRecordType: string implements HasColor, HasLabel
                 'application/vnd.ms-excel',
                 'text/csv',
                 'application/csv',
+                'text/plain',
             ];
         }
 

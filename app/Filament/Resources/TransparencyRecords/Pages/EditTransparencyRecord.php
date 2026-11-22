@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\TransparencyRecords\Pages;
 
 use App\Enums\TransparencyRecordStatus;
-use App\Filament\Resources\TransparencyRecords\Schemas\TransparencyRecordForm;
 use App\Filament\Resources\TransparencyRecords\TransparencyRecordResource;
 use App\Models\TransparencyRecord;
 use Filament\Actions\DeleteAction;
@@ -35,7 +34,7 @@ class EditTransparencyRecord extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        return TransparencyRecordForm::sanitizeData($data);
+        return TransparencyRecord::sanitizeAttributes($data);
     }
 
     protected function afterSave(): void
@@ -44,8 +43,8 @@ class EditTransparencyRecord extends EditRecord
         $record = $this->getRecord();
         $record->unsetRelation('media');
 
-        if ($record->isPublic() && $record->getMedia('documents')->isEmpty()) {
-            $record->update(['status' => TransparencyRecordStatus::Interno]);
+        if ($record->isPublico() && ! $record->hasAttachedDocuments()) {
+            $record->unpublish();
             $this->data['status'] = TransparencyRecordStatus::Interno->value;
 
             Notification::make()

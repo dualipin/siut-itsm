@@ -11,13 +11,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class TransparencyRecord extends Model implements HasMedia
 {
     /** @use HasFactory<TransparencyRecordFactory> */
     use HasFactory, InteractsWithMedia, SoftDeletes;
+
+    public const string DOCUMENTS_COLLECTION = 'documents';
 
     protected $attributes = [
         'status' => TransparencyRecordStatus::Interno->value,
@@ -109,7 +113,7 @@ class TransparencyRecord extends Model implements HasMedia
     /**
      * Determine if the record is publicly downloadable.
      */
-    public function isPublic(): bool
+    public function isPublico(): bool
     {
         return $this->status === TransparencyRecordStatus::Publico;
     }
@@ -123,10 +127,92 @@ class TransparencyRecord extends Model implements HasMedia
     }
 
     /**
+     * Determine if the given media item belongs to this record's documents collection.
+     */
+    public function ownsDocumentMedia(Media $media): bool
+    {
+        return $media->model_type === self::class
+            && (int) $media->model_id === (int) $this->getKey()
+            && $media->collection_name === self::DOCUMENTS_COLLECTION;
+    }
+
+    /**
+     * Determine if the record currently has at least one attached document.
+     */
+    public function hasAttachedDocuments(): bool
+    {
+        return $this->getMedia(self::DOCUMENTS_COLLECTION)->isNotEmpty();
+    }
+
+    /**
+     * Publish the record when at least one document is attached, clearing internal observations.
+     */
+    public function publish(): bool
+    {
+        if (! $this->hasAttachedDocuments()) {
+            return false;
+        }
+
+        return $this->update(self::sanitizeAttributes([
+            ...$this->only(['type', 'fiscal_year', 'period', 'document_date', 'reference_number', 'observations']),
+            'status' => TransparencyRecordStatus::Publico,
+        ]));
+    }
+
+    /**
+     * Revert the record to internal consultation visibility.
+     */
+    public function unpublish(): bool
+    {
+        return $this->update([
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+    }
+
+    /**
+     * Clear out-of-context attributes and derive fiscal_year from document_date outside Financiero.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function sanitizeAttributes(array $data): array
+    {
+        $rawType = $data['type'] ?? null;
+        $type = $rawType instanceof TransparencyRecordType
+            ? $rawType
+            : (filled($rawType) ? TransparencyRecordType::tryFrom((string) $rawType) : null);
+
+        $rawStatus = $data['status'] ?? null;
+        $status = $rawStatus instanceof TransparencyRecordStatus
+            ? $rawStatus
+            : (filled($rawStatus) ? TransparencyRecordStatus::tryFrom((string) $rawStatus) : null);
+
+        if ($type?->usesPeriod()) {
+            $data['document_date'] = null;
+        } else {
+            $data['period'] = null;
+
+            if (filled($data['document_date'] ?? null)) {
+                $data['fiscal_year'] = Carbon::parse($data['document_date'])->year;
+            }
+        }
+
+        if (! ($type?->usesFolio() ?? false)) {
+            $data['reference_number'] = null;
+        }
+
+        if ($status !== TransparencyRecordStatus::Interno) {
+            $data['observations'] = null;
+        }
+
+        return $data;
+    }
+
+    /**
      * Register media collections for the model.
      */
     public function registerMediaCollections(): void
     {
-        $this->addMediaCollection('documents');
+        $this->addMediaCollection(self::DOCUMENTS_COLLECTION);
     }
 }

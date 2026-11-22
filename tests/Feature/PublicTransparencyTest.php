@@ -4,6 +4,7 @@ use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
 use App\Models\TransparencyRecord;
 use App\Models\User;
+use App\Services\TransparencyArchiveService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -445,4 +446,31 @@ test('public transparency page renders client-side normalized search input, card
     $response->assertSee('data-search="oficio de gestion academica siut-2025/044 revision de clausula septima del convenio."', false);
     $response->assertSee('// ponytail:', false);
     $response->assertDontSee('fetch(', false);
+    $response->assertSee('<div class="input input-bordered', false);
+    $response->assertDontSee('<label class="input', false);
+});
+
+test('transparency archive service groups records chronologically reusing closed period order', function () {
+    $author = User::factory()->create();
+
+    TransparencyRecord::factory()->interno()->create([
+        'name' => 'Estado Diciembre',
+        'type' => TransparencyRecordType::Financiero,
+        'fiscal_year' => 2025,
+        'period' => 'Diciembre',
+        'created_by' => $author->id,
+    ]);
+
+    TransparencyRecord::factory()->interno()->create([
+        'name' => 'Estado Anual',
+        'type' => TransparencyRecordType::Financiero,
+        'fiscal_year' => 2025,
+        'period' => 'Anual',
+        'created_by' => $author->id,
+    ]);
+
+    $grouped = app(TransparencyArchiveService::class)->groupedRecordsForType(TransparencyRecordType::Financiero);
+
+    expect($grouped->keys()->all())->toBe([2025])
+        ->and($grouped->get(2025)->keys()->all())->toBe(['Anual', 'Diciembre']);
 });
