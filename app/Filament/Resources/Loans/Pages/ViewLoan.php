@@ -86,16 +86,17 @@ class ViewLoan extends ViewRecord
                         ->schema([
                             Grid::make(2)->schema([
                                 Select::make('monthly_rate')
-                                    ->label('Tasa de Interés Mensual')
+                                    ->label('Tipo de trabajador solicitante (Tasa de Interés Mensual)')
                                     ->options([
                                         '6.00' => '6.00% mensual — Agremiado y ahorrador',
                                         '7.50' => '7.50% mensual — Agremiado y no ahorrador',
                                         '8.00' => '8.00% mensual — Ahorrador no agremiado',
                                         '9.50' => '9.50% mensual — No ahorrador y no agremiado',
+                                        '10.00' => '10.00% mensual — Directivos no gremiales',
                                         'custom' => 'Tasa personalizada...',
                                     ])
                                     ->default(function () use ($record): string {
-                                        $standard = ['6.00', '7.50', '8.00', '9.50'];
+                                        $standard = ['6.00', '7.50', '8.00', '9.50', '10.00'];
                                         $rate = $record->monthly_rate !== null ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00';
 
                                         return in_array($rate, $standard, true) ? $rate : 'custom';
@@ -112,7 +113,7 @@ class ViewLoan extends ViewRecord
                                     ->maxValue(100.0)
                                     ->step(0.01)
                                     ->default(function () use ($record): ?float {
-                                        $standard = ['6.00', '7.50', '8.00', '9.50'];
+                                        $standard = ['6.00', '7.50', '8.00', '9.50', '10.00'];
                                         $rate = $record->monthly_rate !== null ? number_format((float) $record->monthly_rate, 2, '.', '') : '6.00';
 
                                         return ! in_array($rate, $standard, true) && $record->monthly_rate !== null ? (float) $record->monthly_rate : null;

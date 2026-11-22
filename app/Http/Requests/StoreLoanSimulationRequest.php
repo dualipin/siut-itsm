@@ -35,7 +35,7 @@ class StoreLoanSimulationRequest extends FormRequest
         $firstEligibleFortnight = $calendarService->getFirstEligibleFortnight()?->format('Y-m-d');
 
         return [
-            'monthly_rate' => ['required', Rule::in([6, 7.5, 8, 9.5])],
+            'monthly_rate' => ['required', Rule::in([6, 7.5, 8, 9.5, 10])],
             'payment_type' => [
                 'required',
                 Rule::enum(LoanPaymentType::class),
@@ -127,7 +127,7 @@ class StoreLoanSimulationRequest extends FormRequest
     {
         return [
             'monthly_rate.required' => 'La tasa de interés mensual es obligatoria.',
-            'monthly_rate.in' => 'La tasa seleccionada no es válida. Opciones: 6, 7.5, 8 o 9.5.',
+            'monthly_rate.in' => 'La tasa seleccionada no es válida. Opciones: 6, 7.5, 8, 9.5 o 10.',
             'payment_type.required' => 'Debe seleccionar una forma de pago.',
             'payment_type.in' => 'La forma de pago seleccionada no es válida.',
             'nomina.required' => 'Los datos de nómina son obligatorios para este tipo de pago.',

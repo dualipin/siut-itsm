@@ -945,3 +945,56 @@ it('uses the loan fiscal_year when updating a 2027 draft in cierre de anio and r
         'requested_amount' => 6000,
     ]))->toThrow(ValidationException::class);
 });
+
+it('allows approving a loan with 10 percent rate for directivos no gremiales in ViewLoan', function () {
+    Carbon::setTestNow('2026-06-10 10:00:00');
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $loan = Loan::factory()->submitted()->create([
+        'user_id' => $agremiado->id,
+        'fiscal_year' => 2026,
+        'payment_type' => LoanPaymentType::Nomina,
+        'requested_amount' => 5000,
+        'nomina_amount' => 5000,
+        'nomina_fortnights' => 2,
+        'first_fortnight_date' => '2026-06-30',
+        'monthly_rate' => null,
+    ]);
+
+    LoanEvidence::create([
+        'loan_id' => $loan->id,
+        'source_type' => 'nomina',
+        'file_path' => 'loans/10/recibo.pdf',
+        'file_hash' => hash('sha256', 'dummy-10'),
+        'file_name' => 'recibo.pdf',
+        'mime_type' => 'application/pdf',
+        'file_size' => 1024,
+        'ai_status' => LoanAiStatus::Valido,
+        'ai_confidence' => 0.95,
+        'manual_review_status' => 'pending',
+    ]);
+
+    $this->actingAs($admin);
+
+    Livewire::test(ViewLoan::class, ['record' => $loan->getKey()])
+        ->mountAction('approveLoan')
+        ->assertSchemaComponentExists('monthly_rate', checkComponentUsing: function ($component): bool {
+            $options = $component->getOptions();
+
+            return ($options['10.00'] ?? null) === '10.00% mensual — Directivos no gremiales';
+        })
+        ->setActionData([
+            'monthly_rate' => '10.00',
+            'nomina_amount' => 5000,
+            'nomina_fortnights' => 2,
+        ])
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertNotified('Préstamo Aprobado');
+
+    $loan->refresh();
+    expect($loan->status)->toBe(LoanStatus::Aprobada)
+        ->and((float) $loan->monthly_rate)->toBe(10.0);
+});

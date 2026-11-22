@@ -559,3 +559,21 @@ it('shows Cierre de año banner with projected 2027 benefits, calculates interes
     $jan1Token = basename($jan1Sim->json('pdf_url'));
     expect(Cache::get('loan_application_'.$jan1Token)['fiscal_year'])->toBe(2027);
 });
+
+it('POST simulate accepts 10 percent monthly_rate for directivos no gremiales', function () {
+    $response = $this->postJson('/api/simulador-prestamo/simulate', [
+        'monthly_rate' => 10,
+        'payment_type' => 'nomina',
+        'nomina' => [
+            'amount' => 10000,
+            'fortnights' => 4,
+            'first_fortnight' => firstEligibleFortnightDate(),
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonStructure(['pdf_url', 'application_url']);
+
+    $token = basename($response->json('pdf_url'));
+    expect(Cache::get('loan_simulation_'.$token)['summary']['monthly_rate_percent'])->toBe('10.00 %');
+});
