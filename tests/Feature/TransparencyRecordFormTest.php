@@ -645,7 +645,12 @@ test('document scanner renders continuous camera viewfinder, torch hook, review 
         ->assertSeeHtml('capture="environment"')
         ->assertSee('Tomar foto')
         ->assertSee('Seleccionar de galería')
-        ->assertSee('Agregar más fotos');
+        ->assertSee('Agregar más fotos')
+        ->assertSee('Aplicar filtro a todas')
+        ->assertSee('Blanco y negro')
+        ->assertSeeHtml('setPageFilter(')
+        ->assertSeeHtml('rotatePage(')
+        ->assertSeeHtml('movePageBy(');
 });
 
 test('multi-page scanned PDF 1.4 attaches across all categories, persists in medialibrary, respects visibility, and rejects over 15 MB', function () {

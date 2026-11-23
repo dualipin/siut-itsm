@@ -30,6 +30,18 @@ import {
     mapCameraErrorToSpanish,
     supportsTrackTorch,
 } from './scanner/camera.ts';
+import {
+    DEFAULT_SCAN_FILTER,
+    applyScanFilter,
+    movePage,
+    normalizeRotation,
+    rotateImageData,
+    type QuarterTurnRotation,
+    type ScanFilter,
+} from './scanner/filters.ts';
+
+export type { QuarterTurnRotation, ScanFilter };
+export { DEFAULT_SCAN_FILTER, applyScanFilter, movePage, normalizeRotation, rotateImageData };
 
 export interface ScannedPageItem extends PdfJpegPage {
     id: string;
@@ -41,11 +53,15 @@ export interface ScannedPageItem extends PdfJpegPage {
     originalHeight: number;
     quad: DocumentQuad;
     autoDetected: boolean;
+    filter: ScanFilter;
+    rotation: QuarterTurnRotation;
 }
 
 export interface EncodeImageOptions {
     maxLongSide?: number;
     quality?: number;
+    filter?: ScanFilter;
+    rotation?: QuarterTurnRotation | number;
 }
 
 export interface AddPageFromSourceOptions extends EncodeImageOptions {
@@ -194,8 +210,12 @@ async function renderQuadFromSource(
     quad: DocumentQuad,
     maxLongSide: number,
     quality: number,
+    filter: ScanFilter,
+    rotation: QuarterTurnRotation,
 ): Promise<{ jpegBytes: Uint8Array; width: number; height: number; previewUrl: string }> {
-    if (isFullQuad(quad)) {
+    const fullQuad = isFullQuad(quad);
+
+    if (fullQuad && filter === 'original' && rotation === 0) {
         const { canvas, width, height } = drawScaledToCanvas(source, maxLongSide);
         try {
             const blob = await canvasToJpegBlob(canvas, quality);
@@ -209,7 +229,7 @@ async function renderQuadFromSource(
         }
     }
 
-    const work = drawScaledToCanvas(source, MAX_WORKING_LONG_SIDE);
+    const work = drawScaledToCanvas(source, fullQuad ? maxLongSide : MAX_WORKING_LONG_SIDE);
     const outCanvas = document.createElement('canvas');
 
     try {
@@ -219,17 +239,24 @@ async function renderQuadFromSource(
         }
 
         const workImageData: ImageDataLike = workCtx.getImageData(0, 0, work.width, work.height);
-        const warped = warpPerspective(workImageData, quad, { maxLongSide });
+        work.canvas.width = 0;
+        work.canvas.height = 0;
 
-        outCanvas.width = warped.width;
-        outCanvas.height = warped.height;
+        const baseImageData = fullQuad
+            ? workImageData
+            : warpPerspective(workImageData, quad, { maxLongSide });
+        const rotated = rotation === 0 ? baseImageData : rotateImageData(baseImageData, rotation);
+        const processed = filter === 'original' ? rotated : applyScanFilter(rotated, filter);
+
+        outCanvas.width = processed.width;
+        outCanvas.height = processed.height;
         const outCtx = outCanvas.getContext('2d');
         if (!outCtx) {
             throw new Error('No fue posible inicializar el lienzo de salida.');
         }
 
-        const outputImageData = outCtx.createImageData(warped.width, warped.height);
-        outputImageData.data.set(warped.data);
+        const outputImageData = outCtx.createImageData(processed.width, processed.height);
+        outputImageData.data.set(processed.data);
         outCtx.putImageData(outputImageData, 0, 0);
 
         const blob = await canvasToJpegBlob(outCanvas, quality);
@@ -238,8 +265,8 @@ async function renderQuadFromSource(
 
         return {
             jpegBytes,
-            width: warped.width,
-            height: warped.height,
+            width: processed.width,
+            height: processed.height,
             previewUrl,
         };
     } finally {
@@ -256,13 +283,22 @@ export async function addPageFromSource(
 ): Promise<ScannedPageItem> {
     const maxLongSide = options.maxLongSide ?? DEFAULT_MAX_LONG_SIDE;
     const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
+    const filter = options.filter ?? DEFAULT_SCAN_FILTER;
+    const rotation = normalizeRotation(options.rotation ?? 0);
     const sourceName = options.sourceName || (source instanceof File ? source.name : '') || 'pagina.jpg';
     const loaded = await loadImageSource(source, sourceName);
     const originalPreviewUrl = URL.createObjectURL(source);
 
     try {
         const detection = detectQuadFromSource(loaded);
-        const rendered = await renderQuadFromSource(loaded, detection.quad, maxLongSide, quality);
+        const rendered = await renderQuadFromSource(
+            loaded,
+            detection.quad,
+            maxLongSide,
+            quality,
+            filter,
+            rotation,
+        );
 
         return {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -277,6 +313,8 @@ export async function addPageFromSource(
             originalHeight: loaded.height,
             quad: detection.quad,
             autoDetected: detection.detected,
+            filter,
+            rotation,
         };
     } catch (error) {
         URL.revokeObjectURL(originalPreviewUrl);
@@ -298,7 +336,7 @@ export async function encodeImageFileToScannedPage(
 
 export async function reprocessScannedPage(
     page: ScannedPageItem,
-    quad: DocumentQuad,
+    quad: DocumentQuad = page.quad,
     options: EncodeImageOptions = {},
 ): Promise<ScannedPageItem> {
     if (!isValidConvexQuad(quad)) {
@@ -307,11 +345,22 @@ export async function reprocessScannedPage(
 
     const maxLongSide = options.maxLongSide ?? DEFAULT_MAX_LONG_SIDE;
     const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
+    const nextFilter = options.filter ?? page.filter ?? DEFAULT_SCAN_FILTER;
+    const nextRotation = options.rotation !== undefined
+        ? normalizeRotation(options.rotation)
+        : normalizeRotation(page.rotation ?? 0);
     const loaded = await loadImageSource(page.originalSource, page.sourceName);
 
     try {
         const nextQuad = cloneQuad(quad);
-        const rendered = await renderQuadFromSource(loaded, nextQuad, maxLongSide, quality);
+        const rendered = await renderQuadFromSource(
+            loaded,
+            nextQuad,
+            maxLongSide,
+            quality,
+            nextFilter,
+            nextRotation,
+        );
         const previousPreviewUrl = page.previewUrl;
 
         if (previousPreviewUrl) {
@@ -325,6 +374,8 @@ export async function reprocessScannedPage(
             height: rendered.height,
             previewUrl: rendered.previewUrl,
             quad: nextQuad,
+            filter: nextFilter,
+            rotation: nextRotation,
         };
     } finally {
         loaded.cleanup();
@@ -516,6 +567,7 @@ if (typeof window !== 'undefined') {
     (window as unknown as Record<string, unknown>).transparencyScanner = {
         MAX_PDF_BYTES,
         FULL_DOCUMENT_QUAD,
+        DEFAULT_SCAN_FILTER,
         buildSuggestedPdfFilename,
         ensurePdfFilename,
         estimatePdfByteLength,
@@ -525,6 +577,10 @@ if (typeof window !== 'undefined') {
         isValidConvexQuad,
         detectDocumentQuad,
         warpPerspective,
+        applyScanFilter,
+        rotateImageData,
+        normalizeRotation,
+        movePage,
         addPageFromSource,
         encodeImageFileToScannedPage,
         reprocessScannedPage,
