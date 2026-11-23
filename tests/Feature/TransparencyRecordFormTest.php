@@ -632,6 +632,22 @@ test('directiva sees document scanner trigger on create and edit forms but not o
         ->assertDontSee('Escanear documento');
 });
 
+test('document scanner renders continuous camera viewfinder, torch hook, review switch, and fallback controls', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->assertSuccessful()
+        ->assertSeeHtml('x-ref="cameraVideo"')
+        ->assertSeeHtml('toggleTorch()')
+        ->assertSeeHtml('switchToReview()')
+        ->assertSeeHtml('openCameraView()')
+        ->assertSeeHtml('capture="environment"')
+        ->assertSee('Tomar foto')
+        ->assertSee('Seleccionar de galería')
+        ->assertSee('Agregar más fotos');
+});
+
 test('multi-page scanned PDF 1.4 attaches across all categories, persists in medialibrary, respects visibility, and rejects over 15 MB', function () {
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
