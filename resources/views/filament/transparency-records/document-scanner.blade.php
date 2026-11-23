@@ -6,6 +6,7 @@
         showDiscardConfirm: false,
         cropEditor: null,
         pages: [],
+        batchFilter: 'documento',
         pdfFilename: '',
         processingCount: 0,
         isExporting: false,
@@ -493,6 +494,132 @@
             await this.recomputeEditorPage(fullQuad, false);
         },
 
+        async setPageFilter(pageId, filter, selectEl = null) {
+            const page = this.pages.find((item) => item.id === pageId);
+            if (!page || page.filter === filter) {
+                return;
+            }
+
+            if (this.isExporting || this.processingCount > 0) {
+                if (selectEl) {
+                    selectEl.value = page.filter;
+                }
+
+                return;
+            }
+
+            this.errorMessage = null;
+            this.processingCount += 1;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+                const updated = await scanner.reprocessScannedPage(page, page.quad, { filter });
+                const currentIndex = this.pages.findIndex((item) => item.id === pageId);
+
+                if (currentIndex !== -1 && this.isOpen) {
+                    this.pages.splice(currentIndex, 1, updated);
+                } else {
+                    scanner.revokeScannedPageUrls(updated);
+                }
+            } catch (err) {
+                if (selectEl) {
+                    selectEl.value = page.filter;
+                }
+                this.errorMessage = err.message || 'No fue posible aplicar el filtro a la página.';
+            } finally {
+                this.processingCount = Math.max(0, this.processingCount - 1);
+            }
+        },
+
+        async applyFilterToAllPages(filter) {
+            if (this.isExporting || this.processingCount > 0 || this.pages.length === 0) {
+                return;
+            }
+
+            const targetIds = this.pages
+                .filter((page) => page.filter !== filter)
+                .map((page) => page.id);
+
+            if (targetIds.length === 0) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.processingCount += targetIds.length;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+
+                for (const pageId of targetIds) {
+                    const currentIndex = this.pages.findIndex((item) => item.id === pageId);
+                    if (currentIndex === -1 || !this.isOpen) {
+                        continue;
+                    }
+
+                    const updated = await scanner.reprocessScannedPage(
+                        this.pages[currentIndex],
+                        this.pages[currentIndex].quad,
+                        { filter },
+                    );
+
+                    const refreshedIndex = this.pages.findIndex((item) => item.id === pageId);
+                    if (refreshedIndex !== -1 && this.isOpen) {
+                        this.pages.splice(refreshedIndex, 1, updated);
+                    } else {
+                        scanner.revokeScannedPageUrls(updated);
+                    }
+                }
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible aplicar el filtro a todas las páginas.';
+            } finally {
+                this.processingCount = Math.max(0, this.processingCount - targetIds.length);
+            }
+        },
+
+        async rotatePage(pageId) {
+            if (this.isExporting || this.processingCount > 0) {
+                return;
+            }
+
+            const page = this.pages.find((item) => item.id === pageId);
+            if (!page) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.processingCount += 1;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+                const nextRotation = scanner.normalizeRotation((page.rotation ?? 0) + 90);
+                const updated = await scanner.reprocessScannedPage(page, page.quad, { rotation: nextRotation });
+                const currentIndex = this.pages.findIndex((item) => item.id === pageId);
+
+                if (currentIndex !== -1 && this.isOpen) {
+                    this.pages.splice(currentIndex, 1, updated);
+                } else {
+                    scanner.revokeScannedPageUrls(updated);
+                }
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible rotar la página.';
+            } finally {
+                this.processingCount = Math.max(0, this.processingCount - 1);
+            }
+        },
+
+        movePageBy(fromIndex, delta) {
+            if (this.isExporting || this.processingCount > 0 || !window.transparencyScanner) {
+                return;
+            }
+
+            const toIndex = fromIndex + delta;
+            if (toIndex < 0 || toIndex >= this.pages.length) {
+                return;
+            }
+
+            this.pages = window.transparencyScanner.movePage(this.pages, fromIndex, toIndex);
+        },
+
         requestClose() {
             if (this.isExporting || this.cropEditor?.isApplying) {
                 return;
@@ -512,6 +639,7 @@
             this.revokeAllPageUrls();
             this.cropEditor = null;
             this.pages = [];
+            this.batchFilter = 'documento';
             this.pdfFilename = '';
             this.showDiscardConfirm = false;
             this.errorMessage = null;
@@ -938,58 +1066,141 @@
                     </template>
 
                     <template x-if="pages.length > 0">
-                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                            <template x-for="(page, index) in pages" :key="page.id">
-                                <div class="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950">
-                                    <div class="flex items-center justify-between border-b border-gray-100 bg-gray-50/80 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-                                        <span x-text="'Página ' + (index + 1)"></span>
-                                        <button
-                                            type="button"
-                                            x-on:click="removePage(page.id)"
-                                            :disabled="isExporting"
-                                            aria-label="Eliminar página"
-                                            class="inline-flex items-center rounded-md p-1 text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                        >
-                                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
+                        <div>
+                            <div class="mb-4 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900/60">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <label for="scanner-batch-filter" class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Filtro del lote:
+                                    </label>
+                                    <select
+                                        id="scanner-batch-filter"
+                                        x-model="batchFilter"
+                                        :disabled="isExporting || processingCount > 0"
+                                        class="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                    >
+                                        <option value="documento">Documento</option>
+                                        <option value="bw">Blanco y negro</option>
+                                        <option value="original">Original</option>
+                                    </select>
                                     <button
                                         type="button"
-                                        x-on:click="openCropEditor(page.id)"
+                                        x-on:click="applyFilterToAllPages(batchFilter)"
                                         :disabled="isExporting || processingCount > 0"
-                                        :aria-label="'Ajustar recorte de página ' + (index + 1)"
-                                        class="relative aspect-3/4 w-full overflow-hidden bg-gray-100 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-600 disabled:cursor-not-allowed dark:bg-gray-900"
+                                        class="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-xs transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                                     >
-                                        <img
-                                            :src="page.previewUrl"
-                                            :alt="'Página ' + (index + 1)"
-                                            class="h-full w-full object-contain"
-                                        />
+                                        Aplicar filtro a todas
                                     </button>
+                                </div>
+                                <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                                    Usa las flechas para reordenar, rota en 90° o toca la hoja para ajustar esquinas.
+                                </p>
+                            </div>
 
-                                    <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                                        <span x-text="page.width + '×' + page.height"></span>
-                                        <span x-text="window.transparencyScanner ? window.transparencyScanner.formatByteSize(page.jpegBytes.byteLength) : ''"></span>
-                                    </div>
+                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                                <template x-for="(page, index) in pages" :key="page.id">
+                                    <div class="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950">
+                                        <div class="flex items-center justify-between gap-1 border-b border-gray-100 bg-gray-50/80 px-2 py-1.5 text-[11px] font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                                            <span class="truncate" x-text="'Página ' + (index + 1)"></span>
 
-                                    <div class="border-t border-gray-100 px-2 py-1.5 dark:border-gray-800">
+                                            <div class="flex items-center gap-0.5">
+                                                <button
+                                                    type="button"
+                                                    x-on:click="movePageBy(index, -1)"
+                                                    :disabled="index === 0 || isExporting || processingCount > 0"
+                                                    :aria-label="'Mover página ' + (index + 1) + ' antes'"
+                                                    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition hover:bg-gray-200/70 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
+                                                >
+                                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    x-on:click="movePageBy(index, 1)"
+                                                    :disabled="index === pages.length - 1 || isExporting || processingCount > 0"
+                                                    :aria-label="'Mover página ' + (index + 1) + ' después'"
+                                                    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition hover:bg-gray-200/70 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800"
+                                                >
+                                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    x-on:click="removePage(page.id)"
+                                                    :disabled="isExporting"
+                                                    :aria-label="'Eliminar página ' + (index + 1)"
+                                                    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                                >
+                                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+
                                         <button
                                             type="button"
                                             x-on:click="openCropEditor(page.id)"
                                             :disabled="isExporting || processingCount > 0"
-                                            class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                            :aria-label="'Ajustar recorte de página ' + (index + 1)"
+                                            class="relative aspect-3/4 w-full overflow-hidden bg-gray-100 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-600 disabled:cursor-not-allowed dark:bg-gray-900"
                                         >
-                                            <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 3.75H6A2.25 2.25 0 0 0 3.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0 1 20.25 6v1.5m0 9V18A2.25 2.25 0 0 1 18 20.25h-1.5m-9 0H6A2.25 2.25 0 0 1 3.75 18v-1.5M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                            </svg>
-                                            <span>Ajustar recorte</span>
+                                            <img
+                                                :src="page.previewUrl"
+                                                :alt="'Página ' + (index + 1)"
+                                                class="h-full w-full object-contain"
+                                            />
                                         </button>
+
+                                        <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                                            <span x-text="page.width + '×' + page.height"></span>
+                                            <span x-text="window.transparencyScanner ? window.transparencyScanner.formatByteSize(page.jpegBytes.byteLength) : ''"></span>
+                                        </div>
+
+                                        <div class="space-y-1.5 border-t border-gray-100 px-2 py-2 dark:border-gray-800">
+                                            <div class="flex items-center gap-1.5">
+                                                <select
+                                                    :value="page.filter"
+                                                    x-on:change="setPageFilter(page.id, $event.target.value, $event.target)"
+                                                    :disabled="isExporting || processingCount > 0"
+                                                    :aria-label="'Filtro de página ' + (index + 1)"
+                                                    class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                                                >
+                                                    <option value="documento">Documento</option>
+                                                    <option value="bw">Blanco y negro</option>
+                                                    <option value="original">Original</option>
+                                                </select>
+
+                                                <button
+                                                    type="button"
+                                                    x-on:click="rotatePage(page.id)"
+                                                    :disabled="isExporting || processingCount > 0"
+                                                    :aria-label="'Rotar página ' + (index + 1) + ' 90 grados'"
+                                                    title="Rotar 90 grados"
+                                                    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                                >
+                                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                x-on:click="openCropEditor(page.id)"
+                                                :disabled="isExporting || processingCount > 0"
+                                                class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                            >
+                                                <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 3.75H6A2.25 2.25 0 0 0 3.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0 1 20.25 6v1.5m0 9V18A2.25 2.25 0 0 1 18 20.25h-1.5m-9 0H6A2.25 2.25 0 0 1 3.75 18v-1.5M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                </svg>
+                                                <span>Ajustar recorte</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            </template>
+                                </template>
+                            </div>
                         </div>
                     </template>
                 </main>
