@@ -5,7 +5,9 @@ import {
     type Point2D,
 } from './quad-detector.ts';
 
-export const DEFAULT_MAX_LONG_SIDE = 1600;
+export const SCAN_TARGET_DPI = 250;
+export const LETTER_LONG_SIDE_INCHES = 11;
+export const DEFAULT_MAX_LONG_SIDE = SCAN_TARGET_DPI * LETTER_LONG_SIDE_INCHES;
 
 export type HomographyMatrix = [
     number, number, number,

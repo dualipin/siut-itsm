@@ -38,8 +38,8 @@ export interface CameraErrorMapping {
     message: string;
 }
 
-const DEFAULT_IDEAL_WIDTH = 1920;
-const DEFAULT_IDEAL_HEIGHT = 1080;
+const DEFAULT_IDEAL_WIDTH = 3840;
+const DEFAULT_IDEAL_HEIGHT = 2160;
 
 export function assessCameraEnvironment(env: CameraEnvironmentInput): CameraEnvironmentAssessment {
     if (!env.isSecureContext) {

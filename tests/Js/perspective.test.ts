@@ -3,16 +3,20 @@ import assert from 'node:assert/strict';
 import {
     computeWarpedDimensions,
     DEFAULT_MAX_LONG_SIDE,
+    LETTER_LONG_SIDE_INCHES,
     projectPoint,
+    SCAN_TARGET_DPI,
     solveHomography,
     warpPerspective,
 } from '../../resources/js/scanner/perspective.ts';
 import type { DocumentQuad, ImageDataLike, Point2D } from '../../resources/js/scanner/quad-detector.ts';
 
-test('computes realistic output aspect ratio and caps long side at maxLongSide', () => {
-    assert.equal(DEFAULT_MAX_LONG_SIDE, 1600);
+test('computes realistic output aspect ratio and caps long side at 250 DPI default maxLongSide', () => {
+    assert.equal(SCAN_TARGET_DPI, 250);
+    assert.equal(LETTER_LONG_SIDE_INCHES, 11);
+    assert.equal(DEFAULT_MAX_LONG_SIDE, 2750);
 
-    // Full-frame 3000x4000 portrait image -> 1200x1600
+    // Full-frame 3000x4000 portrait image -> 2063x2750
     const fullQuad: DocumentQuad = {
         topLeft: { x: 0, y: 0 },
         topRight: { x: 1, y: 0 },
@@ -20,11 +24,16 @@ test('computes realistic output aspect ratio and caps long side at maxLongSide',
         bottomLeft: { x: 0, y: 1 },
     };
     const portrait = computeWarpedDimensions(fullQuad, 3000, 4000);
-    assert.equal(portrait.width, 1200);
-    assert.equal(portrait.height, 1600);
-    assert.ok(Math.max(portrait.width, portrait.height) <= 1600);
+    assert.equal(portrait.width, 2063);
+    assert.equal(portrait.height, 2750);
+    assert.ok(Math.max(portrait.width, portrait.height) <= 2750);
 
-    // Landscape sub-quad 3200x2000 within 4000x3000 -> 1600x1000
+    // US Letter (8.5x11) high-res capture -> exact 2125x2750 (250 DPI)
+    const letter = computeWarpedDimensions(fullQuad, 3400, 4400);
+    assert.equal(letter.width, 2125);
+    assert.equal(letter.height, 2750);
+
+    // Landscape sub-quad 3200x2000 within 4000x3000 -> 2750x1719
     const landscapeQuad: DocumentQuad = {
         topLeft: { x: 0.1, y: 0.1 },
         topRight: { x: 0.9, y: 0.1 },
@@ -32,9 +41,9 @@ test('computes realistic output aspect ratio and caps long side at maxLongSide',
         bottomLeft: { x: 0.1, y: 0.7667 },
     };
     const landscape = computeWarpedDimensions(landscapeQuad, 4000, 3000);
-    assert.equal(landscape.width, 1600);
-    assert.equal(landscape.height, 1000);
-    assert.ok(Math.max(landscape.width, landscape.height) <= 1600);
+    assert.equal(landscape.width, 2750);
+    assert.equal(landscape.height, 1719);
+    assert.ok(Math.max(landscape.width, landscape.height) <= 2750);
 
     // Small image 600x800 is not upscaled
     const small = computeWarpedDimensions(fullQuad, 600, 800);

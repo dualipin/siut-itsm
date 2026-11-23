@@ -282,7 +282,7 @@
 
             try {
                 const scanner = await this.ensureScannerLoaded();
-                const blob = await scanner.captureVideoFrameBlob(this.$refs.cameraVideo);
+                const blob = await scanner.captureVideoFrameBlob(this.$refs.cameraVideo, this.cameraTrack);
 
                 if (activeSession !== this.sessionId || !this.isOpen) {
                     return;

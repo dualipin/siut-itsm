@@ -26,6 +26,7 @@ import {
 } from './scanner/quad-editor.ts';
 import {
     DEFAULT_MAX_LONG_SIDE,
+    SCAN_TARGET_DPI,
     warpPerspective,
 } from './scanner/perspective.ts';
 import {
@@ -85,10 +86,10 @@ export type StartRearCameraResult =
           message: string;
       };
 
-const DEFAULT_JPEG_QUALITY = 0.78;
-const CAPTURE_FRAME_JPEG_QUALITY = 0.92;
-const MAX_WORKING_LONG_SIDE = 2400;
-const DETECTION_LONG_SIDE = 160;
+const DEFAULT_JPEG_QUALITY = 0.82;
+const CAPTURE_FRAME_JPEG_QUALITY = 0.94;
+const MAX_WORKING_LONG_SIDE = 4096;
+const DETECTION_LONG_SIDE = 320;
 
 interface DecodedImageSource {
     width: number;
@@ -477,7 +478,31 @@ export async function setTrackTorch(
     return enabled;
 }
 
-export async function captureVideoFrameBlob(videoElement: HTMLVideoElement | null | undefined): Promise<Blob> {
+interface ImageCaptureLike {
+    takePhoto: () => Promise<Blob>;
+}
+
+type ImageCaptureConstructor = new (track: MediaStreamTrack) => ImageCaptureLike;
+
+export async function captureVideoFrameBlob(
+    videoElement: HTMLVideoElement | null | undefined,
+    track?: MediaStreamTrack | null,
+): Promise<Blob> {
+    if (track && track.readyState === 'live' && typeof window !== 'undefined') {
+        const ImageCaptureCtor = (window as unknown as { ImageCapture?: ImageCaptureConstructor }).ImageCapture;
+        if (typeof ImageCaptureCtor === 'function') {
+            try {
+                const capture = new ImageCaptureCtor(track);
+                const photoBlob = await capture.takePhoto();
+                if (photoBlob && photoBlob.size > 0) {
+                    return photoBlob;
+                }
+            } catch {
+                // Fall back to grabbing the highest-resolution frame from the video stream.
+            }
+        }
+    }
+
     if (!videoElement || videoElement.videoWidth <= 0 || videoElement.videoHeight <= 0) {
         throw new Error('La cámara aún está enfocando. Intenta capturar nuevamente.');
     }
@@ -561,6 +586,8 @@ export function triggerLocalPdfDownload(file: File): void {
 if (typeof window !== 'undefined') {
     (window as unknown as Record<string, unknown>).transparencyScanner = {
         MAX_PDF_BYTES,
+        SCAN_TARGET_DPI,
+        DEFAULT_MAX_LONG_SIDE,
         FULL_DOCUMENT_QUAD,
         DEFAULT_SCAN_FILTER,
         buildSuggestedPdfFilename,

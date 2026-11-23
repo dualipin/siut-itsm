@@ -43,8 +43,8 @@ test('builds rear-camera high-resolution constraints for continuous document cap
         audio: false,
         video: {
             facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 3840 },
+            height: { ideal: 2160 },
         },
     });
 

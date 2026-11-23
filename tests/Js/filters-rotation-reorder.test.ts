@@ -122,6 +122,92 @@ test('bw filter produces high-contrast achromatic (R === G === B) pixels', () =>
     assert.ok(txtR <= 20, `Expected black text in B&W, got ${txtR}`);
 });
 
+test('documento and bw filters preserve faint thin text and diagram lines under strong phone shadows', () => {
+    const width = 200;
+    const height = 260;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            // Simulate a phone casting a shadow across the lower-center of the page (light behind phone):
+            // lit outer paper ~235, deep shadowed paper ~125 with cool shadow tint
+            const distFromShadowCenter = Math.hypot((x - 105) / 70, (y - 165) / 80);
+            const shadowBlend = Math.max(0, Math.min(1, (distFromShadowCenter - 0.55) / 0.55));
+            const baseR = Math.round(122 + (236 - 122) * shadowBlend);
+            const baseG = Math.round(125 + (234 - 125) * shadowBlend);
+            const baseB = Math.round(132 + (228 - 132) * shadowBlend);
+
+            let r = baseR;
+            let g = baseG;
+            let b = baseB;
+
+            // Thin 2px faint gray body text line in well-lit top region (rel ~0.80)
+            if (y >= 40 && y <= 41 && x >= 30 && x <= 170) {
+                r = Math.round(baseR * 0.80);
+                g = Math.round(baseG * 0.80);
+                b = Math.round(baseB * 0.80);
+            }
+
+            // Thin 2px faint gray body text line RIGHT INSIDE the phone shadow (rel ~0.80)
+            if (y >= 164 && y <= 165 && x >= 30 && x <= 170) {
+                r = Math.round(baseR * 0.80);
+                g = Math.round(baseG * 0.80);
+                b = Math.round(baseB * 0.80);
+            }
+
+            // Thin 1px light diagram line across shadow boundary (rel ~0.83)
+            if (y === 110 && x >= 25 && x <= 175) {
+                r = Math.round(baseR * 0.83);
+                g = Math.round(baseG * 0.83);
+                b = Math.round(baseB * 0.83);
+            }
+
+            data[idx] = r;
+            data[idx + 1] = g;
+            data[idx + 2] = b;
+            data[idx + 3] = 255;
+        }
+    }
+
+    const src: ImageDataLike = { width, height, data };
+    const docOut = applyScanFilter(src, 'documento');
+    const bwOut = applyScanFilter(src, 'bw');
+
+    // Both lit paper (20, 20) and deep shadowed paper (105, 190) must normalize to clean bright white
+    for (const [label, px, py] of [
+        ['lit paper', 20, 20],
+        ['shadowed paper', 105, 190],
+        ['shadow penumbra paper', 105, 92],
+    ] as const) {
+        const [dr, dg, db] = readPixel(docOut, px, py);
+        assert.ok(dr >= 242 && dg >= 242 && db >= 242, `documento ${label} should be clean white, got [${dr},${dg},${db}]`);
+
+        const [br] = readPixel(bwOut, px, py);
+        assert.ok(br >= 245, `bw ${label} should be clean white, got ${br}`);
+    }
+
+    // Faint thin text in lit region, inside deep shadow, and diagram line across shadow edge MUST NOT vanish to white!
+    for (const [label, px, py] of [
+        ['lit thin text', 100, 40],
+        ['shadowed thin text', 105, 164],
+        ['diagram line at shadow edge', 105, 110],
+    ] as const) {
+        const [dr, dg, db] = readPixel(docOut, px, py);
+        const docLum = 0.299 * dr + 0.587 * dg + 0.114 * db;
+        assert.ok(
+            docLum <= 175,
+            `documento ${label} must remain clearly legible (<= 175), got lum=${docLum.toFixed(1)} [${dr},${dg},${db}]`,
+        );
+
+        const [br] = readPixel(bwOut, px, py);
+        assert.ok(
+            br <= 150,
+            `bw ${label} must remain clearly legible (<= 150), got ${br}`,
+        );
+    }
+});
+
 test('rotateImageData rotates 90/180/270 clockwise, swaps dimensions on quarter turns, and updates PDF MediaBox', () => {
     assert.equal(normalizeRotation(0), 0);
     assert.equal(normalizeRotation(360), 0);

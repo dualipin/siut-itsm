@@ -215,3 +215,94 @@ test('validates convex quads and rejects self-intersecting bowtie quads', () => 
         false,
     );
 });
+
+test('detects white sheet on light warm wood desk with similar luminance via color contrast', () => {
+    const expectedQuad: DocumentQuad = {
+        topLeft: { x: 0.10, y: 0.08 },
+        topRight: { x: 0.89, y: 0.10 },
+        bottomRight: { x: 0.92, y: 0.91 },
+        bottomLeft: { x: 0.08, y: 0.90 },
+    };
+
+    // Light warm wood desk: luminance ~195 ([220, 192, 145]) vs slightly cool/neutral white paper ~208 ([208, 208, 210])
+    const synthetic = drawQuadImage(
+        240,
+        320,
+        expectedQuad,
+        [220, 192, 145, 255],
+        [208, 208, 210, 255],
+        true,
+    );
+
+    const result = detectDocumentQuad(synthetic);
+
+    assert.equal(result.detected, true);
+    assertPointClose(result.quad.topLeft, expectedQuad.topLeft, 0.025, 'topLeft');
+    assertPointClose(result.quad.topRight, expectedQuad.topRight, 0.025, 'topRight');
+    assertPointClose(result.quad.bottomRight, expectedQuad.bottomRight, 0.025, 'bottomRight');
+    assertPointClose(result.quad.bottomLeft, expectedQuad.bottomLeft, 0.025, 'bottomLeft');
+});
+
+test('detects white sheet accurately even with a strong phone shadow across the lower half', () => {
+    const expectedQuad: DocumentQuad = {
+        topLeft: { x: 0.14, y: 0.10 },
+        topRight: { x: 0.86, y: 0.12 },
+        bottomRight: { x: 0.90, y: 0.89 },
+        bottomLeft: { x: 0.11, y: 0.87 },
+    };
+
+    const synthetic = drawQuadImage(
+        240,
+        320,
+        expectedQuad,
+        [85, 72, 62, 255],
+        [240, 238, 234, 255],
+        true,
+    );
+
+    // Apply strong directional phone shadow darkening bottom half to 50% brightness
+    for (let y = 0; y < synthetic.height; y++) {
+        const t = Math.max(0, Math.min(1, (y / synthetic.height - 0.25) / 0.65));
+        const factor = 1 - 0.50 * t;
+        for (let x = 0; x < synthetic.width; x++) {
+            const idx = (y * synthetic.width + x) * 4;
+            synthetic.data[idx] = Math.round(synthetic.data[idx] * factor);
+            synthetic.data[idx + 1] = Math.round(synthetic.data[idx + 1] * factor);
+            synthetic.data[idx + 2] = Math.round(synthetic.data[idx + 2] * factor);
+        }
+    }
+
+    const result = detectDocumentQuad(synthetic);
+
+    assert.equal(result.detected, true);
+    assertPointClose(result.quad.topLeft, expectedQuad.topLeft, 0.03, 'topLeft');
+    assertPointClose(result.quad.topRight, expectedQuad.topRight, 0.03, 'topRight');
+    assertPointClose(result.quad.bottomRight, expectedQuad.bottomRight, 0.03, 'bottomRight');
+    assertPointClose(result.quad.bottomLeft, expectedQuad.bottomLeft, 0.03, 'bottomLeft');
+});
+
+test('detects tightly framed sheet filling ~88% of the frame with thin desk margins', () => {
+    const expectedQuad: DocumentQuad = {
+        topLeft: { x: 0.05, y: 0.04 },
+        topRight: { x: 0.95, y: 0.05 },
+        bottomRight: { x: 0.96, y: 0.95 },
+        bottomLeft: { x: 0.04, y: 0.94 },
+    };
+
+    const synthetic = drawQuadImage(
+        240,
+        320,
+        expectedQuad,
+        [135, 95, 65, 255],
+        [242, 242, 240, 255],
+        true,
+    );
+
+    const result = detectDocumentQuad(synthetic);
+
+    assert.equal(result.detected, true);
+    assertPointClose(result.quad.topLeft, expectedQuad.topLeft, 0.025, 'topLeft');
+    assertPointClose(result.quad.topRight, expectedQuad.topRight, 0.025, 'topRight');
+    assertPointClose(result.quad.bottomRight, expectedQuad.bottomRight, 0.025, 'bottomRight');
+    assertPointClose(result.quad.bottomLeft, expectedQuad.bottomLeft, 0.025, 'bottomLeft');
+});
