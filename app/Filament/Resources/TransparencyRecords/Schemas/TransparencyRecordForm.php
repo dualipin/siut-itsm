@@ -75,11 +75,17 @@ class TransparencyRecordForm
                                 }
 
                                 if (! $result->successful) {
-                                    Notification::make()
-                                        ->warning()
+                                    $notification = Notification::make()
                                         ->title('No se pudo autocompletar con IA')
-                                        ->body($result->errorMessage ?? 'Puedes continuar capturando los metadatos manualmente.')
-                                        ->send();
+                                        ->body($result->errorMessage ?? 'Puedes continuar capturando los metadatos manualmente.');
+
+                                    if ($result->unsupported) {
+                                        $notification->info();
+                                    } else {
+                                        $notification->warning();
+                                    }
+
+                                    $notification->send();
 
                                     return;
                                 }

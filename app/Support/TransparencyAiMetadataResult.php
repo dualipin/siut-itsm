@@ -22,6 +22,7 @@ final readonly class TransparencyAiMetadataResult
         public string $model = 'none',
         public string $promptVersion = '',
         public ?string $errorMessage = null,
+        public bool $unsupported = false,
     ) {}
 
     public static function failure(
@@ -29,6 +30,7 @@ final readonly class TransparencyAiMetadataResult
         string $model = 'none',
         string $promptVersion = '',
         string $sourceKind = 'none',
+        bool $unsupported = false,
     ): self {
         return new self(
             successful: false,
@@ -36,6 +38,7 @@ final readonly class TransparencyAiMetadataResult
             model: $model,
             promptVersion: $promptVersion,
             errorMessage: $errorMessage,
+            unsupported: $unsupported,
         );
     }
 }

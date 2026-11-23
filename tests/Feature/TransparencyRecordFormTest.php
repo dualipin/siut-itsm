@@ -1620,3 +1620,280 @@ test('autofill_with_ai uses fallback PII observation when suggestion is blank an
         ])
         ->assertDontSee('Posibles datos personales sensibles detectados');
 });
+
+function buildFormSyntheticXlsx(): string
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'form_xlsx_');
+    $zip = new ZipArchive;
+    $zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $zip->addFromString(
+        'xl/workbook.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        .'<sheets><sheet name="Balanza Q3" sheetId="1" r:id="rId1"/></sheets>'
+        .'</workbook>',
+    );
+    $zip->addFromString(
+        'xl/_rels/workbook.xml.rels',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        .'</Relationships>',
+    );
+    $zip->addFromString(
+        'xl/sharedStrings.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">'
+        .'<si><t>Balanza financiera tercer trimestre 2025</t></si>'
+        .'<si><t>Ingresos sindicales netos</t></si>'
+        .'</sst>',
+    );
+    $zip->addFromString(
+        'xl/worksheets/sheet1.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        .'<sheetData>'
+        .'<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Monto</t></is></c></row>'
+        .'<row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>98500.25</v></c></row>'
+        .'</sheetData>'
+        .'</worksheet>',
+    );
+    $zip->close();
+
+    $bytes = (string) file_get_contents($tmp);
+    unlink($tmp);
+
+    return $bytes;
+}
+
+test('autofill_with_ai on create extracts page 1 JPEG from multipage DCTDecode PDF and saves', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $scannedPdf = UploadedFile::fake()->createWithContent('escaneo-3p.pdf', buildClientStyleMultipagePdf(3));
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio escaneado multipagina de gestion sindical',
+                        'summary' => 'Oficio digitalizado en tres paginas mediante escaner.',
+                        'document_date' => '2025-05-18',
+                        'reference_number' => 'SIUT-MP-03',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.92,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$scannedPdf]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio escaneado multipagina de gestion sindical',
+            'document_date' => '2025-05-18',
+            'reference_number' => 'SIUT-MP-03',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $dataUrl = (string) ($parts[1]['image_url']['url'] ?? '');
+
+        return count($parts) === 2
+            && ($parts[1]['type'] ?? null) === 'image_url'
+            && str_starts_with($dataUrl, 'data:image/jpeg;base64,');
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Oficios->value,
+        'name' => 'Oficio escaneado multipagina de gestion sindical',
+        'reference_number' => 'SIUT-MP-03',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on create extracts text-only from CSV and synthetic XLSX for Financiero and saves', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $csvFile = UploadedFile::fake()->createWithContent(
+        'balanza-q1.csv',
+        "Concepto,Trimestre,Monto\nCuotas sindicales,1er Trimestre,54000.00\n",
+    );
+    $xlsxFile = UploadedFile::fake()->createWithContent('balanza-q3.xlsx', buildFormSyntheticXlsx());
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Balanza de cuotas del primer trimestre 2025',
+                        'summary' => 'Detalle de cuotas sindicales en formato CSV.',
+                        'fiscal_year' => 2025,
+                        'period' => '1er Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Balanza financiera tercer trimestre 2025',
+                        'summary' => 'Libro contable del tercer trimestre en formato XLSX.',
+                        'fiscal_year' => 2025,
+                        'period' => '3er Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $csvComponent = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$csvFile]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'fiscal_year' => 2025,
+            'period' => '1er Trimestre',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $csvComponent->call('create')->assertHasNoFormErrors();
+
+    $xlsxComponent = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$xlsxFile]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'name' => 'Balanza financiera tercer trimestre 2025',
+            'fiscal_year' => 2025,
+            'period' => '3er Trimestre',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $xlsxComponent->call('create')->assertHasNoFormErrors();
+
+    Http::assertSentCount(2);
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+
+        return count($parts) === 1 && ($parts[0]['type'] ?? null) === 'text';
+    });
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'name' => 'Balanza de cuotas del primer trimestre 2025',
+        'period' => '1er Trimestre',
+    ]);
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'name' => 'Balanza financiera tercer trimestre 2025',
+        'period' => '3er Trimestre',
+    ]);
+});
+
+test('autofill_with_ai on create degrades cleanly on binary .xls without losing attachment and allows manual save', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $xlsBinary = UploadedFile::fake()->createWithContent(
+        'historico-2020.xls',
+        "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".str_repeat("\x00", 512),
+    );
+
+    Http::fake();
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$xlsBinary]])
+        ->callAction($aiAction)
+        ->assertNotified('No se pudo autocompletar con IA');
+
+    Http::assertNothingSent();
+    expect($component->get('data.documents'))->not->toBeEmpty();
+
+    $component->fillForm([
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Reporte financiero historico 2020',
+        'fiscal_year' => 2020,
+        'period' => 'Anual',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Reporte financiero historico 2020',
+        'fiscal_year' => 2020,
+        'period' => 'Anual',
+    ]);
+});
