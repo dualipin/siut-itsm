@@ -13,6 +13,11 @@
       }
   @endphp
   <style>
+    @page {
+      size: letter portrait;
+      margin: 0.9cm 1cm;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -21,18 +26,20 @@
 
     html, body {
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
+      font-size: 10.5px;
     }
 
     .container-children {
       border-bottom: 1px dotted #000;
-      padding-bottom: 20px;
+      padding-bottom: 0.45cm;
     }
 
     .pagare {
+      width: 19.5cm;
+      min-height: 8.65cm;
+      margin: 0 auto;
       border: 2px solid black;
-      padding: 14px 20px;
-      margin: 25px;
+      padding: 0.38cm 0.55cm;
       border-radius: 10px;
       position: relative;
       background-color: #eaf6ea;
@@ -41,8 +48,8 @@
     .title-box {
       text-align: center;
       border-radius: 8px;
-      padding: 8px 35px;
-      font-size: 18px;
+      padding: 6px 28px;
+      font-size: 16px;
       background-color: black;
       color: white;
       letter-spacing: 8px;
@@ -53,16 +60,16 @@
     .between {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
 
     .header-info {
       text-align: right;
-      font-size: 11px;
+      font-size: 10.5px;
     }
 
     .header-info p {
-      margin: 3px 0;
+      margin: 2px 0;
     }
 
     .underline {
@@ -75,31 +82,31 @@
     }
 
     .content {
-      margin: 10px 0;
+      margin: 6px 0;
       text-align: justify;
-      line-height: 1.5;
-      font-size: 10.5px;
+      line-height: 1.4;
+      font-size: 10px;
     }
 
     .content p {
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     .box {
       border: 1px solid #777;
-      padding: 8px 12px;
+      padding: 6px 10px;
       border-radius: 8px;
       background-color: #ffffff;
       font-weight: bold;
       text-align: center;
-      margin: 6px 0;
-      font-size: 10px;
+      margin: 4px 0;
+      font-size: 9.5px;
     }
 
     .footer-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 15px;
+      margin-top: 10px;
     }
 
     .footer-table__column {
@@ -110,20 +117,18 @@
     .border-box {
       border: 1px solid #777;
       border-radius: 8px;
-      padding: 8px 12px;
+      padding: 6px 10px;
       background-color: #ffffff;
+      font-size: 9.5px;
     }
 
     .cell-underline {
       border-bottom: 1px solid #aaa;
-      padding: 3px 0;
+      padding: 2px 0;
     }
 
-    .sig-img {
-      max-height: 40px;
-      max-width: 130px;
-      margin: 0 auto;
-      display: block;
+    .sig-space {
+      height: 46px;
     }
   </style>
 </head>
@@ -179,10 +184,8 @@
             </div>
           </td>
           <td class="footer-table__column" style="text-align: center; vertical-align: bottom;">
-            <div style="font-weight: bold; margin-bottom: 8px;">Acepto(amos)</div>
-            @if($loan->signature_data)
-              <img src="{{ $loan->signature_data }}" class="sig-img" alt="Firma">
-            @endif
+            <div style="font-weight: bold;">Acepto(amos)</div>
+            <div class="sig-space"></div>
             <div style="border-top: 1px solid #000; width: 85%; margin: 0 auto; padding-top: 3px; font-weight: bold;">
               {{ $user->full_name }}
             </div>
