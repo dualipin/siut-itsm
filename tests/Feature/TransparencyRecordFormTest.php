@@ -22,6 +22,31 @@ beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('portal'));
 });
 
+test('create and edit forms render documentos adjuntos before informacion del registro and visibilidad', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $record = TransparencyRecord::factory()->withDocuments(1)->create([
+        'created_by' => $admin->id,
+    ]);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->assertSuccessful()
+        ->assertSeeInOrder([
+            'Documentos Adjuntos',
+            'Información del Registro',
+            'Visibilidad en el Portal',
+        ]);
+
+    Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()])
+        ->assertSuccessful()
+        ->assertSeeInOrder([
+            'Documentos Adjuntos',
+            'Información del Registro',
+            'Visibilidad en el Portal',
+        ]);
+});
+
 test('create form shows only contextual fields matching selected category and visibility', function () {
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -359,17 +384,59 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
         ->call('create')
         ->assertHasFormErrors(['documents']);
 
-    // Spreadsheet (.xlsx) rejected when type is not selected yet (defaults to base document MIMEs)
+    // Spreadsheets (.xlsx, .xls, .csv) are accepted when type is not selected yet (only type fails as required)
     $xlsxWithoutType = UploadedFile::fake()->create(
         'sin-tipo.xlsx',
         120,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    Livewire::test(CreateTransparencyRecord::class)
+    $xlsWithoutType = UploadedFile::fake()->create(
+        'sin-tipo.xls',
+        120,
+        'application/vnd.ms-excel',
+    );
+    $csvWithoutType = UploadedFile::fake()->createWithContent('sin-tipo.csv', "concepto,monto\ningresos,1000\n");
+
+    $preCategoryComponent = Livewire::test(CreateTransparencyRecord::class)
         ->fillForm([
             'name' => 'Registro sin categoría',
             'status' => TransparencyRecordStatus::Interno->value,
-            'documents' => [$xlsxWithoutType],
+            'documents' => [$xlsxWithoutType, $xlsWithoutType, $csvWithoutType],
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['type' => 'required'])
+        ->assertHasNoFormErrors(['documents']);
+
+    // Selecting a non-Financiero category afterwards rejects the incompatible spreadsheets
+    $preCategoryComponent
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'document_date' => '2025-05-01',
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['documents'])
+        ->assertSee('El formato del archivo no está permitido para la categoría seleccionada.');
+
+    // Switching to Financiero accepts those same pre-uploaded spreadsheets and persists them
+    $preCategoryComponent
+        ->fillForm([
+            'type' => TransparencyRecordType::Financiero->value,
+            'fiscal_year' => 2025,
+            'period' => 'Anual',
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(TransparencyRecord::where('name', 'Registro sin categoría')->firstOrFail()->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION))
+        ->toHaveCount(3);
+
+    // Arbitrary .txt is still rejected when type is not selected yet
+    $txtWithoutType = UploadedFile::fake()->createWithContent('notas-sin-tipo.txt', 'texto plano');
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'name' => 'Registro sin categoría con TXT',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$txtWithoutType],
         ])
         ->call('create')
         ->assertHasFormErrors(['type', 'documents']);

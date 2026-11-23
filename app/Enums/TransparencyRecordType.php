@@ -117,6 +117,30 @@ enum TransparencyRecordType: string implements HasColor, HasLabel
         return $base;
     }
 
+    /**
+     * All extensions accepted across any transparency category before a category is selected.
+     *
+     * @return list<string>
+     */
+    public static function allAllowedExtensions(): array
+    {
+        return array_values(array_unique(array_merge(
+            ...array_map(static fn (self $type): array => $type->allowedExtensions(), self::cases()),
+        )));
+    }
+
+    /**
+     * All MIME types accepted across any transparency category before a category is selected.
+     *
+     * @return list<string>
+     */
+    public static function allAllowedMimeTypes(): array
+    {
+        return array_values(array_unique(array_merge(
+            ...array_map(static fn (self $type): array => $type->allowedMimeTypes(), self::cases()),
+        )));
+    }
+
     public static function fromSlug(string $slug): ?self
     {
         return self::tryFrom(strtolower(trim($slug)));
