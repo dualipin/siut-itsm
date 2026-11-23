@@ -128,7 +128,7 @@
     }
 
     .sig-space {
-      height: 46px;
+      height: 1.3cm;
     }
   </style>
 </head>

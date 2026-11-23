@@ -12,6 +12,8 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+const DUMMY_SIGNATURE_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
 beforeEach(function () {
     Storage::fake('local');
     $this->pdfService = app(LoanPdfGenerationService::class);
@@ -35,7 +37,7 @@ it('generates all 4 loan documents and saves them privately with versions and ha
         'monthly_rate' => 6.00,
         'nomina_amount' => 12000.00,
         'nomina_fortnights' => 4,
-        'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'signature_data' => DUMMY_SIGNATURE_DATA_URI,
         'signature_type' => 'drawn',
     ]);
 
@@ -133,12 +135,15 @@ it('generates pagare without embedded digital signature while preserving loan an
 
     $loan = Loan::factory()->for($user)->submitted()->create([
         'folio' => 'SOL-2026-00999',
+        'fiscal_year' => 2026,
         'requested_amount' => 12000.00,
         'approved_amount' => 12000.00,
         'monthly_rate' => 6.00,
         'nomina_amount' => 12000.00,
         'nomina_fortnights' => 6,
-        'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'reviewed_at' => '2026-05-15 10:00:00',
+        'disbursed_at' => '2026-08-15',
+        'signature_data' => DUMMY_SIGNATURE_DATA_URI,
         'signature_type' => 'drawn',
     ]);
 
@@ -151,24 +156,17 @@ it('generates pagare without embedded digital signature while preserving loan an
     $pages = $parsedPdf->getPages();
     $pdfText = preg_replace('/\s+/', ' ', $parsedPdf->getText()) ?? '';
 
-    $pagareHtml = view('pdf.loans.pagare', [
-        'loan' => $loan,
-        'user' => $user,
-        'amountInWords' => NumberToWords::toCurrency(12000.00),
-        'approvalDateLong' => '15 de mayo de 2026',
-        'lastPaymentDate' => '15/08/2026',
-        'fiscalYear' => 2026,
-        'termFortnights' => 6,
-    ])->render();
-
     expect($pages)->toHaveCount(1)
+        ->and($pages[0]->getDetails()['MediaBox'] ?? null)->toBe([0.0, 0.0, 612.0, 792.0])
         ->and($parsedPdf->getObjectsByType('XObject', 'Image'))->toBeEmpty()
-        ->and($pagareHtml)->not->toContain('<img')
-        ->and($pagareHtml)->not->toContain($loan->signature_data)
         ->and($pdfText)->toContain('PAGARÉ')
-        ->and($pdfText)->toContain('SOL-2026-00999')
-        ->and($pdfText)->toContain('12,000.00')
+        ->and($pdfText)->toContain('No. SOL-2026-00999. Bueno por $ 12,000.00')
+        ->and($pdfText)->toContain('En Macuspana, Tabasco a 15 de mayo de 2026.')
+        ->and($pdfText)->toContain('Debe(mos) y pagare(mos) incondicionalmente por este Pagaré')
+        ->and($pdfText)->toContain('el 15/08/2026')
         ->and($pdfText)->toContain('(DOCE MIL PESOS 00/100 M.N.)')
+        ->and($pdfText)->toContain('serie numerada de 1 al 6')
+        ->and($pdfText)->toContain('6% mensual')
         ->and($pdfText)->toContain('Datos del deudor')
         ->and($pdfText)->toContain('Nombre: María Elena García López')
         ->and($pdfText)->toContain('Dirección: Av. Tecnológico 123, Macuspana, Tabasco')
