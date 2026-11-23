@@ -12,6 +12,18 @@ import {
     type SuggestedFilenameOptions,
 } from './scanner/metadata.ts';
 import {
+    FULL_DOCUMENT_QUAD,
+    cloneQuad,
+    detectDocumentQuad,
+    isValidConvexQuad,
+    type DocumentQuad,
+    type ImageDataLike,
+} from './scanner/quad-detector.ts';
+import {
+    DEFAULT_MAX_LONG_SIDE,
+    warpPerspective,
+} from './scanner/perspective.ts';
+import {
     assessCameraEnvironment,
     buildRearCameraConstraints,
     buildTorchConstraints,
@@ -23,6 +35,12 @@ export interface ScannedPageItem extends PdfJpegPage {
     id: string;
     previewUrl: string;
     sourceName: string;
+    originalSource: Blob;
+    originalPreviewUrl: string;
+    originalWidth: number;
+    originalHeight: number;
+    quad: DocumentQuad;
+    autoDetected: boolean;
 }
 
 export interface EncodeImageOptions {
@@ -46,19 +64,19 @@ export type StartRearCameraResult =
           message: string;
       };
 
-const DEFAULT_MAX_LONG_SIDE = 1600;
 const DEFAULT_JPEG_QUALITY = 0.78;
 const CAPTURE_FRAME_JPEG_QUALITY = 0.92;
+const MAX_WORKING_LONG_SIDE = 2400;
+const DETECTION_LONG_SIDE = 160;
 
-async function loadImageSource(
-    source: Blob,
-    sourceName: string,
-): Promise<{
+interface DecodedImageSource {
     width: number;
     height: number;
     draw: (ctx: CanvasRenderingContext2D, targetWidth: number, targetHeight: number) => void;
     cleanup: () => void;
-}> {
+}
+
+async function loadImageSource(source: Blob, sourceName: string): Promise<DecodedImageSource> {
     if (typeof createImageBitmap === 'function') {
         const bitmap = await createImageBitmap(source);
 
@@ -110,6 +128,128 @@ function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<B
     });
 }
 
+function isFullQuad(quad: DocumentQuad): boolean {
+    const eps = 1e-3;
+
+    return (
+        Math.abs(quad.topLeft.x) < eps
+        && Math.abs(quad.topLeft.y) < eps
+        && Math.abs(quad.topRight.x - 1) < eps
+        && Math.abs(quad.topRight.y) < eps
+        && Math.abs(quad.bottomRight.x - 1) < eps
+        && Math.abs(quad.bottomRight.y - 1) < eps
+        && Math.abs(quad.bottomLeft.x) < eps
+        && Math.abs(quad.bottomLeft.y - 1) < eps
+    );
+}
+
+function drawScaledToCanvas(
+    source: DecodedImageSource,
+    maxLongSide: number,
+): { canvas: HTMLCanvasElement; width: number; height: number } {
+    const longSide = Math.max(source.width, source.height);
+    const scale = longSide > maxLongSide ? maxLongSide / longSide : 1;
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        canvas.width = 0;
+        canvas.height = 0;
+        throw new Error('No fue posible inicializar el lienzo de procesamiento de imagen.');
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    source.draw(ctx, width, height);
+
+    return { canvas, width, height };
+}
+
+function detectQuadFromSource(source: DecodedImageSource): { quad: DocumentQuad; detected: boolean } {
+    const { canvas, width, height } = drawScaledToCanvas(source, DETECTION_LONG_SIDE);
+
+    try {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return { quad: cloneQuad(FULL_DOCUMENT_QUAD), detected: false };
+        }
+
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const result = detectDocumentQuad(imageData);
+
+        return { quad: result.quad, detected: result.detected };
+    } finally {
+        canvas.width = 0;
+        canvas.height = 0;
+    }
+}
+
+async function renderQuadFromSource(
+    source: DecodedImageSource,
+    quad: DocumentQuad,
+    maxLongSide: number,
+    quality: number,
+): Promise<{ jpegBytes: Uint8Array; width: number; height: number; previewUrl: string }> {
+    if (isFullQuad(quad)) {
+        const { canvas, width, height } = drawScaledToCanvas(source, maxLongSide);
+        try {
+            const blob = await canvasToJpegBlob(canvas, quality);
+            const jpegBytes = new Uint8Array(await blob.arrayBuffer());
+            const previewUrl = URL.createObjectURL(blob);
+
+            return { jpegBytes, width, height, previewUrl };
+        } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+        }
+    }
+
+    const work = drawScaledToCanvas(source, MAX_WORKING_LONG_SIDE);
+    const outCanvas = document.createElement('canvas');
+
+    try {
+        const workCtx = work.canvas.getContext('2d');
+        if (!workCtx) {
+            throw new Error('No fue posible leer los píxeles de la imagen original.');
+        }
+
+        const workImageData: ImageDataLike = workCtx.getImageData(0, 0, work.width, work.height);
+        const warped = warpPerspective(workImageData, quad, { maxLongSide });
+
+        outCanvas.width = warped.width;
+        outCanvas.height = warped.height;
+        const outCtx = outCanvas.getContext('2d');
+        if (!outCtx) {
+            throw new Error('No fue posible inicializar el lienzo de salida.');
+        }
+
+        const outputImageData = outCtx.createImageData(warped.width, warped.height);
+        outputImageData.data.set(warped.data);
+        outCtx.putImageData(outputImageData, 0, 0);
+
+        const blob = await canvasToJpegBlob(outCanvas, quality);
+        const jpegBytes = new Uint8Array(await blob.arrayBuffer());
+        const previewUrl = URL.createObjectURL(blob);
+
+        return {
+            jpegBytes,
+            width: warped.width,
+            height: warped.height,
+            previewUrl,
+        };
+    } finally {
+        work.canvas.width = 0;
+        work.canvas.height = 0;
+        outCanvas.width = 0;
+        outCanvas.height = 0;
+    }
+}
+
 export async function addPageFromSource(
     source: Blob | File,
     options: AddPageFromSourceOptions = {},
@@ -118,43 +258,31 @@ export async function addPageFromSource(
     const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
     const sourceName = options.sourceName || (source instanceof File ? source.name : '') || 'pagina.jpg';
     const loaded = await loadImageSource(source, sourceName);
-
-    const canvas = document.createElement('canvas');
+    const originalPreviewUrl = URL.createObjectURL(source);
 
     try {
-        const longSide = Math.max(loaded.width, loaded.height);
-        const scale = longSide > maxLongSide ? maxLongSide / longSide : 1;
-        const targetWidth = Math.max(1, Math.round(loaded.width * scale));
-        const targetHeight = Math.max(1, Math.round(loaded.height * scale));
-
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('No fue posible inicializar el lienzo de procesamiento de imagen.');
-        }
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
-        loaded.draw(ctx, targetWidth, targetHeight);
-
-        const blob = await canvasToJpegBlob(canvas, quality);
-        const jpegBytes = new Uint8Array(await blob.arrayBuffer());
-        const previewUrl = URL.createObjectURL(blob);
+        const detection = detectQuadFromSource(loaded);
+        const rendered = await renderQuadFromSource(loaded, detection.quad, maxLongSide, quality);
 
         return {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            jpegBytes,
-            width: targetWidth,
-            height: targetHeight,
-            previewUrl,
+            jpegBytes: rendered.jpegBytes,
+            width: rendered.width,
+            height: rendered.height,
+            previewUrl: rendered.previewUrl,
             sourceName,
+            originalSource: source,
+            originalPreviewUrl,
+            originalWidth: loaded.width,
+            originalHeight: loaded.height,
+            quad: detection.quad,
+            autoDetected: detection.detected,
         };
+    } catch (error) {
+        URL.revokeObjectURL(originalPreviewUrl);
+        throw error;
     } finally {
         loaded.cleanup();
-        canvas.width = 0;
-        canvas.height = 0;
     }
 }
 
@@ -166,6 +294,55 @@ export async function encodeImageFileToScannedPage(
         ...options,
         sourceName: file.name || 'pagina.jpg',
     });
+}
+
+export async function reprocessScannedPage(
+    page: ScannedPageItem,
+    quad: DocumentQuad,
+    options: EncodeImageOptions = {},
+): Promise<ScannedPageItem> {
+    if (!isValidConvexQuad(quad)) {
+        throw new Error('Las 4 esquinas deben formar un cuadrilátero convexo sin cruzarse.');
+    }
+
+    const maxLongSide = options.maxLongSide ?? DEFAULT_MAX_LONG_SIDE;
+    const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
+    const loaded = await loadImageSource(page.originalSource, page.sourceName);
+
+    try {
+        const nextQuad = cloneQuad(quad);
+        const rendered = await renderQuadFromSource(loaded, nextQuad, maxLongSide, quality);
+        const previousPreviewUrl = page.previewUrl;
+
+        if (previousPreviewUrl) {
+            URL.revokeObjectURL(previousPreviewUrl);
+        }
+
+        return {
+            ...page,
+            jpegBytes: rendered.jpegBytes,
+            width: rendered.width,
+            height: rendered.height,
+            previewUrl: rendered.previewUrl,
+            quad: nextQuad,
+        };
+    } finally {
+        loaded.cleanup();
+    }
+}
+
+export function revokeScannedPageUrls(page: Partial<ScannedPageItem> | null | undefined): void {
+    if (!page) {
+        return;
+    }
+
+    if (page.previewUrl) {
+        URL.revokeObjectURL(page.previewUrl);
+    }
+
+    if (page.originalPreviewUrl) {
+        URL.revokeObjectURL(page.originalPreviewUrl);
+    }
 }
 
 export function stopMediaStream(
@@ -338,13 +515,20 @@ export function triggerLocalPdfDownload(file: File): void {
 if (typeof window !== 'undefined') {
     (window as unknown as Record<string, unknown>).transparencyScanner = {
         MAX_PDF_BYTES,
+        FULL_DOCUMENT_QUAD,
         buildSuggestedPdfFilename,
         ensurePdfFilename,
         estimatePdfByteLength,
         formatByteSize,
         validatePdfByteSize,
+        cloneQuad,
+        isValidConvexQuad,
+        detectDocumentQuad,
+        warpPerspective,
         addPageFromSource,
         encodeImageFileToScannedPage,
+        reprocessScannedPage,
+        revokeScannedPageUrls,
         startRearCameraStream,
         setTrackTorch,
         stopMediaStream,
