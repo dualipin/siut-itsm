@@ -9,8 +9,13 @@ use App\Filament\Resources\TransparencyRecords\Pages\ViewTransparencyRecord;
 use App\Filament\Resources\TransparencyRecords\TransparencyRecordResource;
 use App\Models\TransparencyRecord;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -874,4 +879,361 @@ test('multi-page scanned PDF 1.4 attaches across all categories, persists in med
         ])
         ->call('create')
         ->assertHasFormErrors(['documents']);
+});
+
+function buildFormDigitalTextPdf(string $text): string
+{
+    $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+    $stream = "BT\n/F1 12 Tf\n72 720 Td\n({$escaped}) Tj\nET\n";
+
+    $pdf = "%PDF-1.4\n";
+    $offsets = [];
+
+    $objects = [
+        1 => '<< /Type /Catalog /Pages 2 0 R >>',
+        2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        5 => '<< /Length '.strlen($stream)." >>\nstream\n{$stream}endstream",
+    ];
+
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 ".(count($objects) + 1)."\n";
+    $pdf .= "0000000000 65535 f \n";
+
+    foreach ($objects as $id => $body) {
+        $pdf .= str_pad((string) $offsets[$id], 10, '0', STR_PAD_LEFT)." 00000 n \n";
+    }
+
+    $pdf .= "trailer\n<< /Size ".(count($objects) + 1)." /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF\n";
+
+    return $pdf;
+}
+
+test('autofill_with_ai action visibility respects AI config, attachment presence, active directiva authorization, and never appears on view', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
+    $inactiveAdmin = User::factory()->admin()->create(['is_active' => false]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $recordWithDoc = TransparencyRecord::factory()->withDocuments(1)->create(['created_by' => $admin->id]);
+    $pdf = UploadedFile::fake()->createWithContent('oficio.pdf', buildFormDigitalTextPdf(str_repeat('Oficio sindical de prueba. ', 4)));
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    foreach ([$admin, $lider] as $directivaUser) {
+        $this->actingAs($directivaUser);
+
+        Livewire::test(CreateTransparencyRecord::class)
+            ->assertDontSee('Autocompletar con IA')
+            ->assertActionDoesNotExist($aiAction)
+            ->fillForm(['documents' => [$pdf]])
+            ->assertActionVisible($aiAction)
+            ->assertSee('Autocompletar con IA');
+
+        Livewire::test(EditTransparencyRecord::class, ['record' => $recordWithDoc->getKey()])
+            ->assertActionVisible($aiAction)
+            ->assertSee('Autocompletar con IA');
+    }
+
+    Config::set('services.document_ai.enabled', false);
+    $this->actingAs($admin);
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$pdf]])
+        ->assertDontSee('Autocompletar con IA')
+        ->assertActionDoesNotExist($aiAction);
+
+    Config::set('services.document_ai.enabled', true);
+    Livewire::test(ViewTransparencyRecord::class, ['record' => $recordWithDoc->getKey()])
+        ->assertDontSee('Autocompletar con IA');
+
+    foreach ([$inactiveAdmin, $agremiado] as $unauthorizedUser) {
+        $this->actingAs($unauthorizedUser);
+        $this->get(TransparencyRecordResource::getUrl('create'))->assertForbidden();
+        $this->get(TransparencyRecordResource::getUrl('edit', ['record' => $recordWithDoc]))->assertForbidden();
+    }
+});
+
+test('autofill_with_ai on create analyzes digital PDF, fills contextual fields, keeps consulta interna, and persists', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
+    $this->actingAs($lider);
+
+    $digitalPdf = UploadedFile::fake()->createWithContent(
+        'oficio-comision.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/101/2025 emitido por la Secretaria General al Director General el 15 de marzo de 2025. ', 2)),
+    );
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+                        'summary' => 'Oficio enviado por la Secretaría General a la Dirección General sobre comisión sindical.',
+                        'document_date' => '2025-03-15',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/101/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.96,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'documents' => [$digitalPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertNotified()
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+            'summary' => 'Oficio enviado por la Secretaría General a la Dirección General sobre comisión sindical.',
+            'document_date' => '2025-03-15',
+            'reference_number' => 'SIUT/101/2025',
+            'period' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+
+        return count($parts) === 1
+            && ($parts[0]['type'] ?? null) === 'text'
+            && str_contains((string) ($parts[0]['text'] ?? ''), 'SIUT/101/2025');
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Oficios->value,
+        'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+        'fiscal_year' => 2025,
+        'reference_number' => 'SIUT/101/2025',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on create optimizes image for Financiero, clears non-financial fields, and handles AI failure without losing uploads', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $largeImage = UploadedFile::fake()->image('balance-q2.png', 1800, 1200);
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Upstream error']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Estado financiero del segundo trimestre 2024',
+                        'summary' => 'Balance general de ingresos y egresos sindicales del segundo trimestre.',
+                        'document_date' => '2024-06-30',
+                        'fiscal_year' => 2024,
+                        'period' => '2do Trimestre',
+                        'reference_number' => 'IGNORAR-FOLIO',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.93,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'document_date' => '2024-06-30',
+            'reference_number' => 'TEMP-FOLIO-01',
+            'documents' => [$largeImage],
+        ])
+        ->callAction($aiAction)
+        ->assertNotified('No se pudo autocompletar con IA');
+
+    expect($component->get('data.documents'))->not->toBeEmpty();
+
+    $component
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'name' => 'Estado financiero del segundo trimestre 2024',
+            'fiscal_year' => 2024,
+            'period' => '2do Trimestre',
+            'document_date' => null,
+            'reference_number' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $dataUrl = (string) ($parts[1]['image_url']['url'] ?? '');
+
+        if (! str_starts_with($dataUrl, 'data:image/jpeg;base64,')) {
+            return false;
+        }
+
+        $decoded = base64_decode(substr($dataUrl, strlen('data:image/jpeg;base64,')), true);
+        if (! is_string($decoded)) {
+            return false;
+        }
+
+        [$width, $height] = getimagesizefromstring($decoded);
+
+        return max($width, $height) === 1000;
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Estado financiero del segundo trimestre 2024',
+        'fiscal_year' => 2024,
+        'period' => '2do Trimestre',
+        'document_date' => null,
+        'reference_number' => null,
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on edit analyzes saved media UUID, clears out-of-context fields, uses cache on repeat, and saves', function () {
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $record = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Financiero,
+        'fiscal_year' => 2024,
+        'period' => 'Anual',
+        'document_date' => null,
+        'reference_number' => null,
+        'created_by' => $admin->id,
+    ]);
+
+    $pdfContent = buildFormDigitalTextPdf(str_repeat('Acta de asamblea extraordinaria del SIUT-ITSM folio ACTA-02-2025 del 10 de febrero de 2025. ', 2));
+    $record->addMedia(UploadedFile::fake()->createWithContent('acta-asamblea.pdf', $pdfContent))
+        ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'actas',
+                        'name' => 'Acta de asamblea extraordinaria de febrero 2025',
+                        'summary' => 'Minuta de acuerdos tomados en asamblea extraordinaria sindical.',
+                        'document_date' => '2025-02-10',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'ACTA-02-2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Actas,
+            'name' => 'Acta de asamblea extraordinaria de febrero 2025',
+            'document_date' => '2025-02-10',
+            'reference_number' => 'ACTA-02-2025',
+            'period' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $component->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA');
+
+    Http::assertSentCount(1);
+
+    $component->call('save')->assertHasNoFormErrors();
+
+    $record->refresh();
+    expect($record->type)->toBe(TransparencyRecordType::Actas)
+        ->and($record->name)->toBe('Acta de asamblea extraordinaria de febrero 2025')
+        ->and($record->fiscal_year)->toBe(2025)
+        ->and($record->period)->toBeNull()
+        ->and($record->reference_number)->toBe('ACTA-02-2025')
+        ->and($record->status)->toBe(TransparencyRecordStatus::Interno);
 });
