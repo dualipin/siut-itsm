@@ -51,52 +51,78 @@ class TransparencyRecordForm
                                 && self::isActiveDirectiva()
                                 && app(TransparencyDocumentAIService::class)->isEnabled()
                                 && filled($get->array('documents')))
-                            ->action(static function (Get $get, Set $set, ?TransparencyRecord $record): void {
+                            ->requiresConfirmation(static fn (Get $get): bool => self::hasFilledMetadataFields($get))
+                            ->modalIcon(static fn (Get $get): ?Heroicon => self::hasFilledMetadataFields($get)
+                                ? Heroicon::OutlinedExclamationTriangle
+                                : null)
+                            ->modalIconColor(static fn (Get $get): ?string => self::hasFilledMetadataFields($get)
+                                ? 'warning'
+                                : null)
+                            ->modalHeading(static fn (Get $get, ?TransparencyRecord $record): ?string => self::resolveAutofillModalCopy($get, $record)['heading'])
+                            ->modalDescription(static fn (Get $get, ?TransparencyRecord $record): ?string => self::resolveAutofillModalCopy($get, $record)['description'])
+                            ->modalSubmitActionLabel(static fn (Get $get, ?TransparencyRecord $record): ?string => self::resolveAutofillModalCopy($get, $record)['submitLabel'])
+                            ->schema(static function (Get $get, ?TransparencyRecord $record): array {
+                                $options = self::resolveDocumentOptions($get->array('documents'), $record);
+
+                                if (count($options) < 2) {
+                                    return [];
+                                }
+
+                                return [
+                                    Select::make('selected_document')
+                                        ->label('Documento a analizar')
+                                        ->options($options)
+                                        ->default(array_key_first($options))
+                                        ->required(),
+                                ];
+                            })
+                            ->action(static function (array $data, Get $get, Set $set, ?TransparencyRecord $record): void {
                                 if (! self::isActiveDirectiva()) {
                                     return;
                                 }
 
-                                $firstDocument = self::resolveFirstDocument($get->array('documents'), $record);
-                                $aiService = app(TransparencyDocumentAIService::class);
+                                $selectedKey = isset($data['selected_document']) ? (string) $data['selected_document'] : null;
+                                $document = self::resolveSelectedDocument($get->array('documents'), $record, $selectedKey);
 
-                                if ($firstDocument instanceof TemporaryUploadedFile) {
-                                    $result = $aiService->analyzeTemporaryUpload($firstDocument);
-                                } elseif ($firstDocument instanceof Media) {
-                                    $result = $aiService->analyzeMedia($firstDocument);
-                                } else {
-                                    Notification::make()
-                                        ->warning()
-                                        ->title('No se pudo leer el archivo adjunto')
-                                        ->body('Adjunta un documento válido para analizarlo con IA o captura los datos manualmente.')
-                                        ->send();
-
-                                    return;
-                                }
-
-                                if (! $result->successful) {
-                                    Notification::make()
-                                        ->warning()
-                                        ->title('No se pudo autocompletar con IA')
-                                        ->body($result->errorMessage ?? 'Puedes continuar capturando los metadatos manualmente.')
-                                        ->send();
-
-                                    return;
-                                }
-
-                                self::applyAiResultToForm($result, $get, $set);
-
-                                Notification::make()
-                                    ->success()
-                                    ->title('Metadatos propuestos con IA')
-                                    ->body('Revisa la categoría y los campos completados antes de guardar el registro.')
-                                    ->send();
+                                self::runAiAnalysis($document, $get, $set, overwrite: true);
                             }),
                     ])
                     ->schema([
+                        Hidden::make('ai_auto_triggered')
+                            ->default(false)
+                            ->dehydrated(false),
+
                         SpatieMediaLibraryFileUpload::make('documents')
                             ->label('Archivos')
                             ->collection(TransparencyRecord::DOCUMENTS_COLLECTION)
                             ->multiple()
+                            ->live()
+                            ->afterStateUpdated(static function (Get $get, Set $set, ?TransparencyRecord $record, string $operation): void {
+                                if ($operation !== 'create'
+                                    || ! self::isActiveDirectiva()
+                                    || ! app(TransparencyDocumentAIService::class)->isEnabled()
+                                    || (bool) $get('ai_auto_triggered')) {
+                                    return;
+                                }
+
+                                $documentsState = $get->array('documents');
+                                if (blank($documentsState)) {
+                                    return;
+                                }
+
+                                $firstDocument = self::resolveFirstDocument($documentsState, $record);
+                                if ($firstDocument === null) {
+                                    return;
+                                }
+
+                                $set('ai_auto_triggered', true);
+
+                                if (! self::hasAnyEmptyMetadataField($get)) {
+                                    return;
+                                }
+
+                                self::runAiAnalysis($firstDocument, $get, $set, overwrite: false);
+                            })
                             ->maxSize(15360)
                             ->acceptedFileTypes(static fn (Get $get): array => $get->enum('type', TransparencyRecordType::class)?->allowedMimeTypes()
                                 ?? TransparencyRecordType::allAllowedMimeTypes())
@@ -122,8 +148,7 @@ class TransparencyRecordForm
                                     return null;
                                 }
 
-                                $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
-                                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
+                                $media = self::findRecordMediaByUuid($record, $file);
 
                                 if (! $media) {
                                     return null;
@@ -186,8 +211,7 @@ class TransparencyRecordForm
                                             continue;
                                         }
 
-                                        $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
-                                            ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
+                                        $media = self::findRecordMediaByUuid($record, $file);
 
                                         if (! $media) {
                                             continue;
@@ -347,44 +371,266 @@ class TransparencyRecordForm
             && $user->isLeaderOrAdmin();
     }
 
+    private static function findRecordMediaByUuid(TransparencyRecord $record, string $uuid): ?Media
+    {
+        $media = $record->getRelationValue('media')?->firstWhere('uuid', $uuid)
+            ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $uuid);
+
+        return $media instanceof Media ? $media : null;
+    }
+
+    private static function resolveDocumentItem(mixed $item, ?TransparencyRecord $record): TemporaryUploadedFile|Media|null
+    {
+        if ($item instanceof TemporaryUploadedFile) {
+            return $item;
+        }
+
+        if (is_string($item) && $item !== '' && $record instanceof TransparencyRecord) {
+            return self::findRecordMediaByUuid($record, $item);
+        }
+
+        return null;
+    }
+
     /**
      * @param  array<mixed>  $documentsState
      */
     private static function resolveFirstDocument(array $documentsState, ?TransparencyRecord $record): TemporaryUploadedFile|Media|null
     {
         foreach ($documentsState as $item) {
-            if ($item instanceof TemporaryUploadedFile) {
-                return $item;
-            }
+            $document = self::resolveDocumentItem($item, $record);
 
-            if (is_string($item) && $item !== '' && $record instanceof TransparencyRecord) {
-                $media = $record->getRelationValue('media')?->firstWhere('uuid', $item)
-                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $item);
-
-                if ($media instanceof Media) {
-                    return $media;
-                }
+            if ($document !== null) {
+                return $document;
             }
         }
 
         return null;
     }
 
-    private static function applyAiResultToForm(TransparencyAiMetadataResult $result, Get $get, Set $set): void
+    /**
+     * @param  array<mixed>  $documentsState
+     * @return list<array{label: string, document: TemporaryUploadedFile|Media}>
+     */
+    private static function resolveAnalyzableDocuments(array $documentsState, ?TransparencyRecord $record): array
     {
-        $set('type', $result->type?->value);
-        $set('name', $result->name ?? '');
-        $set('summary', $result->summary ?? '');
+        $items = [];
 
-        if ($result->type?->usesPeriod()) {
-            $set('fiscal_year', $result->fiscalYear ?? now()->year);
-            $set('period', $result->period);
-            $set('document_date', null);
-            $set('reference_number', null);
+        foreach ($documentsState as $item) {
+            $document = self::resolveDocumentItem($item, $record);
+
+            if ($document === null) {
+                continue;
+            }
+
+            $label = $document instanceof TemporaryUploadedFile
+                ? ($document->getClientOriginalName() ?: 'Archivo temporal')
+                : (string) ($document->file_name ?: $document->name);
+
+            $items[] = [
+                'label' => $label,
+                'document' => $document,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  array<mixed>  $documentsState
+     * @return array<string, string>
+     */
+    private static function resolveDocumentOptions(array $documentsState, ?TransparencyRecord $record): array
+    {
+        $options = [];
+
+        foreach (self::resolveAnalyzableDocuments($documentsState, $record) as $index => $entry) {
+            $position = $index + 1;
+            $options['doc:'.$index] = "{$position}. {$entry['label']}";
+        }
+
+        return $options;
+    }
+
+    /**
+     * @param  array<mixed>  $documentsState
+     */
+    private static function resolveSelectedDocument(
+        array $documentsState,
+        ?TransparencyRecord $record,
+        ?string $selectedKey,
+    ): TemporaryUploadedFile|Media|null {
+        $items = self::resolveAnalyzableDocuments($documentsState, $record);
+
+        if ($items === []) {
+            return null;
+        }
+
+        if (filled($selectedKey) && str_starts_with($selectedKey, 'doc:')) {
+            $index = (int) substr($selectedKey, 4);
+
+            if (isset($items[$index])) {
+                return $items[$index]['document'];
+            }
+        }
+
+        return $items[0]['document'];
+    }
+
+    /**
+     * @return array{heading: ?string, description: ?string, submitLabel: ?string}
+     */
+    private static function resolveAutofillModalCopy(Get $get, ?TransparencyRecord $record): array
+    {
+        $hasMultiple = count(self::resolveAnalyzableDocuments($get->array('documents'), $record)) >= 2;
+        $hasFilled = self::hasFilledMetadataFields($get);
+
+        return match (true) {
+            $hasMultiple && $hasFilled => [
+                'heading' => 'Seleccionar documento y confirmar sobrescritura',
+                'description' => 'Elige qué archivo analizar con IA. Advertencia: los metadatos capturados actualmente serán sobrescritos con los datos extraídos del documento seleccionado.',
+                'submitLabel' => 'Sí, analizar y sobrescribir',
+            ],
+            $hasMultiple => [
+                'heading' => 'Seleccionar documento para analizar con IA',
+                'description' => 'Hay varios archivos adjuntos. Elige cuál documento analizar para proponer los metadatos sin consumir tokens adicionales en los anexos.',
+                'submitLabel' => 'Analizar documento',
+            ],
+            $hasFilled => [
+                'heading' => '¿Sobrescribir metadatos actuales con IA?',
+                'description' => 'Ya existen metadatos capturados en este registro. Si continúas, la IA los sobrescribirá con la información extraída del documento adjunto.',
+                'submitLabel' => 'Sí, autocompletar',
+            ],
+            default => [
+                'heading' => null,
+                'description' => null,
+                'submitLabel' => null,
+            ],
+        };
+    }
+
+    private static function hasFilledMetadataFields(Get $get): bool
+    {
+        return self::resolveType($get('type')) !== null
+            || filled($get('name'))
+            || filled($get('summary'))
+            || filled($get('period'))
+            || filled($get('document_date'))
+            || filled($get('reference_number'));
+    }
+
+    private static function hasAnyEmptyMetadataField(Get $get): bool
+    {
+        $type = self::resolveType($get('type'));
+
+        if ($type === null || blank($get('name')) || blank($get('summary'))) {
+            return true;
+        }
+
+        if ($type->usesPeriod()) {
+            return blank($get('fiscal_year')) || blank($get('period'));
+        }
+
+        if ($type->usesDocumentDate() && blank($get('document_date'))) {
+            return true;
+        }
+
+        return $type->usesFolio() && blank($get('reference_number'));
+    }
+
+    private static function runAiAnalysis(
+        TemporaryUploadedFile|Media|null $document,
+        Get $get,
+        Set $set,
+        bool $overwrite,
+    ): void {
+        $aiService = app(TransparencyDocumentAIService::class);
+
+        if ($document instanceof TemporaryUploadedFile) {
+            $result = $aiService->analyzeTemporaryUpload($document);
+        } elseif ($document instanceof Media) {
+            $result = $aiService->analyzeMedia($document);
         } else {
+            Notification::make()
+                ->warning()
+                ->title('No se pudo leer el archivo adjunto')
+                ->body('Adjunta un documento válido para analizarlo con IA o captura los datos manualmente.')
+                ->send();
+
+            return;
+        }
+
+        if (! $result->successful) {
+            Notification::make()
+                ->warning()
+                ->title('No se pudo autocompletar con IA')
+                ->body($result->errorMessage ?? 'Puedes continuar capturando los metadatos manualmente.')
+                ->send();
+
+            return;
+        }
+
+        self::applyAiResultToForm($result, $get, $set, overwrite: $overwrite);
+
+        Notification::make()
+            ->success()
+            ->title('Metadatos propuestos con IA')
+            ->body('Revisa la categoría y los campos completados antes de guardar el registro.')
+            ->send();
+    }
+
+    private static function applyAiResultToForm(
+        TransparencyAiMetadataResult $result,
+        Get $get,
+        Set $set,
+        bool $overwrite = true,
+    ): void {
+        $existingType = self::resolveType($get('type'));
+        $effectiveType = $overwrite ? $result->type : ($existingType ?? $result->type);
+
+        if ($overwrite) {
+            $set('type', $effectiveType?->value);
+            $set('name', $result->name ?? '');
+            $set('summary', $result->summary ?? '');
+        } else {
+            if ($existingType === null && $result->type !== null) {
+                $set('type', $result->type->value);
+            }
+
+            if (blank($get('name')) && filled($result->name)) {
+                $set('name', $result->name);
+            }
+
+            if (blank($get('summary')) && filled($result->summary)) {
+                $set('summary', $result->summary);
+            }
+        }
+
+        if ($effectiveType?->usesPeriod()) {
+            if ($overwrite || $existingType === null || blank($get('fiscal_year'))) {
+                $set('fiscal_year', $result->fiscalYear ?? now()->year);
+            }
+
+            if ($overwrite || (blank($get('period')) && filled($result->period))) {
+                $set('period', $result->period);
+            }
+
+            if ($overwrite) {
+                $set('document_date', null);
+                $set('reference_number', null);
+            }
+        } elseif ($overwrite) {
             $set('period', null);
-            $set('document_date', $result->type?->usesDocumentDate() ? $result->documentDate : null);
-            $set('reference_number', $result->type?->usesFolio() ? $result->referenceNumber : null);
+            $set('document_date', $effectiveType?->usesDocumentDate() ? $result->documentDate : null);
+            $set('reference_number', $effectiveType?->usesFolio() ? $result->referenceNumber : null);
+        } else {
+            if (($effectiveType?->usesDocumentDate() ?? false) && blank($get('document_date')) && filled($result->documentDate)) {
+                $set('document_date', $result->documentDate);
+            }
+
+            if (($effectiveType?->usesFolio() ?? false) && blank($get('reference_number')) && filled($result->referenceNumber)) {
+                $set('reference_number', $result->referenceNumber);
+            }
         }
 
         if ($get->enum('status', TransparencyRecordStatus::class) === null) {
