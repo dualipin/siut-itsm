@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\TransparencyAiSourceKind;
 use App\Enums\TransparencyRecordType;
 
 final readonly class TransparencyAiMetadataResult
@@ -18,7 +19,7 @@ final readonly class TransparencyAiMetadataResult
         public bool $containsPersonalData = false,
         public ?string $internalReasonSuggestion = null,
         public float $confidence = 0.0,
-        public string $sourceKind = 'none',
+        public TransparencyAiSourceKind $sourceKind = TransparencyAiSourceKind::None,
         public string $model = 'none',
         public string $promptVersion = '',
         public ?string $errorMessage = null,
@@ -29,7 +30,7 @@ final readonly class TransparencyAiMetadataResult
         string $errorMessage,
         string $model = 'none',
         string $promptVersion = '',
-        string $sourceKind = 'none',
+        TransparencyAiSourceKind $sourceKind = TransparencyAiSourceKind::None,
         bool $unsupported = false,
     ): self {
         return new self(

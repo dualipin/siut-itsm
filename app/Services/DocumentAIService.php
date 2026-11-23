@@ -557,7 +557,7 @@ PROMPT;
      *
      * @throws DocumentAIException
      */
-    private function optimizeImage(string $bytes, ?int $maxSide = null): string
+    public function optimizeImage(string $bytes, ?int $maxSide = null): string
     {
         return $this->resizeToJpeg(
             $bytes,
@@ -639,6 +639,23 @@ PROMPT;
      */
     private function sendRequestWithPrompt(string $systemPrompt, array $userParts): Response
     {
+        return $this->chatCompletion($systemPrompt, $userParts);
+    }
+
+    /**
+     * Send a chat-completions request to the configured OpenAI-compatible provider.
+     *
+     * @param  array<int, array<string, mixed>>  $userParts
+     *
+     * @throws DocumentAIException
+     */
+    public function chatCompletion(
+        string $systemPrompt,
+        array $userParts,
+        ?int $maxTokens = null,
+        bool $includeReasoningEffort = false,
+        bool $logResponse = true,
+    ): Response {
         $config = config('services.document_ai');
 
         if (blank($config['api_key'] ?? null) || blank($config['base_url'] ?? null) || blank($config['model'] ?? null)) {
@@ -648,7 +665,7 @@ PROMPT;
         $payload = [
             'model' => $config['model'],
             'temperature' => 0,
-            'max_tokens' => (int) $config['max_tokens'],
+            'max_tokens' => $maxTokens ?? (int) $config['max_tokens'],
             'messages' => [
                 ['role' => 'system', 'content' => $systemPrompt],
                 ['role' => 'user', 'content' => $userParts],
@@ -657,6 +674,10 @@ PROMPT;
 
         if ($config['json_mode'] ?? true) {
             $payload['response_format'] = ['type' => 'json_object'];
+        }
+
+        if ($includeReasoningEffort && filled($config['reasoning_effort'] ?? null)) {
+            $payload['reasoning_effort'] = $config['reasoning_effort'];
         }
 
         $timeout = (int) ($config['sync_timeout'] ?? $config['timeout'] ?? 25);
@@ -680,13 +701,15 @@ PROMPT;
             throw DocumentAIException::transient('No se pudo conectar con el proveedor de IA.', $e);
         }
 
-        Log::info('DocumentAI: respuesta del proveedor.', [
-            'model' => $config['model'],
-            'status' => $response->status(),
-            'elapsed_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
-            'prompt_tokens' => data_get($response->json(), 'usage.prompt_tokens'),
-            'completion_tokens' => data_get($response->json(), 'usage.completion_tokens'),
-        ]);
+        if ($logResponse) {
+            Log::info('DocumentAI: respuesta del proveedor.', [
+                'model' => $config['model'],
+                'status' => $response->status(),
+                'elapsed_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
+                'prompt_tokens' => data_get($response->json(), 'usage.prompt_tokens'),
+                'completion_tokens' => data_get($response->json(), 'usage.completion_tokens'),
+            ]);
+        }
 
         if ($response->failed()) {
             // Gemini's OpenAI-compatible endpoint wraps errors in a list: [{"error": {...}}].
@@ -858,13 +881,14 @@ PROMPT;
     }
 
     /**
-     * Decode a JSON response from the AI provider, extracting the first JSON object found.
+     * Decode a JSON object from an OpenAI-compatible chat-completions response.
      *
+     * @param  list<string>  $requiredKeys
      * @return array<string, mixed>
      *
      * @throws DocumentAIException
      */
-    private function decodeResponseJson(Response $response): array
+    public function decodeJsonResponse(Response $response, array $requiredKeys = []): array
     {
         $content = (string) data_get($response->json(), 'choices.0.message.content', '');
 
@@ -876,11 +900,29 @@ PROMPT;
             ? json_decode(substr($content, $start, $end - $start + 1), true)
             : null;
 
-        if (! is_array($data) || ! array_key_exists('is_valid_document', $data)) {
+        if (! is_array($data)) {
             // Truncated/garbled output is usually transient.
             throw DocumentAIException::transient('La respuesta de la IA no es un JSON válido.');
         }
 
+        foreach ($requiredKeys as $key) {
+            if (! array_key_exists($key, $data)) {
+                throw DocumentAIException::transient('La respuesta JSON de la IA no tiene la estructura esperada.');
+            }
+        }
+
         return $data;
+    }
+
+    /**
+     * Decode a JSON response from the AI provider, extracting the first JSON object found.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws DocumentAIException
+     */
+    private function decodeResponseJson(Response $response): array
+    {
+        return $this->decodeJsonResponse($response, ['is_valid_document']);
     }
 }

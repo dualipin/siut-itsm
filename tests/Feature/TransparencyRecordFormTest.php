@@ -917,7 +917,8 @@ function buildFormDigitalTextPdf(string $text): string
     return $pdf;
 }
 
-test('autofill_with_ai action visibility respects AI config, attachment presence, active directiva authorization, and never appears on view', function () {
+function enableTransparencyTestAi(): void
+{
     Cache::flush();
     Config::set('services.document_ai', [
         'enabled' => true,
@@ -932,6 +933,10 @@ test('autofill_with_ai action visibility respects AI config, attachment presence
         'json_mode' => true,
         'headers' => [],
     ]);
+}
+
+test('autofill_with_ai action visibility respects AI config, attachment presence, active directiva authorization, and never appears on view', function () {
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
@@ -998,20 +1003,7 @@ test('autofill_with_ai action visibility respects AI config, attachment presence
 });
 
 test('autofill_with_ai on create analyzes digital PDF, fills contextual fields, keeps consulta interna, and persists', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
     $this->actingAs($lider);
@@ -1080,20 +1072,7 @@ test('autofill_with_ai on create analyzes digital PDF, fills contextual fields, 
 });
 
 test('autofill_with_ai on create optimizes image for Financiero, clears non-financial fields, and handles AI failure without losing uploads', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1181,20 +1160,7 @@ test('autofill_with_ai on create optimizes image for Financiero, clears non-fina
 });
 
 test('autofill_with_ai on edit analyzes saved media UUID, clears out-of-context fields, uses cache on repeat, and saves', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1264,20 +1230,7 @@ test('autofill_with_ai on edit analyzes saved media UUID, clears out-of-context 
 });
 
 test('autofill_with_ai keeps consulta interna, shows visual PII alert, and suggests observations on create and edit', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1419,20 +1372,7 @@ test('autofill_with_ai keeps consulta interna, shows visual PII alert, and sugge
 });
 
 test('autofill_with_ai immediately warns when extracted reference_number duplicates another record on create and edit', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1557,20 +1497,7 @@ test('autofill_with_ai immediately warns when extracted reference_number duplica
 });
 
 test('autofill_with_ai uses fallback PII observation when suggestion is blank and preserves user observations when clean or empty-only', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1692,20 +1619,7 @@ function buildFormSyntheticXlsx(): string
 }
 
 test('autofill_with_ai on create extracts page 1 JPEG from multipage DCTDecode PDF and saves', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1765,20 +1679,7 @@ test('autofill_with_ai on create extracts page 1 JPEG from multipage DCTDecode P
 });
 
 test('autofill_with_ai on create extracts text-only from CSV and synthetic XLSX for Financiero and saves', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1870,20 +1771,7 @@ test('autofill_with_ai on create extracts text-only from CSV and synthetic XLSX 
 });
 
 test('autofill_with_ai on create degrades cleanly on binary .xls without losing attachment and allows manual save', function () {
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
+    enableTransparencyTestAi();
 
     $admin = User::factory()->admin()->create(['is_active' => true]);
     $this->actingAs($admin);
@@ -1922,24 +1810,6 @@ test('autofill_with_ai on create degrades cleanly on binary .xls without losing 
         'period' => 'Anual',
     ]);
 });
-
-function enableTransparencyTestAi(): void
-{
-    Cache::flush();
-    Config::set('services.document_ai', [
-        'enabled' => true,
-        'base_url' => 'https://ai.test/v1beta/openai/',
-        'api_key' => 'test-key',
-        'model' => 'gemini-test',
-        'timeout' => 30,
-        'sync_timeout' => 15,
-        'max_tokens' => 1024,
-        'max_dimension' => 1000,
-        'jpeg_quality' => 70,
-        'json_mode' => true,
-        'headers' => [],
-    ]);
-}
 
 test('create auto-triggers AI once on first attachment, ignores additional attachments, never auto-triggers on edit, and resets on createAnother', function () {
     enableTransparencyTestAi();
@@ -2351,4 +2221,80 @@ test('autofill_with_ai shows file selector and overwrite warning on edit with 2 
         return str_contains($text, 'CONTENIDO_GUARDADO_DOS')
             && ! str_contains($text, 'CONTENIDO_GUARDADO_UNO');
     });
+});
+
+test('autofill_with_ai requests overwrite confirmation when only observations is filled and warns when folio matches a soft-deleted record', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $trashedRecord = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'name' => 'Oficio Eliminado En Papelera',
+        'document_date' => '2025-01-12',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'reference_number' => 'SIUT/TRASH/2025',
+        'created_by' => $admin->id,
+    ]);
+    $trashedRecord->delete();
+
+    $pdf = UploadedFile::fake()->createWithContent(
+        'oficio-observaciones-y-papelera.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/TRASH/2025 con datos personales sensibles para prueba de confirmación. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Initial auto-trigger outage']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio con folio en papelera',
+                        'summary' => 'Oficio de prueba para validar confirmación de observaciones y folio eliminado.',
+                        'document_date' => '2025-04-20',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/TRASH/2025',
+                        'contains_personal_data' => true,
+                        'internal_reason_suggestion' => 'Sugerencia generada por IA.',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Only observations is filled by the user (auto-trigger failed); mounting autofill_with_ai must ask for overwrite confirmation
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'observations' => 'Nota interna escrita manualmente por la Directiva.',
+        ])
+        ->set('data.documents', [$pdf])
+        ->assertNotified('No se pudo autocompletar con IA')
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->assertMountedActionModalSee('¿Sobrescribir metadatos actuales con IA?');
+
+    // Cancelling preserves user-typed observations and sends no extra HTTP request
+    $component
+        ->unmountAction()
+        ->assertFormSet([
+            'observations' => 'Nota interna escrita manualmente por la Directiva.',
+        ]);
+
+    Http::assertSentCount(1);
+
+    // Confirming executes AI analysis, overwrites observations with PII suggestion, and warns on soft-deleted folio duplicate
+    $component
+        ->mountAction($aiAction)
+        ->callMountedAction()
+        ->assertNotified('Posible folio duplicado')
+        ->assertFormSet([
+            'reference_number' => 'SIUT/TRASH/2025',
+            'observations' => 'Sugerencia generada por IA.',
+        ]);
 });

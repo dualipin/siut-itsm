@@ -1,10 +1,10 @@
 <?php
 
+use App\Enums\TransparencyAiSourceKind;
 use App\Enums\TransparencyRecordType;
 use App\Models\TransparencyRecord;
 use App\Services\TransparencyDocumentAIService;
 use App\Support\TransparencyAiMetadataResult;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
@@ -13,9 +13,6 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     Cache::flush();
@@ -258,7 +255,7 @@ it('extracts text from a digital PDF capped at 3000 chars and sends only text pa
         ->and($result->containsPersonalData)->toBeFalse()
         ->and($result->internalReasonSuggestion)->toBeNull()
         ->and($result->confidence)->toBe(0.94)
-        ->and($result->sourceKind)->toBe('text');
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::Text);
 
     Http::assertSent(function (Request $request): bool {
         $userContent = $request['messages'][1]['content'] ?? [];
@@ -313,7 +310,7 @@ it('optimizes images to JPEG at most 1000px and normalizes financiero closed per
         ->and($result->containsPersonalData)->toBeTrue()
         ->and($result->internalReasonSuggestion)->toBe('Contiene datos bancarios y RFC de agremiados.')
         ->and($result->confidence)->toBe(0.92)
-        ->and($result->sourceKind)->toBe('image');
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::Image);
 
     Http::assertSent(function (Request $request): bool {
         $parts = $request['messages'][1]['content'] ?? [];
@@ -618,7 +615,7 @@ it('extracts only page 1 JPEG from a multipage scanned PDF 1.4 DCTDecode and opt
     $result = app(TransparencyDocumentAIService::class)->analyzeBytes($pdfBytes, 'application/pdf', 'escaneo-3p.pdf');
 
     expect($result->successful)->toBeTrue()
-        ->and($result->sourceKind)->toBe('image')
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::Image)
         ->and($result->type)->toBe(TransparencyRecordType::Oficios)
         ->and($result->referenceNumber)->toBe('SIUT-SCAN-77');
 
@@ -684,7 +681,7 @@ it('extracts first rows from CSV in pure PHP capped at 3000 chars and sends only
     $result = app(TransparencyDocumentAIService::class)->analyzeBytes($csvBytes, 'text/csv', 'finanzas-q1.csv');
 
     expect($result->successful)->toBeTrue()
-        ->and($result->sourceKind)->toBe('text')
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::Text)
         ->and($result->type)->toBe(TransparencyRecordType::Financiero)
         ->and($result->fiscalYear)->toBe(2025)
         ->and($result->period)->toBe('1er Trimestre');
@@ -730,7 +727,7 @@ it('extracts sheet names, shared strings, and first rows from XLSX via ZipArchiv
     );
 
     expect($result->successful)->toBeTrue()
-        ->and($result->sourceKind)->toBe('text')
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::Text)
         ->and($result->type)->toBe(TransparencyRecordType::Financiero)
         ->and($result->fiscalYear)->toBe(2025)
         ->and($result->period)->toBe('2do Trimestre');
@@ -779,9 +776,43 @@ it('degrades cleanly on legacy binary .xls without ZIP magic bytes and makes no 
     );
 
     expect($result->successful)->toBeFalse()
+        ->and($result->sourceKind)->toBe(TransparencyAiSourceKind::None)
         ->and($result->unsupported)->toBeTrue()
         ->and($result->errorMessage)->toContain('.xls')
         ->and($result->errorMessage)->toContain('manualmente');
+
+    Http::assertNothingSent();
+});
+
+it('rejects oversized over 16 MP and corrupt images safely without sending raw bytes to HTTP', function () {
+    $oversizedJpeg = "\xFF\xD8\xFF\xC0\x00\x0B\x08".pack('nn', 4000, 5000)."\x01\x01\x11\x00\xFF\xD9";
+    $corruptImage = 'not-a-real-image-bytes';
+
+    $scannedOversizedPdf = "%PDF-1.4\n"
+        ."1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        ."2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        ."3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 4 0 R >> >> >>\nendobj\n"
+        ."4 0 obj\n<< /Type /XObject /Subtype /Image /Width 5000 /Height 4000 /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ".strlen($oversizedJpeg)." >>\nstream\n{$oversizedJpeg}\nendstream\nendobj\n"
+        ."%%EOF\n";
+
+    Http::fake();
+
+    $service = app(TransparencyDocumentAIService::class);
+
+    $oversizedResult = $service->analyzeBytes($oversizedJpeg, 'image/jpeg', 'gigante.jpg');
+    expect($oversizedResult->successful)->toBeFalse()
+        ->and($oversizedResult->sourceKind)->toBe(TransparencyAiSourceKind::None)
+        ->and($oversizedResult->errorMessage)->toContain('resolución máxima');
+
+    $corruptResult = $service->analyzeBytes($corruptImage, 'image/png', 'corrupto.png');
+    expect($corruptResult->successful)->toBeFalse()
+        ->and($corruptResult->sourceKind)->toBe(TransparencyAiSourceKind::None)
+        ->and($corruptResult->errorMessage)->not->toBeEmpty();
+
+    $oversizedPdfResult = $service->analyzeBytes($scannedOversizedPdf, 'application/pdf', 'escaneo-20mp.pdf');
+    expect($oversizedPdfResult->successful)->toBeFalse()
+        ->and($oversizedPdfResult->sourceKind)->toBe(TransparencyAiSourceKind::None)
+        ->and($oversizedPdfResult->errorMessage)->toContain('resolución máxima');
 
     Http::assertNothingSent();
 });

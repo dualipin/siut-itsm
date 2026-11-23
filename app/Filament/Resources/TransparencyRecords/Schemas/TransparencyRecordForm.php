@@ -27,6 +27,7 @@ use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Size;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
@@ -537,7 +538,8 @@ class TransparencyRecordForm
             || filled($get('summary'))
             || filled($get('period'))
             || filled($get('document_date'))
-            || filled($get('reference_number'));
+            || filled($get('reference_number'))
+            || filled($get('observations'));
     }
 
     private static function hasAnyEmptyMetadataField(Get $get): bool
@@ -694,11 +696,11 @@ class TransparencyRecordForm
             return;
         }
 
-        $duplicate = TransparencyRecord::query()
+        $duplicate = TransparencyRecord::withTrashed()
             ->where('reference_number', $folio)
             ->when(
                 $record instanceof TransparencyRecord && $record->exists,
-                static fn ($query) => $query->whereKeyNot($record->getKey()),
+                static fn (Builder $query): Builder => $query->whereKeyNot($record->getKey()),
             )
             ->first(['id', 'name']);
 
