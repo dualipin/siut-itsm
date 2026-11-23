@@ -1,0 +1,522 @@
+<div
+    wire:ignore
+    x-data="{
+        isOpen: false,
+        showDiscardConfirm: false,
+        pages: [],
+        pdfFilename: '',
+        processingCount: 0,
+        isExporting: false,
+        errorMessage: null,
+
+        async ensureScannerLoaded() {
+            if (window.transparencyScanner) {
+                return window.transparencyScanner;
+            }
+
+            let attempts = 0;
+            while (!window.transparencyScanner && attempts < 30) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                attempts++;
+            }
+
+            if (!window.transparencyScanner) {
+                throw new Error('El módulo del escáner documental aún se está cargando. Intenta de nuevo.');
+            }
+
+            return window.transparencyScanner;
+        },
+
+        readWireFormMetadata() {
+            let referenceNumber = '';
+            let name = '';
+
+            try {
+                if (typeof $wire !== 'undefined' && typeof $wire.get === 'function') {
+                    referenceNumber = String($wire.get('data.reference_number') ?? '');
+                    name = String($wire.get('data.name') ?? '');
+                }
+            } catch (e) {}
+
+            return { referenceNumber, name };
+        },
+
+        async openScanner() {
+            this.errorMessage = null;
+            this.showDiscardConfirm = false;
+            this.isOpen = true;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+                if (!this.pdfFilename.trim()) {
+                    this.pdfFilename = scanner.buildSuggestedPdfFilename(this.readWireFormMetadata());
+                }
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible inicializar el escáner.';
+            }
+        },
+
+        normalizeFilenameOnBlur() {
+            if (!window.transparencyScanner) {
+                return;
+            }
+
+            this.pdfFilename = window.transparencyScanner.ensurePdfFilename(
+                this.pdfFilename,
+                this.readWireFormMetadata(),
+            );
+        },
+
+        async handleFilesSelected(event) {
+            const input = event.target;
+            const files = Array.from(input?.files || []);
+
+            if (input) {
+                input.value = '';
+            }
+
+            if (files.length === 0) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.processingCount += files.length;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+
+                for (const file of files) {
+                    if (file.type && !file.type.startsWith('image/')) {
+                        this.errorMessage = 'Solo se pueden agregar archivos de imagen (JPG, PNG, WebP).';
+                        continue;
+                    }
+
+                    const page = await scanner.encodeImageFileToScannedPage(file);
+                    this.pages.push(page);
+                }
+            } catch (err) {
+                this.errorMessage = err.message || 'No se pudieron procesar una o más imágenes.';
+            } finally {
+                this.processingCount = Math.max(0, this.processingCount - files.length);
+            }
+        },
+
+        removePage(pageId) {
+            const index = this.pages.findIndex((page) => page.id === pageId);
+            if (index === -1) {
+                return;
+            }
+
+            const [removed] = this.pages.splice(index, 1);
+            if (removed?.previewUrl) {
+                URL.revokeObjectURL(removed.previewUrl);
+            }
+            this.errorMessage = null;
+        },
+
+        revokeAllPageUrls() {
+            for (const page of this.pages) {
+                if (page.previewUrl) {
+                    URL.revokeObjectURL(page.previewUrl);
+                }
+            }
+        },
+
+        requestClose() {
+            if (this.isExporting) {
+                return;
+            }
+
+            if (this.pages.length > 0) {
+                this.showDiscardConfirm = true;
+
+                return;
+            }
+
+            this.forceClose();
+        },
+
+        forceClose() {
+            this.revokeAllPageUrls();
+            this.pages = [];
+            this.pdfFilename = '';
+            this.showDiscardConfirm = false;
+            this.errorMessage = null;
+            this.isOpen = false;
+        },
+
+        estimatedBytes() {
+            if (!window.transparencyScanner || this.pages.length === 0) {
+                return 0;
+            }
+
+            return window.transparencyScanner.estimatePdfByteLength(this.pages);
+        },
+
+        sizeStatus() {
+            const bytes = this.estimatedBytes();
+
+            if (!window.transparencyScanner) {
+                return {
+                    valid: bytes > 0,
+                    exceedsLimit: false,
+                    byteLength: bytes,
+                    formattedSize: '0 KB',
+                    formattedMax: '15.00 MB',
+                };
+            }
+
+            return window.transparencyScanner.validatePdfByteSize(bytes);
+        },
+
+        canExport() {
+            const status = this.sizeStatus();
+
+            return this.pages.length > 0
+                && this.processingCount === 0
+                && !this.isExporting
+                && status.valid;
+        },
+
+        async buildCurrentPdf() {
+            const scanner = await this.ensureScannerLoaded();
+            const metadata = this.readWireFormMetadata();
+            const result = scanner.buildScannedPdfFile(this.pages, this.pdfFilename, metadata);
+            this.pdfFilename = result.filename;
+
+            return { scanner, ...result };
+        },
+
+        async downloadCopy() {
+            if (!this.canExport()) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.isExporting = true;
+
+            try {
+                const { scanner, file } = await this.buildCurrentPdf();
+                scanner.triggerLocalPdfDownload(file);
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible generar la descarga del PDF.';
+            } finally {
+                this.isExporting = false;
+            }
+        },
+
+        async attachGeneratedPdf() {
+            if (!this.canExport()) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.isExporting = true;
+
+            try {
+                const { scanner, file } = await this.buildCurrentPdf();
+                await scanner.injectPdfIntoTransparencyUpload(file);
+                this.forceClose();
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible adjuntar el PDF generado.';
+            } finally {
+                this.isExporting = false;
+            }
+        }
+    }"
+    x-on:keydown.escape.window="if (isOpen) { if (showDiscardConfirm) { showDiscardConfirm = false; } else { requestClose(); } }"
+    class="pt-1"
+>
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/40">
+        <div class="space-y-0.5">
+            <p class="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                Digitalización directa desde cámara o galería
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Captura o selecciona varias páginas y únelas en un único PDF (máximo 15 MB).
+            </p>
+        </div>
+
+        <button
+            type="button"
+            x-on:click="openScanner()"
+            class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+        >
+            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+            </svg>
+            <span>Escanear documento</span>
+        </button>
+    </div>
+
+    <template x-teleport="body">
+        <div
+            x-show="isOpen"
+            x-cloak
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transparency-scanner-title"
+            class="fixed inset-0 z-50 flex flex-col bg-gray-950/80 backdrop-blur-xs"
+        >
+            <div class="flex h-full w-full flex-col bg-white dark:bg-gray-900">
+                <!-- Modal header -->
+                <header class="flex items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 id="transparency-scanner-title" class="text-sm font-semibold text-gray-900 sm:text-base dark:text-white">
+                                Escáner documental
+                            </h2>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                <span x-text="pages.length === 1 ? '1 página capturada' : pages.length + ' páginas capturadas'"></span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        x-on:click="requestClose()"
+                        :disabled="isExporting"
+                        aria-label="Cerrar escáner"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                        </svg>
+                        <span>Cerrar</span>
+                    </button>
+                </header>
+
+                <!-- Capture / Import toolbar -->
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:px-6 dark:border-gray-800 dark:bg-gray-950/40">
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            x-ref="galleryInput"
+                            x-on:change="handleFilesSelected($event)"
+                            class="hidden"
+                        />
+                        <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            x-ref="cameraInput"
+                            x-on:change="handleFilesSelected($event)"
+                            class="hidden"
+                        />
+
+                        <button
+                            type="button"
+                            x-on:click="$refs.cameraInput.click()"
+                            :disabled="isExporting"
+                            class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:opacity-50"
+                        >
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+                            </svg>
+                            <span>Tomar foto</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            x-on:click="$refs.galleryInput.click()"
+                            :disabled="isExporting"
+                            class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 shadow-xs transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        >
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                            </svg>
+                            <span>Seleccionar de galería</span>
+                        </button>
+                    </div>
+
+                    <template x-if="processingCount > 0">
+                        <div class="inline-flex items-center gap-2 text-xs font-medium text-primary-700 dark:text-primary-300">
+                            <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"></path>
+                            </svg>
+                            <span>Optimizando imágenes...</span>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Main page tray -->
+                <main class="flex-1 overflow-y-auto p-4 sm:p-6">
+                    <template x-if="errorMessage">
+                        <div class="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                            <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                            </svg>
+                            <span x-text="errorMessage"></span>
+                        </div>
+                    </template>
+
+                    <template x-if="sizeStatus().exceedsLimit">
+                        <div class="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                            <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                            </svg>
+                            <span>
+                                El peso estimado (<strong x-text="sizeStatus().formattedSize"></strong>) excede el límite máximo de 15.00 MB. Elimina una o más páginas para poder adjuntar el PDF.
+                            </span>
+                        </div>
+                    </template>
+
+                    <template x-if="pages.length === 0">
+                        <div class="flex h-full min-h-64 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/20">
+                            <svg class="mb-3 h-10 w-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                            </svg>
+                            <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                Aún no hay páginas en el lote
+                            </p>
+                            <p class="mt-1 max-w-md text-xs text-gray-500 dark:text-gray-400">
+                                Usa "Tomar foto" para capturar hojas con la cámara del dispositivo o "Seleccionar de galería" para importar varias imágenes a la vez.
+                            </p>
+                        </div>
+                    </template>
+
+                    <template x-if="pages.length > 0">
+                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                            <template x-for="(page, index) in pages" :key="page.id">
+                                <div class="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-800 dark:bg-gray-950">
+                                    <div class="flex items-center justify-between border-b border-gray-100 bg-gray-50/80 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                                        <span x-text="'Página ' + (index + 1)"></span>
+                                        <button
+                                            type="button"
+                                            x-on:click="removePage(page.id)"
+                                            :disabled="isExporting"
+                                            aria-label="Eliminar página"
+                                            class="inline-flex items-center rounded-md p-1 text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                        >
+                                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div class="relative aspect-3/4 w-full overflow-hidden bg-gray-100 dark:bg-gray-900">
+                                        <img
+                                            :src="page.previewUrl"
+                                            :alt="'Página ' + (index + 1)"
+                                            class="h-full w-full object-contain"
+                                        />
+                                    </div>
+
+                                    <div class="flex items-center justify-between border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                                        <span x-text="page.width + '×' + page.height"></span>
+                                        <span x-text="window.transparencyScanner ? window.transparencyScanner.formatByteSize(page.jpegBytes.byteLength) : ''"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </main>
+
+                <!-- Export footer -->
+                <div class="border-t border-gray-200 bg-gray-50 px-4 py-3.5 sm:px-6 dark:border-gray-800 dark:bg-gray-950/60">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+                            <div class="flex-1 space-y-1">
+                                <label for="scanner-pdf-filename" class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    Nombre del archivo PDF
+                                </label>
+                                <input
+                                    id="scanner-pdf-filename"
+                                    type="text"
+                                    x-model="pdfFilename"
+                                    x-on:blur="normalizeFilenameOnBlur()"
+                                    placeholder="escaneo.pdf"
+                                    class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                />
+                            </div>
+
+                            <div class="rounded-lg border px-3 py-2 text-xs" :class="sizeStatus().exceedsLimit ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300' : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'">
+                                <span class="block text-[11px] text-gray-500 dark:text-gray-400">Peso estimado</span>
+                                <span class="font-semibold" x-text="sizeStatus().formattedSize + ' / ' + sizeStatus().formattedMax"></span>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                x-on:click="requestClose()"
+                                :disabled="isExporting"
+                                class="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                            >
+                                Cancelar
+                            </button>
+
+                            <button
+                                type="button"
+                                x-on:click="downloadCopy()"
+                                :disabled="!canExport()"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                            >
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                                <span>Descargar copia</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                x-on:click="attachGeneratedPdf()"
+                                :disabled="!canExport()"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                </svg>
+                                <span x-text="isExporting ? 'Generando PDF...' : 'Generar y adjuntar PDF'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unsaved pages confirmation overlay -->
+            <div
+                x-show="showDiscardConfirm"
+                x-cloak
+                class="fixed inset-0 z-60 flex items-center justify-center bg-gray-950/60 p-4"
+            >
+                <div class="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        Descartar páginas escaneadas
+                    </h3>
+                    <p class="mt-1.5 text-xs text-gray-600 dark:text-gray-400">
+                        Tienes páginas capturadas sin adjuntar al registro. Si cierras el escáner se perderán.
+                    </p>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            x-on:click="showDiscardConfirm = false"
+                            class="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        >
+                            Seguir escaneando
+                        </button>
+                        <button
+                            type="button"
+                            x-on:click="forceClose()"
+                            class="inline-flex items-center rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+                        >
+                            Descartar y cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    @vite(['resources/js/transparency-scanner.ts'])
+</div>

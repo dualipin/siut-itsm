@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Livewire;
+use Smalot\PdfParser\Parser;
 
 beforeEach(function () {
     Storage::fake('public');
@@ -544,4 +545,168 @@ test('lider can access transparency record pages while agremiado is forbidden', 
     $this->get(TransparencyRecordResource::getUrl('create'))->assertForbidden();
     $this->get(TransparencyRecordResource::getUrl('view', ['record' => $record]))->assertForbidden();
     $this->get(TransparencyRecordResource::getUrl('edit', ['record' => $record]))->assertForbidden();
+});
+
+function buildClientStyleMultipagePdf(int $pageCount): string
+{
+    $image = imagecreatetruecolor(16, 20);
+    ob_start();
+    imagejpeg($image, null, 75);
+    $jpegBytes = (string) ob_get_clean();
+    imagedestroy($image);
+
+    $pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+    $totalObjects = 2 + $pageCount * 3;
+    $offsets = array_fill(0, $totalObjects + 1, 0);
+    $kids = [];
+
+    for ($i = 0; $i < $pageCount; $i++) {
+        $kids[] = (3 + $i * 3).' 0 R';
+    }
+
+    $offsets[1] = strlen($pdf);
+    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+
+    $offsets[2] = strlen($pdf);
+    $pdf .= '2 0 obj'."\n".'<< /Type /Pages /Kids ['.implode(' ', $kids).'] /Count '.$pageCount.' >>'."\nendobj\n";
+
+    for ($i = 0; $i < $pageCount; $i++) {
+        $pageObjId = 3 + $i * 3;
+        $contentObjId = 4 + $i * 3;
+        $imageObjId = 5 + $i * 3;
+        $widthPt = '612';
+        $heightPt = '765';
+
+        $offsets[$pageObjId] = strlen($pdf);
+        $pdf .= "{$pageObjId} 0 obj\n"
+            ."<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {$widthPt} {$heightPt}] "
+            ."/Resources << /XObject << /Im1 {$imageObjId} 0 R >> /ProcSet [/PDF /ImageB /ImageC] >> "
+            ."/Contents {$contentObjId} 0 R >>\nendobj\n";
+
+        $contentStream = "q\n{$widthPt} 0 0 {$heightPt} 0 0 cm\n/Im1 Do\nQ\n";
+        $offsets[$contentObjId] = strlen($pdf);
+        $pdf .= "{$contentObjId} 0 obj\n<< /Length ".strlen($contentStream)." >>\nstream\n{$contentStream}endstream\nendobj\n";
+
+        $offsets[$imageObjId] = strlen($pdf);
+        $pdf .= "{$imageObjId} 0 obj\n"
+            .'<< /Type /XObject /Subtype /Image /Width 16 /Height 20 '
+            .'/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '.strlen($jpegBytes)." >>\n"
+            ."stream\n{$jpegBytes}\nendstream\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 ".($totalObjects + 1)."\n";
+    $pdf .= "0000000000 65535 f \n";
+
+    for ($objId = 1; $objId <= $totalObjects; $objId++) {
+        $pdf .= str_pad((string) $offsets[$objId], 10, '0', STR_PAD_LEFT)." 00000 n \n";
+    }
+
+    $pdf .= "trailer\n<< /Size ".($totalObjects + 1)." /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF\n";
+
+    return $pdf;
+}
+
+test('directiva sees document scanner trigger on create and edit forms but not on view infolist', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
+    $record = TransparencyRecord::factory()->withDocuments(1)->create(['created_by' => $admin->id]);
+
+    foreach ([$admin, $lider] as $directivaUser) {
+        $this->actingAs($directivaUser);
+
+        Livewire::test(CreateTransparencyRecord::class)
+            ->assertSuccessful()
+            ->assertSee('Escanear documento')
+            ->assertSeeHtml('data-transparency-documents-upload');
+
+        Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Escanear documento')
+            ->assertSeeHtml('data-transparency-documents-upload');
+    }
+
+    $this->actingAs($admin);
+    Livewire::test(ViewTransparencyRecord::class, ['record' => $record->getKey()])
+        ->assertSuccessful()
+        ->assertDontSee('Escanear documento');
+});
+
+test('multi-page scanned PDF 1.4 attaches across all categories, persists in medialibrary, respects visibility, and rejects over 15 MB', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $pdfContent = buildClientStyleMultipagePdf(3);
+    $parsed = (new Parser)->parseContent($pdfContent);
+    expect($parsed->getPages())->toHaveCount(3);
+
+    foreach (TransparencyRecordType::cases() as $index => $type) {
+        $scannedPdf = UploadedFile::fake()->createWithContent("escaneo-{$type->value}.pdf", $pdfContent);
+
+        $formData = [
+            'type' => $type->value,
+            'name' => "Registro Escaneado {$type->value}",
+            'status' => TransparencyRecordStatus::Publico->value,
+            'documents' => [$scannedPdf],
+        ];
+
+        if ($type->usesPeriod()) {
+            $formData['fiscal_year'] = 2025;
+            $formData['period'] = 'Anual';
+        } else {
+            $formData['document_date'] = '2025-06-15';
+        }
+
+        if ($type->usesFolio()) {
+            $formData['reference_number'] = "SIUT-SCAN-{$index}";
+        }
+
+        Livewire::test(CreateTransparencyRecord::class)
+            ->fillForm($formData)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $created = TransparencyRecord::where('name', "Registro Escaneado {$type->value}")->firstOrFail();
+        $media = $created->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+        expect($created->isPublico())->toBeTrue()
+            ->and($media)->toHaveCount(1)
+            ->and($media->first()->name)->toBe("escaneo-{$type->value}")
+            ->and($media->first()->mime_type)->toBe('application/pdf');
+
+        $storedContent = Storage::disk($media->first()->disk)->get($media->first()->getPathRelativeToRoot());
+        $storedParsed = (new Parser)->parseContent($storedContent);
+        expect($storedParsed->getPages())->toHaveCount(3);
+    }
+
+    // Attaching a scanned PDF in Interno keeps Interno visibility and observations
+    $internoPdf = UploadedFile::fake()->createWithContent('interno-escaneado.pdf', $pdfContent);
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'name' => 'Oficio Interno Escaneado',
+            'document_date' => '2025-07-01',
+            'observations' => 'Contiene firmas autógrafas',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$internoPdf],
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $internoRecord = TransparencyRecord::where('name', 'Oficio Interno Escaneado')->firstOrFail();
+    expect($internoRecord->isInterno())->toBeTrue()
+        ->and($internoRecord->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION))->toHaveCount(1);
+
+    // Reject scanned PDF exceeding 15 MB
+    $oversized = UploadedFile::fake()->create('escaneo-enorme.pdf', 15361, 'application/pdf');
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Actas->value,
+            'name' => 'Acta Escaneada Excedida',
+            'document_date' => '2025-07-02',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$oversized],
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['documents']);
 });
