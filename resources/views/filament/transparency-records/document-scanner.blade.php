@@ -3,6 +3,7 @@
     x-data="{
         isOpen: false,
         showDiscardConfirm: false,
+        cropEditor: null,
         pages: [],
         pdfFilename: '',
         processingCount: 0,
@@ -108,22 +109,206 @@
             }
 
             const [removed] = this.pages.splice(index, 1);
-            if (removed?.previewUrl) {
-                URL.revokeObjectURL(removed.previewUrl);
+            if (window.transparencyScanner?.revokeScannedPageUrls) {
+                window.transparencyScanner.revokeScannedPageUrls(removed);
+            } else {
+                if (removed?.previewUrl) {
+                    URL.revokeObjectURL(removed.previewUrl);
+                }
+                if (removed?.originalPreviewUrl) {
+                    URL.revokeObjectURL(removed.originalPreviewUrl);
+                }
+            }
+            if (this.cropEditor?.pageId === pageId) {
+                this.cropEditor = null;
             }
             this.errorMessage = null;
         },
 
         revokeAllPageUrls() {
             for (const page of this.pages) {
-                if (page.previewUrl) {
-                    URL.revokeObjectURL(page.previewUrl);
+                if (window.transparencyScanner?.revokeScannedPageUrls) {
+                    window.transparencyScanner.revokeScannedPageUrls(page);
+                } else {
+                    if (page.previewUrl) {
+                        URL.revokeObjectURL(page.previewUrl);
+                    }
+                    if (page.originalPreviewUrl) {
+                        URL.revokeObjectURL(page.originalPreviewUrl);
+                    }
                 }
             }
         },
 
+        openCropEditor(pageId) {
+            if (this.isExporting || this.processingCount > 0 || !window.transparencyScanner) {
+                return;
+            }
+
+            const index = this.pages.findIndex((page) => page.id === pageId);
+            if (index === -1) {
+                return;
+            }
+
+            const page = this.pages[index];
+            this.cropEditor = {
+                pageId: page.id,
+                pageNumber: index + 1,
+                originalPreviewUrl: page.originalPreviewUrl,
+                quad: window.transparencyScanner.cloneQuad(page.quad),
+                activeCorner: null,
+                isApplying: false,
+                errorMessage: null,
+            };
+        },
+
+        closeCropEditor() {
+            if (this.cropEditor?.isApplying) {
+                return;
+            }
+
+            this.cropEditor = null;
+        },
+
+        startCornerDrag(cornerKey, event) {
+            if (!this.cropEditor || this.cropEditor.isApplying) {
+                return;
+            }
+
+            event.preventDefault();
+            this.cropEditor.activeCorner = cornerKey;
+            this.cropEditor.errorMessage = null;
+
+            if (event.currentTarget && typeof event.currentTarget.setPointerCapture === 'function') {
+                try {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                } catch (e) {}
+            }
+
+            this.updateActiveCornerFromPointer(event);
+        },
+
+        moveCornerDrag(event) {
+            if (!this.cropEditor?.activeCorner || this.cropEditor.isApplying) {
+                return;
+            }
+
+            event.preventDefault();
+            this.updateActiveCornerFromPointer(event);
+        },
+
+        endCornerDrag() {
+            if (this.cropEditor) {
+                this.cropEditor.activeCorner = null;
+            }
+        },
+
+        updateActiveCornerFromPointer(event) {
+            const stage = this.$refs.cropStage;
+            if (!stage || !this.cropEditor?.activeCorner) {
+                return;
+            }
+
+            const rect = stage.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+                return;
+            }
+
+            const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+            const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+            this.cropEditor.quad[this.cropEditor.activeCorner] = { x, y };
+        },
+
+        quadPolygonPoints() {
+            const q = this.cropEditor?.quad;
+            if (!q) {
+                return '';
+            }
+
+            return [
+                (q.topLeft.x * 100) + ',' + (q.topLeft.y * 100),
+                (q.topRight.x * 100) + ',' + (q.topRight.y * 100),
+                (q.bottomRight.x * 100) + ',' + (q.bottomRight.y * 100),
+                (q.bottomLeft.x * 100) + ',' + (q.bottomLeft.y * 100),
+            ].join(' ');
+        },
+
+        quadMaskPath() {
+            const q = this.cropEditor?.quad;
+            if (!q) {
+                return '';
+            }
+
+            return 'M0,0 H100 V100 H0 Z M'
+                + (q.topLeft.x * 100) + ',' + (q.topLeft.y * 100)
+                + ' L' + (q.topRight.x * 100) + ',' + (q.topRight.y * 100)
+                + ' L' + (q.bottomRight.x * 100) + ',' + (q.bottomRight.y * 100)
+                + ' L' + (q.bottomLeft.x * 100) + ',' + (q.bottomLeft.y * 100)
+                + ' Z';
+        },
+
+        async recomputeEditorPage(quad, closeAfter) {
+            if (!this.cropEditor || this.cropEditor.isApplying) {
+                return;
+            }
+
+            const scanner = await this.ensureScannerLoaded();
+            if (!scanner.isValidConvexQuad(quad)) {
+                this.cropEditor.errorMessage = 'Las 4 esquinas deben formar un cuadrilátero válido sin cruzarse.';
+
+                return;
+            }
+
+            const index = this.pages.findIndex((page) => page.id === this.cropEditor.pageId);
+            if (index === -1) {
+                this.cropEditor = null;
+
+                return;
+            }
+
+            this.cropEditor.isApplying = true;
+            this.cropEditor.errorMessage = null;
+
+            try {
+                const updated = await scanner.reprocessScannedPage(this.pages[index], quad);
+                this.pages.splice(index, 1, updated);
+
+                if (closeAfter) {
+                    this.cropEditor = null;
+                } else if (this.cropEditor) {
+                    this.cropEditor.quad = scanner.cloneQuad(updated.quad);
+                }
+            } catch (err) {
+                if (this.cropEditor) {
+                    this.cropEditor.errorMessage = err.message || 'No fue posible aplicar el recorte.';
+                }
+            } finally {
+                if (this.cropEditor) {
+                    this.cropEditor.isApplying = false;
+                }
+            }
+        },
+
+        async applyCrop() {
+            if (!this.cropEditor) {
+                return;
+            }
+
+            await this.recomputeEditorPage(this.cropEditor.quad, true);
+        },
+
+        async resetCropFrame() {
+            if (!this.cropEditor || !window.transparencyScanner) {
+                return;
+            }
+
+            const fullQuad = window.transparencyScanner.cloneQuad(window.transparencyScanner.FULL_DOCUMENT_QUAD);
+            this.cropEditor.quad = fullQuad;
+            await this.recomputeEditorPage(fullQuad, false);
+        },
+
         requestClose() {
-            if (this.isExporting) {
+            if (this.isExporting || this.cropEditor?.isApplying) {
                 return;
             }
 
@@ -138,6 +323,7 @@
 
         forceClose() {
             this.revokeAllPageUrls();
+            this.cropEditor = null;
             this.pages = [];
             this.pdfFilename = '';
             this.showDiscardConfirm = false;
@@ -224,7 +410,7 @@
             }
         }
     }"
-    x-on:keydown.escape.window="if (isOpen) { if (showDiscardConfirm) { showDiscardConfirm = false; } else { requestClose(); } }"
+    x-on:keydown.escape.window="if (isOpen) { if (cropEditor) { closeCropEditor(); } else if (showDiscardConfirm) { showDiscardConfirm = false; } else { requestClose(); } }"
     class="pt-1"
 >
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/40">
@@ -404,17 +590,37 @@
                                         </button>
                                     </div>
 
-                                    <div class="relative aspect-3/4 w-full overflow-hidden bg-gray-100 dark:bg-gray-900">
+                                    <button
+                                        type="button"
+                                        x-on:click="openCropEditor(page.id)"
+                                        :disabled="isExporting || processingCount > 0"
+                                        :aria-label="'Ajustar recorte de página ' + (index + 1)"
+                                        class="relative aspect-3/4 w-full overflow-hidden bg-gray-100 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-600 disabled:cursor-not-allowed dark:bg-gray-900"
+                                    >
                                         <img
                                             :src="page.previewUrl"
                                             :alt="'Página ' + (index + 1)"
                                             class="h-full w-full object-contain"
                                         />
-                                    </div>
+                                    </button>
 
-                                    <div class="flex items-center justify-between border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                                    <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
                                         <span x-text="page.width + '×' + page.height"></span>
                                         <span x-text="window.transparencyScanner ? window.transparencyScanner.formatByteSize(page.jpegBytes.byteLength) : ''"></span>
+                                    </div>
+
+                                    <div class="border-t border-gray-100 px-2 py-1.5 dark:border-gray-800">
+                                        <button
+                                            type="button"
+                                            x-on:click="openCropEditor(page.id)"
+                                            :disabled="isExporting || processingCount > 0"
+                                            class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        >
+                                            <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 3.75H6A2.25 2.25 0 0 0 3.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0 1 20.25 6v1.5m0 9V18A2.25 2.25 0 0 1 18 20.25h-1.5m-9 0H6A2.25 2.25 0 0 1 3.75 18v-1.5M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                            </svg>
+                                            <span>Ajustar recorte</span>
+                                        </button>
                                     </div>
                                 </div>
                             </template>
@@ -483,6 +689,145 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Interactive 4-corner perspective crop editor overlay -->
+            <template x-if="cropEditor">
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="scanner-crop-editor-title"
+                    x-on:pointermove.window="moveCornerDrag($event)"
+                    x-on:pointerup.window="endCornerDrag()"
+                    x-on:pointercancel.window="endCornerDrag()"
+                    class="fixed inset-0 z-60 flex flex-col bg-gray-950 text-white"
+                >
+                    <header class="flex items-center justify-between gap-4 border-b border-gray-800 px-4 py-3 sm:px-6">
+                        <div>
+                            <h3 id="scanner-crop-editor-title" class="text-sm font-semibold text-white">
+                                Ajustar recorte — Página <span x-text="cropEditor.pageNumber"></span>
+                            </h3>
+                            <p class="text-xs text-gray-400">
+                                Arrastra las 4 esquinas sobre la foto original para corregir la perspectiva.
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            x-on:click="closeCropEditor()"
+                            :disabled="cropEditor.isApplying"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-200 transition hover:bg-gray-800 disabled:opacity-50"
+                        >
+                            Cancelar
+                        </button>
+                    </header>
+
+                    <template x-if="cropEditor.errorMessage">
+                        <div class="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-red-900/70 bg-red-950/60 p-3 text-xs text-red-200 sm:mx-6">
+                            <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                            </svg>
+                            <span x-text="cropEditor.errorMessage"></span>
+                        </div>
+                    </template>
+
+                    <div class="flex flex-1 items-center justify-center overflow-hidden p-6 sm:p-8" style="touch-action: none;">
+                        <div
+                            x-ref="cropStage"
+                            class="relative inline-block select-none"
+                            style="touch-action: none;"
+                        >
+                            <img
+                                :src="cropEditor.originalPreviewUrl"
+                                :alt="'Original de página ' + cropEditor.pageNumber"
+                                draggable="false"
+                                class="pointer-events-none block max-h-[65dvh] max-w-full select-none rounded-sm shadow-2xl"
+                            />
+
+                            <svg
+                                viewBox="0 0 100 100"
+                                preserveAspectRatio="none"
+                                class="pointer-events-none absolute inset-0 h-full w-full"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    :d="quadMaskPath()"
+                                    fill="rgba(3, 7, 18, 0.55)"
+                                    fill-rule="evenodd"
+                                ></path>
+                                <polygon
+                                    :points="quadPolygonPoints()"
+                                    fill="none"
+                                    stroke="#ffffff"
+                                    stroke-width="2.5"
+                                    vector-effect="non-scaling-stroke"
+                                ></polygon>
+                                <polygon
+                                    :points="quadPolygonPoints()"
+                                    fill="none"
+                                    stroke="#f59e0b"
+                                    stroke-dasharray="6 4"
+                                    stroke-width="1.5"
+                                    vector-effect="non-scaling-stroke"
+                                ></polygon>
+                            </svg>
+
+                            <template
+                                x-for="corner in [
+                                    { key: 'topLeft', label: 'Esquina superior izquierda' },
+                                    { key: 'topRight', label: 'Esquina superior derecha' },
+                                    { key: 'bottomRight', label: 'Esquina inferior derecha' },
+                                    { key: 'bottomLeft', label: 'Esquina inferior izquierda' }
+                                ]"
+                                :key="corner.key"
+                            >
+                                <button
+                                    type="button"
+                                    :aria-label="corner.label"
+                                    x-on:pointerdown="startCornerDrag(corner.key, $event)"
+                                    :style="'touch-action: none; left: ' + (cropEditor.quad[corner.key].x * 100) + '%; top: ' + (cropEditor.quad[corner.key].y * 100) + '%;'"
+                                    class="absolute z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-white active:cursor-grabbing"
+                                >
+                                    <span
+                                        class="block h-5 w-5 rounded-full border-2 border-white shadow-md transition-transform"
+                                        :class="cropEditor.activeCorner === corner.key ? 'scale-125 bg-amber-400' : 'bg-primary-600'"
+                                    ></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-gray-800 bg-gray-900/90 px-4 py-3 sm:px-6">
+                        <button
+                            type="button"
+                            x-on:click="resetCropFrame()"
+                            :disabled="cropEditor.isApplying"
+                            class="inline-flex items-center rounded-lg border border-gray-700 bg-gray-800 px-3.5 py-2 text-xs font-semibold text-gray-200 transition hover:bg-gray-700 disabled:opacity-50"
+                        >
+                            Restablecer marco
+                        </button>
+
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                x-on:click="closeCropEditor()"
+                                :disabled="cropEditor.isApplying"
+                                class="inline-flex items-center rounded-lg border border-gray-700 bg-gray-900 px-3.5 py-2 text-xs font-semibold text-gray-300 transition hover:bg-gray-800 disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+
+                            <button
+                                type="button"
+                                x-on:click="applyCrop()"
+                                :disabled="cropEditor.isApplying"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:opacity-50"
+                            >
+                                <span x-text="cropEditor.isApplying ? 'Aplicando recorte...' : 'Aplicar recorte'"></span>
+                            </button>
+                        </div>
+                    </footer>
+                </div>
+            </template>
 
             <!-- Unsaved pages confirmation overlay -->
             <div
