@@ -83,6 +83,134 @@ function buildPngBytes(int $width = 2200, int $height = 1400): string
     return $bytes;
 }
 
+function buildJpegBytes(int $width, int $height): string
+{
+    $image = imagecreatetruecolor($width, $height);
+    ob_start();
+    imagejpeg($image, null, 75);
+    $bytes = (string) ob_get_clean();
+    imagedestroy($image);
+
+    return $bytes;
+}
+
+/**
+ * @param  array<int, array{width: int, height: int}>  $pageSizes
+ */
+function buildScannedMultipageDctPdf(array $pageSizes): string
+{
+    $pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+    $totalObjects = 2 + count($pageSizes) * 3;
+    $offsets = array_fill(0, $totalObjects + 1, 0);
+    $kids = [];
+
+    foreach (array_keys($pageSizes) as $i) {
+        $kids[] = (3 + $i * 3).' 0 R';
+    }
+
+    $offsets[1] = strlen($pdf);
+    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+
+    $offsets[2] = strlen($pdf);
+    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [".implode(' ', $kids).'] /Count '.count($pageSizes)." >>\nendobj\n";
+
+    foreach ($pageSizes as $i => $dims) {
+        $jpegBytes = buildJpegBytes($dims['width'], $dims['height']);
+        $pageObjId = 3 + $i * 3;
+        $contentObjId = 4 + $i * 3;
+        $imageObjId = 5 + $i * 3;
+
+        $offsets[$pageObjId] = strlen($pdf);
+        $pdf .= "{$pageObjId} 0 obj\n"
+            .'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+            ."/Resources << /XObject << /Im1 {$imageObjId} 0 R >> /ProcSet [/PDF /ImageB /ImageC] >> "
+            ."/Contents {$contentObjId} 0 R >>\nendobj\n";
+
+        $contentStream = "q\n612 0 0 792 0 0 cm\n/Im1 Do\nQ\n";
+        $offsets[$contentObjId] = strlen($pdf);
+        $pdf .= "{$contentObjId} 0 obj\n<< /Length ".strlen($contentStream)." >>\nstream\n{$contentStream}endstream\nendobj\n";
+
+        $offsets[$imageObjId] = strlen($pdf);
+        $pdf .= "{$imageObjId} 0 obj\n"
+            ."<< /Type /XObject /Subtype /Image /Width {$dims['width']} /Height {$dims['height']} "
+            .'/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '.strlen($jpegBytes)." >>\n"
+            ."stream\n{$jpegBytes}\nendstream\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 ".($totalObjects + 1)."\n";
+    $pdf .= "0000000000 65535 f \n";
+
+    for ($objId = 1; $objId <= $totalObjects; $objId++) {
+        $pdf .= str_pad((string) $offsets[$objId], 10, '0', STR_PAD_LEFT)." 00000 n \n";
+    }
+
+    $pdf .= "trailer\n<< /Size ".($totalObjects + 1)." /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF\n";
+
+    return $pdf;
+}
+
+/**
+ * @param  array<string, string>  $entries
+ */
+function buildZipBytes(array $entries): string
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'test_xlsx_');
+    $zip = new ZipArchive;
+    $zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
+    foreach ($entries as $path => $content) {
+        $zip->addFromString($path, $content);
+    }
+
+    $zip->close();
+    $bytes = (string) file_get_contents($tmp);
+    unlink($tmp);
+
+    return $bytes;
+}
+
+function buildSyntheticXlsx(int $extraRows = 90): string
+{
+    $rowsXml = '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Importe MXN</t></is></c></row>'
+        .'<row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>45820.75</v></c></row>';
+
+    for ($i = 3; $i <= $extraRows + 2; $i++) {
+        $rowsXml .= "<row r=\"{$i}\"><c r=\"A{$i}\" t=\"s\"><v>2</v></c><c r=\"B{$i}\"><v>{$i}00.00</v></c></row>";
+    }
+
+    return buildZipBytes([
+        '[Content_Types].xml' => '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>',
+        '_rels/.rels' => '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>',
+        'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<sheets>'
+            .'<sheet name="Resumen Anual" sheetId="1" r:id="rId1"/>'
+            .'<sheet name="Detalle Egresos" sheetId="2" r:id="rId2"/>'
+            .'</sheets>'
+            .'</workbook>',
+        'xl/_rels/workbook.xml.rels' => '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            .'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+            .'</Relationships>',
+        'xl/sharedStrings.xml' => '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">'
+            .'<si><t>Estado de Ingresos Sindicales 2025</t></si>'
+            .'<si><r><t>Cuotas </t></r><r><t>Ordinarias Q2</t></r></si>'
+            .'<si><t>Partida operativa sindical recurrente de administracion</t></si>'
+            .'</sst>',
+        'xl/worksheets/sheet1.xml' => '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            ."<sheetData>{$rowsXml}</sheetData>"
+            .'</worksheet>',
+        'xl/worksheets/sheet2.xml' => '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            .'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Gastos operativos</t></is></c><c r="B1"><v>12000</v></c></row></sheetData>'
+            .'</worksheet>',
+    ]);
+}
+
 it('extracts text from a digital PDF capped at 3000 chars and sends only text parts without images', function () {
     $longBody = 'Oficio circular emitido por la Secretaria General del SIUT-ITSM dirigido a la Direccion General '
         .'con folio SIUT-ITSM/045/2025 el 14 de marzo de 2025 sobre gestion de prestaciones sindicales. '
@@ -459,4 +587,201 @@ it('analyzes stored Spatie Media files and degrades gracefully if the physical f
 
     expect($missing->successful)->toBeFalse()
         ->and($missing->errorMessage)->toContain('no se encontró');
+});
+
+it('extracts only page 1 JPEG from a multipage scanned PDF 1.4 DCTDecode and optimizes it to at most 1000px', function () {
+    $pdfBytes = buildScannedMultipageDctPdf([
+        ['width' => 1600, 'height' => 800],
+        ['width' => 1200, 'height' => 1600],
+        ['width' => 1200, 'height' => 1200],
+    ]);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio escaneado multipagina',
+                        'summary' => 'Oficio digitalizado en tres paginas mediante escaner.',
+                        'document_date' => '2025-05-12',
+                        'reference_number' => 'SIUT-SCAN-77',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.91,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes($pdfBytes, 'application/pdf', 'escaneo-3p.pdf');
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->sourceKind)->toBe('image')
+        ->and($result->type)->toBe(TransparencyRecordType::Oficios)
+        ->and($result->referenceNumber)->toBe('SIUT-SCAN-77');
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $dataUrl = (string) ($parts[1]['image_url']['url'] ?? '');
+
+        if (count($parts) !== 2 || ! str_starts_with($dataUrl, 'data:image/jpeg;base64,')) {
+            return false;
+        }
+
+        $decoded = base64_decode(substr($dataUrl, strlen('data:image/jpeg;base64,')), true);
+        if (! is_string($decoded)) {
+            return false;
+        }
+
+        [$width, $height] = getimagesizefromstring($decoded);
+
+        return $width === 1000 && $height === 500;
+    });
+});
+
+it('degrades cleanly when a PDF has neither usable digital text nor extractable page 1 image', function () {
+    $emptyPdf = buildDigitalTextPdf('Sin texto');
+
+    Http::fake();
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes($emptyPdf, 'application/pdf', 'vacio.pdf');
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->errorMessage)->toContain('manualmente');
+
+    Http::assertNothingSent();
+});
+
+it('extracts first rows from CSV in pure PHP capped at 3000 chars and sends only text parts', function () {
+    $csvRows = ["\xEF\xBB\xBFConcepto,Trimestre,Ejercicio,Monto"];
+    $csvRows[] = 'Cuotas sindicales ordinarias,1er Trimestre,2025,125400.50';
+    for ($i = 1; $i <= 120; $i++) {
+        $csvRows[] = "Partida presupuestal {$i},1er Trimestre,2025,1500.00";
+    }
+    $csvBytes = implode("\r\n", $csvRows);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Reporte de ingresos y egresos del primer trimestre 2025',
+                        'summary' => 'Detalle de cuotas sindicales y partidas presupuestales del primer trimestre.',
+                        'fiscal_year' => 2025,
+                        'period' => '1er Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes($csvBytes, 'text/csv', 'finanzas-q1.csv');
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->sourceKind)->toBe('text')
+        ->and($result->type)->toBe(TransparencyRecordType::Financiero)
+        ->and($result->fiscalYear)->toBe(2025)
+        ->and($result->period)->toBe('1er Trimestre');
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $text = (string) ($parts[0]['text'] ?? '');
+
+        return count($parts) === 1
+            && ($parts[0]['type'] ?? null) === 'text'
+            && str_contains($text, 'Cuotas sindicales ordinarias')
+            && str_contains($text, '125400.50')
+            && mb_strlen($text) <= 3300;
+    });
+});
+
+it('extracts sheet names, shared strings, and first rows from XLSX via ZipArchive + SimpleXML capped at 3000 chars', function () {
+    $xlsxBytes = buildSyntheticXlsx(90);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Estado de ingresos sindicales del segundo trimestre 2025',
+                        'summary' => 'Libro contable con resumen anual y detalle de egresos sindicales.',
+                        'fiscal_year' => 2025,
+                        'period' => '2do Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.93,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes(
+        $xlsxBytes,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'estado-q2.xlsx',
+    );
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->sourceKind)->toBe('text')
+        ->and($result->type)->toBe(TransparencyRecordType::Financiero)
+        ->and($result->fiscalYear)->toBe(2025)
+        ->and($result->period)->toBe('2do Trimestre');
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $text = (string) ($parts[0]['text'] ?? '');
+
+        return count($parts) === 1
+            && ($parts[0]['type'] ?? null) === 'text'
+            && str_contains($text, 'Resumen Anual')
+            && str_contains($text, 'Estado de Ingresos Sindicales 2025')
+            && str_contains($text, 'Cuotas Ordinarias Q2')
+            && str_contains($text, '45820.75')
+            && mb_strlen($text) <= 3300;
+    });
+});
+
+it('rejects XML external entity declarations inside XLSX safely', function () {
+    $xxeXlsx = buildZipBytes([
+        'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="&xxe;" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        'xl/worksheets/sheet1.xml' => '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Safe</t></is></c></row></sheetData></worksheet>',
+    ]);
+
+    Http::fake();
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes(
+        $xxeXlsx,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xxe.xlsx',
+    );
+
+    expect($result->successful)->toBeFalse();
+    Http::assertNothingSent();
+});
+
+it('degrades cleanly on legacy binary .xls without ZIP magic bytes and makes no HTTP requests', function () {
+    $oleHeader = "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".str_repeat("\x00", 512);
+
+    Http::fake();
+
+    $result = app(TransparencyDocumentAIService::class)->analyzeBytes(
+        $oleHeader,
+        'application/vnd.ms-excel',
+        'reporte-historico.xls',
+    );
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->unsupported)->toBeTrue()
+        ->and($result->errorMessage)->toContain('.xls')
+        ->and($result->errorMessage)->toContain('manualmente');
+
+    Http::assertNothingSent();
 });
