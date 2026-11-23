@@ -157,7 +157,7 @@ test('loan stat displays active approved loan status, amount and record url', fu
 
     Livewire::test(AgremiadoStatsWidget::class)
         ->assertSee('Aprobada')
-        ->assertSee('$12,500.00')
+        ->assertSee("{$latestLoan->folio} · \$12,500.00")
         ->assertSee(LoanResource::getUrl('view', ['record' => $latestLoan]), escape: false)
         ->assertDontSee('$5,000.00');
 });
@@ -219,11 +219,53 @@ test('loan stat displays next amortization payment date and amount for disbursed
 
     Livewire::test(AgremiadoStatsWidget::class)
         ->assertSee('Desembolsada')
-        ->assertSee('$20,000.00')
-        ->assertSee('15/06/2026')
-        ->assertSee('$2,600.00')
+        ->assertSee("{$loan->folio} · \$20,000.00 · Próx. pago: 15/06/2026 (\$2,600.00)")
         ->assertDontSee('$2,700.00')
         ->assertSee(LoanResource::getUrl('view', ['record' => $loan]), escape: false);
+});
+
+test('loan stat selects earliest future amortization date even when a lower period has a later date', function () {
+    Carbon::setTestNow('2026-06-10 10:00:00');
+
+    $agremiado = User::factory()->agremiado()->active()->create();
+
+    $loan = Loan::factory()->disbursed()->create([
+        'user_id' => $agremiado->id,
+        'approved_amount' => 15000.00,
+        'disbursed_amount' => 15000.00,
+    ]);
+
+    LoanAmortizationRow::create([
+        'loan_id' => $loan->id,
+        'period' => 2,
+        'type' => 'nomina',
+        'label' => 'Quincena 2',
+        'date' => '2026-06-25',
+        'opening_balance' => 15000.00,
+        'principal' => 1000.00,
+        'interest' => 200.00,
+        'payment' => 1200.00,
+        'closing_balance' => 14000.00,
+    ]);
+
+    LoanAmortizationRow::create([
+        'loan_id' => $loan->id,
+        'period' => 5,
+        'type' => 'nomina',
+        'label' => 'Quincena 5',
+        'date' => '2026-06-12',
+        'opening_balance' => 14000.00,
+        'principal' => 800.00,
+        'interest' => 150.00,
+        'payment' => 950.00,
+        'closing_balance' => 13200.00,
+    ]);
+
+    $this->actingAs($agremiado);
+
+    Livewire::test(AgremiadoStatsWidget::class)
+        ->assertSee("{$loan->folio} · \$15,000.00 · Próx. pago: 12/06/2026 (\$950.00)")
+        ->assertDontSee('$1,200.00');
 });
 
 test('requests stat counts only own pending and under review requests', function () {

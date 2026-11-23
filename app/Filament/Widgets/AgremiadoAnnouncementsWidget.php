@@ -60,7 +60,7 @@ class AgremiadoAnnouncementsWidget extends Widget implements HasActions, HasSche
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{announcements: Collection<int, Post>}
      */
     protected function getViewData(): array
     {

@@ -34,11 +34,22 @@ class AgremiadoAlertsWidget extends Widget
             return false;
         }
 
-        return static::resolveAlertsFor($user) !== [];
+        return static::getAlertsForRequest($user) !== [];
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     alerts: list<array{
+     *         key: string,
+     *         color: string,
+     *         icon: Heroicon,
+     *         heading: string,
+     *         description: string,
+     *         actionLabel: ?string,
+     *         actionUrl: ?string,
+     *         newTab: bool,
+     *     }>,
+     * }
      */
     protected function getViewData(): array
     {
@@ -50,8 +61,46 @@ class AgremiadoAlertsWidget extends Widget
         }
 
         return [
-            'alerts' => static::resolveAlertsFor($user),
+            'alerts' => static::getAlertsForRequest($user),
         ];
+    }
+
+    /**
+     * @return list<array{
+     *     key: string,
+     *     color: string,
+     *     icon: Heroicon,
+     *     heading: string,
+     *     description: string,
+     *     actionLabel: ?string,
+     *     actionUrl: ?string,
+     *     newTab: bool,
+     * }>
+     */
+    protected static function getAlertsForRequest(User $user): array
+    {
+        $cacheKey = "agremiado_alerts_{$user->id}";
+        $attributes = request()->attributes;
+
+        if (! $attributes->has($cacheKey)) {
+            $attributes->set($cacheKey, static::resolveAlertsFor($user));
+        }
+
+        /**
+         * @var list<array{
+         *     key: string,
+         *     color: string,
+         *     icon: Heroicon,
+         *     heading: string,
+         *     description: string,
+         *     actionLabel: ?string,
+         *     actionUrl: ?string,
+         *     newTab: bool,
+         * }> $alerts
+         */
+        $alerts = $attributes->get($cacheKey);
+
+        return $alerts;
     }
 
     /**
@@ -171,28 +220,34 @@ class AgremiadoAlertsWidget extends Widget
         }
 
         if (filled($user->curp)) {
-            $openPetition = AnnualPetition::query()
+            $openPetitions = AnnualPetition::query()
                 ->whereDate('deadline', '>=', now()->toDateString())
                 ->orderBy('deadline')
-                ->first();
+                ->get();
 
-            if ($openPetition !== null) {
+            if ($openPetitions->isNotEmpty()) {
                 $normalizedCurp = mb_strtoupper(trim((string) $user->curp));
 
-                $alreadyParticipated = PetitionRequest::query()
-                    ->where('annual_petition_id', $openPetition->id)
+                $participatedPetitionIds = PetitionRequest::query()
+                    ->whereIn('annual_petition_id', $openPetitions->pluck('id'))
                     ->whereRaw('UPPER(curp) = ?', [$normalizedCurp])
-                    ->exists();
+                    ->pluck('annual_petition_id')
+                    ->map(fn (mixed $id): int => (int) $id)
+                    ->all();
 
-                if (! $alreadyParticipated) {
+                $pendingPetition = $openPetitions->first(
+                    fn (AnnualPetition $petition): bool => ! in_array($petition->id, $participatedPetitionIds, true),
+                );
+
+                if ($pendingPetition !== null) {
                     $alerts[] = [
                         'key' => 'annual-petition-open',
                         'color' => 'info',
                         'icon' => Heroicon::OutlinedMegaphone,
-                        'heading' => "Convocatoria abierta: Pliego Anual {$openPetition->year}",
-                        'description' => "Puedes registrar tus propuestas hasta el {$openPetition->deadline->format('d/m/Y')}.",
+                        'heading' => "Convocatoria abierta: Pliego Anual {$pendingPetition->year}",
+                        'description' => "Puedes registrar tus propuestas hasta el {$pendingPetition->deadline->format('d/m/Y')}.",
                         'actionLabel' => 'Participar en Pliego Anual',
-                        'actionUrl' => route('petitions.index', ['annualPetition' => $openPetition]),
+                        'actionUrl' => route('petitions.index', ['annualPetition' => $pendingPetition]),
                         'newTab' => true,
                     ];
                 }

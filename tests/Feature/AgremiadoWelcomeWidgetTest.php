@@ -2,7 +2,6 @@
 
 use App\Enums\LoanOperationalState;
 use App\Enums\LoanStatus;
-use App\Enums\UserRole;
 use App\Filament\Pages\Messages;
 use App\Filament\Pages\Profile;
 use App\Filament\Resources\Loans\LoanResource;
@@ -25,10 +24,8 @@ test('guests cannot view role-restricted dashboard widgets', function (): void {
 });
 
 test('agremiado sees welcome header and four quick links without account or qr widgets', function (): void {
-    $agremiado = User::factory()->create([
-        'role' => UserRole::Agremiado,
+    $agremiado = User::factory()->agremiado()->active()->create([
         'name' => 'Sofía',
-        'is_active' => true,
     ]);
 
     $response = $this->actingAs($agremiado)->get('/portal');
@@ -55,10 +52,7 @@ test('agremiado sees welcome header and four quick links without account or qr w
 });
 
 test('agremiado with draft loan sees continuar borrador linking directly to the draft view', function (): void {
-    $agremiado = User::factory()->create([
-        'role' => UserRole::Agremiado,
-        'is_active' => true,
-    ]);
+    $agremiado = User::factory()->agremiado()->active()->create();
 
     $draftLoan = Loan::factory()->create([
         'user_id' => $agremiado->id,
@@ -74,10 +68,7 @@ test('agremiado with draft loan sees continuar borrador linking directly to the 
 });
 
 test('agremiado sees unavailability state instead of apply link when loans service is temporarily out of service', function (): void {
-    $agremiado = User::factory()->create([
-        'role' => UserRole::Agremiado,
-        'is_active' => true,
-    ]);
+    $agremiado = User::factory()->agremiado()->active()->create();
 
     LoanOperationalSetting::query()->create([
         'state' => LoanOperationalState::TemporalmenteFueraDeServicio,
@@ -93,11 +84,37 @@ test('agremiado sees unavailability state instead of apply link when loans servi
     $response->assertDontSee(LoanResource::getUrl('apply'));
 });
 
-test('directiva roles keep account and qr widgets and do not see agremiado welcome header', function (UserRole $role): void {
-    $user = User::factory()->create([
-        'role' => $role,
-        'is_active' => true,
+test('agremiado with draft loan sees unavailability state when loans service is temporarily out of service', function (): void {
+    $agremiado = User::factory()->agremiado()->active()->create();
+
+    $draftLoan = Loan::factory()->create([
+        'user_id' => $agremiado->id,
+        'status' => LoanStatus::Borrador,
     ]);
+
+    LoanOperationalSetting::query()->create([
+        'state' => LoanOperationalState::TemporalmenteFueraDeServicio,
+        'target_fiscal_year' => now()->year,
+        'suspension_message' => 'Mantenimiento programado de préstamos.',
+    ]);
+
+    $response = $this->actingAs($agremiado)->get('/portal');
+
+    $response->assertSuccessful();
+    $response->assertSee('Préstamos no disponibles');
+    $response->assertSee('Temporalmente fuera de servicio');
+    $response->assertDontSee('Continuar borrador');
+
+    Livewire::test(AgremiadoWelcomeWidget::class)
+        ->assertSuccessful()
+        ->assertSee('Préstamos no disponibles')
+        ->assertSee('Temporalmente fuera de servicio')
+        ->assertDontSee('Continuar borrador')
+        ->assertDontSee(LoanResource::getUrl('view', ['record' => $draftLoan]), escape: false);
+});
+
+test('directiva roles keep account and qr widgets and do not see agremiado welcome header', function (string $factoryState): void {
+    $user = User::factory()->{$factoryState}()->active()->create();
 
     $response = $this->actingAs($user)->get('/portal');
 
@@ -110,6 +127,6 @@ test('directiva roles keep account and qr widgets and do not see agremiado welco
     expect(DirectivaAccountWidget::canView())->toBeTrue();
     expect(AgremiadoWelcomeWidget::canView())->toBeFalse();
 })->with([
-    'admin' => UserRole::Admin,
-    'lider' => UserRole::Lider,
+    'admin' => 'admin',
+    'lider' => 'lider',
 ]);

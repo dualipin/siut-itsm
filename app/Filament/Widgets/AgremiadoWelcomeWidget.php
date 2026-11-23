@@ -56,14 +56,6 @@ class AgremiadoWelcomeWidget extends Widget
         $isOutOfService = $operationalStateService->isTemporarilyOutOfService();
 
         $loanAction = match (true) {
-            $draftLoan !== null => [
-                'label' => 'Continuar borrador',
-                'description' => "Retoma tu solicitud {$draftLoan->folio}",
-                'url' => LoanResource::getUrl('view', ['record' => $draftLoan]),
-                'icon' => Heroicon::DocumentText,
-                'tone' => 'warning',
-                'unavailable' => false,
-            ],
             $isOutOfService => [
                 'label' => 'Préstamos no disponibles',
                 'description' => 'Temporalmente fuera de servicio',
@@ -71,6 +63,14 @@ class AgremiadoWelcomeWidget extends Widget
                 'icon' => Heroicon::ExclamationTriangle,
                 'tone' => 'danger',
                 'unavailable' => true,
+            ],
+            $draftLoan !== null => [
+                'label' => 'Continuar borrador',
+                'description' => "Retoma tu solicitud {$draftLoan->folio}",
+                'url' => LoanResource::getUrl('view', ['record' => $draftLoan]),
+                'icon' => Heroicon::DocumentText,
+                'tone' => 'warning',
+                'unavailable' => false,
             ],
             default => [
                 'label' => 'Solicitar préstamo',

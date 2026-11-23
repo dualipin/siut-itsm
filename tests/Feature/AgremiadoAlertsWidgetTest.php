@@ -306,3 +306,36 @@ test('agremiado does not see annual petition alert when curp already submitted a
 
     expect(AgremiadoAlertsWidget::canView())->toBeFalse();
 });
+
+test('agremiado sees second open annual petition alert when they already participated in the earlier one', function (): void {
+    $agremiado = User::factory()->agremiado()->active()->create([
+        'curp' => 'ABCD900101HDFXYZ03',
+    ]);
+    attachAllAffiliationDocuments($agremiado, DocumentStatus::Valid);
+
+    $earlierPetition = AnnualPetition::factory()->create([
+        'year' => 2026,
+        'deadline' => now()->addDays(2)->toDateString(),
+    ]);
+
+    $laterPetition = AnnualPetition::factory()->create([
+        'year' => 2027,
+        'deadline' => now()->addDays(10)->toDateString(),
+    ]);
+
+    PetitionRequest::factory()->create([
+        'annual_petition_id' => $earlierPetition->id,
+        'curp' => 'abcd900101hdfxyz03',
+    ]);
+
+    $this->actingAs($agremiado);
+
+    expect(AgremiadoAlertsWidget::canView())->toBeTrue();
+
+    $this->get('/portal')
+        ->assertSuccessful()
+        ->assertSee('data-testid="agremiado-alerts-widget"', escape: false)
+        ->assertSee("Pliego Anual {$laterPetition->year}")
+        ->assertSee(route('petitions.index', ['annualPetition' => $laterPetition]), escape: false)
+        ->assertDontSee("Pliego Anual {$earlierPetition->year}");
+});

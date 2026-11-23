@@ -84,12 +84,12 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
         }
 
         $loanAmount = (float) ($activeLoan->disbursed_amount ?? $activeLoan->approved_amount ?? $activeLoan->requested_amount);
-        $description = '$'.number_format($loanAmount, 2);
+        $description = "{$activeLoan->folio} · \$".number_format($loanAmount, 2);
 
         if ($activeLoan->status === LoanStatus::Desembolsada) {
             $nextPayment = $activeLoan->amortizationRows()
                 ->whereDate('date', '>=', now()->toDateString())
-                ->orderBy('date')
+                ->reorder('date')
                 ->orderBy('period')
                 ->first();
 

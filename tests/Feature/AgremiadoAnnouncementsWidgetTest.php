@@ -15,8 +15,8 @@ beforeEach(function () {
 });
 
 test('agremiado sees up to 5 active aviso and noticia posts ordered newest first on portal dashboard', function () {
-    $agremiado = User::factory()->agremiado()->create(['is_active' => true]);
-    $author = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
 
     $oldest = Post::factory()->create([
         'author_id' => $author->id,
@@ -94,8 +94,8 @@ test('agremiado sees up to 5 active aviso and noticia posts ordered newest first
 });
 
 test('expired posts and posts of other types are excluded from announcements widget', function () {
-    $agremiado = User::factory()->agremiado()->create(['is_active' => true]);
-    $author = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
 
     $activeAviso = Post::factory()->create([
         'author_id' => $author->id,
@@ -138,8 +138,8 @@ test('expired posts and posts of other types are excluded from announcements wid
 });
 
 test('empty state is displayed when no active aviso or noticia posts exist', function () {
-    $agremiado = User::factory()->agremiado()->create(['is_active' => true]);
-    $author = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
 
     // Only an expired aviso and a Formato post exist
     Post::factory()->create([
@@ -164,8 +164,8 @@ test('empty state is displayed when no active aviso or noticia posts exist', fun
 });
 
 test('admin and leader do not see announcements widget on portal dashboard', function () {
-    $admin = User::factory()->admin()->create(['is_active' => true]);
-    $leader = User::factory()->lider()->create(['is_active' => true]);
+    $admin = User::factory()->admin()->active()->create();
+    $leader = User::factory()->lider()->active()->create();
 
     Post::factory()->create([
         'author_id' => $admin->id,
@@ -192,8 +192,8 @@ test('admin and leader do not see announcements widget on portal dashboard', fun
 });
 
 test('agremiado can open quick read modal with full content and attachment download links', function () {
-    $agremiado = User::factory()->agremiado()->create(['is_active' => true]);
-    $author = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
 
     $post = Post::factory()->create([
         'author_id' => $author->id,
@@ -226,8 +226,8 @@ test('agremiado can open quick read modal with full content and attachment downl
 });
 
 test('quick read modal does not expose expired or non announcement posts', function () {
-    $agremiado = User::factory()->agremiado()->create(['is_active' => true]);
-    $author = User::factory()->admin()->create(['is_active' => true]);
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
 
     $expiredPost = Post::factory()->create([
         'author_id' => $author->id,
