@@ -13,6 +13,7 @@ export default defineConfig({
                 "resources/js/app.ts",
                 "resources/js/island.ts",
                 "resources/js/efirma-signer.ts",
+                "resources/js/transparency-scanner.ts",
                 "resources/css/filament/admin/theme.css",
             ],
             refresh: true,

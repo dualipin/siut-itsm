@@ -17,6 +17,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
@@ -164,6 +165,7 @@ class TransparencyRecordForm
                             })
                             ->downloadable()
                             ->openable()
+                            ->extraAttributes(['data-transparency-documents-upload' => 'true'])
                             ->columnSpanFull()
                             ->validationMessages([
                                 'max' => 'Cada archivo adjunto no debe superar los 15 MB.',
@@ -194,6 +196,9 @@ class TransparencyRecordForm
                                     ]),
                                 ];
                             }),
+
+                        View::make('filament.transparency-records.document-scanner')
+                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Visibilidad en el Portal')
