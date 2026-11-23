@@ -7,6 +7,7 @@ use App\Services\LoanPdfGenerationService;
 use App\Support\NumberToWords;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -120,4 +121,58 @@ it('renders anuencia and solicitud using document.layout with union header and f
     expect($solicitudHtml)->toContain('SINDICATO ÚNICO DE TRABAJADORES')
         ->and($solicitudHtml)->toContain('SOLICITUD DE PRÉSTAMO A LA CAJA DE AHORRO')
         ->and($solicitudHtml)->toContain('c.c.p Interesado');
+});
+
+it('generates pagare without embedded digital signature while preserving loan and debtor data on a single letter page', function () {
+    $user = User::factory()->create([
+        'name' => 'María Elena',
+        'surnames' => 'García López',
+        'address' => 'Av. Tecnológico 123, Macuspana, Tabasco',
+        'phone' => '9361234567',
+    ]);
+
+    $loan = Loan::factory()->for($user)->submitted()->create([
+        'folio' => 'SOL-2026-00999',
+        'requested_amount' => 12000.00,
+        'approved_amount' => 12000.00,
+        'monthly_rate' => 6.00,
+        'nomina_amount' => 12000.00,
+        'nomina_fortnights' => 6,
+        'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'signature_type' => 'drawn',
+    ]);
+
+    $admin = User::factory()->admin()->create();
+
+    $doc = $this->pdfService->generateSingleDocument($loan, LoanGeneratedDocumentType::Pagare, $admin);
+    $pdfBytes = Storage::disk('local')->get($doc->file_path);
+
+    $parsedPdf = (new Parser)->parseContent($pdfBytes);
+    $pages = $parsedPdf->getPages();
+    $pdfText = preg_replace('/\s+/', ' ', $parsedPdf->getText()) ?? '';
+
+    $pagareHtml = view('pdf.loans.pagare', [
+        'loan' => $loan,
+        'user' => $user,
+        'amountInWords' => NumberToWords::toCurrency(12000.00),
+        'approvalDateLong' => '15 de mayo de 2026',
+        'lastPaymentDate' => '15/08/2026',
+        'fiscalYear' => 2026,
+        'termFortnights' => 6,
+    ])->render();
+
+    expect($pages)->toHaveCount(1)
+        ->and($parsedPdf->getObjectsByType('XObject', 'Image'))->toBeEmpty()
+        ->and($pagareHtml)->not->toContain('<img')
+        ->and($pagareHtml)->not->toContain($loan->signature_data)
+        ->and($pdfText)->toContain('PAGARÉ')
+        ->and($pdfText)->toContain('SOL-2026-00999')
+        ->and($pdfText)->toContain('12,000.00')
+        ->and($pdfText)->toContain('(DOCE MIL PESOS 00/100 M.N.)')
+        ->and($pdfText)->toContain('Datos del deudor')
+        ->and($pdfText)->toContain('Nombre: María Elena García López')
+        ->and($pdfText)->toContain('Dirección: Av. Tecnológico 123, Macuspana, Tabasco')
+        ->and($pdfText)->toContain('Teléfono: 9361234567')
+        ->and($pdfText)->toContain('Acepto(amos)')
+        ->and($pdfText)->toContain('Firma(s)');
 });
