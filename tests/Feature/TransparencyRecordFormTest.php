@@ -11,6 +11,7 @@ use App\Models\TransparencyRecord;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Livewire;
@@ -648,9 +649,85 @@ test('document scanner renders continuous camera viewfinder, torch hook, review 
         ->assertSee('Agregar más fotos')
         ->assertSee('Aplicar filtro a todas')
         ->assertSee('Blanco y negro')
+        ->assertSee('Elimina una o más páginas o cambia al filtro Blanco y negro para reducir el peso.')
+        ->assertSeeHtml('cameraSessionId')
+        ->assertSeeHtml('sessionId')
+        ->assertSeeHtml('reprocessPageAt(')
+        ->assertSeeHtml(':disabled="isExporting || processingCount > 0"')
+        ->assertDontSeeHtml('$nextTick(() =>')
         ->assertSeeHtml('setPageFilter(')
         ->assertSeeHtml('rotatePage(')
         ->assertSeeHtml('movePageBy(');
+});
+
+test('typescript buildPdfFromJpegPages emits valid PDF 1.4 verified by Smalot PdfParser and persists via Livewire upload', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $portraitImg = imagecreatetruecolor(120, 160);
+    ob_start();
+    imagejpeg($portraitImg, null, 75);
+    $portraitJpeg = (string) ob_get_clean();
+    imagedestroy($portraitImg);
+
+    $landscapeImg = imagecreatetruecolor(160, 120);
+    ob_start();
+    imagejpeg($landscapeImg, null, 75);
+    $landscapeJpeg = (string) ob_get_clean();
+    imagedestroy($landscapeImg);
+
+    $payload = json_encode([
+        ['jpegBase64' => base64_encode($portraitJpeg), 'width' => 120, 'height' => 160],
+        ['jpegBase64' => base64_encode($landscapeJpeg), 'width' => 160, 'height' => 120],
+    ], JSON_THROW_ON_ERROR);
+
+    $nodeScript = implode("\n", [
+        'import fs from "node:fs";',
+        'import { buildPdfFromJpegPages } from "./resources/js/scanner/pdf.ts";',
+        'const input = JSON.parse(fs.readFileSync(0, "utf8"));',
+        'const pages = input.map((p) => ({ jpegBytes: Uint8Array.from(Buffer.from(p.jpegBase64, "base64")), width: p.width, height: p.height }));',
+        'process.stdout.write(Buffer.from(buildPdfFromJpegPages(pages)));',
+    ]);
+
+    $result = Process::path(base_path())
+        ->input($payload)
+        ->run(['node', '--input-type=module', '-e', $nodeScript]);
+
+    expect($result->successful())->toBeTrue($result->errorOutput());
+
+    $pdfBytes = $result->output();
+    $parsed = (new Parser)->parseContent($pdfBytes);
+    $pages = $parsed->getPages();
+
+    expect($pages)->toHaveCount(2)
+        ->and($pages[0]->getDetails()['MediaBox'])->toEqual([0, 0, 612, 816])
+        ->and($pages[1]->getDetails()['MediaBox'])->toEqual([0, 0, 612, 459])
+        ->and($pages[0]->getDetails()['Resources']['XObject']['Im1']['Filter'])->toBe('DCTDecode')
+        ->and($pages[1]->getDetails()['Resources']['XObject']['Im1']['Filter'])->toBe('DCTDecode');
+
+    $uploadedPdf = UploadedFile::fake()->createWithContent('escaneo-ts-real.pdf', $pdfBytes);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'name' => 'Oficio Generado Desde TS',
+            'document_date' => '2025-08-10',
+            'reference_number' => 'SIUT-TS-PDF-001',
+            'status' => TransparencyRecordStatus::Publico->value,
+            'documents' => [$uploadedPdf],
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $record = TransparencyRecord::where('name', 'Oficio Generado Desde TS')->firstOrFail();
+    $media = $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstOrFail();
+    $storedContent = Storage::disk($media->disk)->get($media->getPathRelativeToRoot());
+    $storedParsed = (new Parser)->parseContent($storedContent);
+    $storedPages = $storedParsed->getPages();
+
+    expect($storedPages)->toHaveCount(2)
+        ->and($storedPages[0]->getDetails()['MediaBox'])->toEqual([0, 0, 612, 816])
+        ->and($storedPages[1]->getDetails()['MediaBox'])->toEqual([0, 0, 612, 459]);
 });
 
 test('multi-page scanned PDF 1.4 attaches across all categories, persists in medialibrary, respects visibility, and rejects over 15 MB', function () {

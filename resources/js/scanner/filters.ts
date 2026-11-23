@@ -1,3 +1,4 @@
+import { clamp01, clampByte } from './image-utils.ts';
 import type { ImageDataLike } from './quad-detector.ts';
 
 export type ScanFilter = 'documento' | 'bw' | 'original';
@@ -5,28 +6,6 @@ export type ScanFilter = 'documento' | 'bw' | 'original';
 export type QuarterTurnRotation = 0 | 90 | 180 | 270;
 
 export const DEFAULT_SCAN_FILTER: ScanFilter = 'documento';
-
-function clampByte(value: number): number {
-    if (value <= 0) {
-        return 0;
-    }
-    if (value >= 255) {
-        return 255;
-    }
-
-    return Math.round(value);
-}
-
-function clamp01(value: number): number {
-    if (value <= 0) {
-        return 0;
-    }
-    if (value >= 1) {
-        return 1;
-    }
-
-    return value;
-}
 
 function smoothstep01(t: number): number {
     const x = clamp01(t);

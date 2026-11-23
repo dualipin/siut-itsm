@@ -20,6 +20,11 @@ import {
     type ImageDataLike,
 } from './scanner/quad-detector.ts';
 import {
+    formatQuadMaskPath,
+    formatQuadPolygonPoints,
+    normalizePointerQuadCorner,
+} from './scanner/quad-editor.ts';
+import {
     DEFAULT_MAX_LONG_SIDE,
     warpPerspective,
 } from './scanner/perspective.ts';
@@ -324,16 +329,6 @@ export async function addPageFromSource(
     }
 }
 
-export async function encodeImageFileToScannedPage(
-    file: File,
-    options: EncodeImageOptions = {},
-): Promise<ScannedPageItem> {
-    return addPageFromSource(file, {
-        ...options,
-        sourceName: file.name || 'pagina.jpg',
-    });
-}
-
 export async function reprocessScannedPage(
     page: ScannedPageItem,
     quad: DocumentQuad = page.quad,
@@ -519,7 +514,7 @@ export function buildScannedPdfFile(
     if (!validation.valid) {
         if (validation.exceedsLimit) {
             throw new Error(
-                `El PDF generado (${validation.formattedSize}) supera el límite permitido de ${validation.formattedMax}. Elimina algunas páginas antes de adjuntar.`,
+                `El PDF generado (${validation.formattedSize}) supera el límite permitido de ${validation.formattedMax}. Elimina una o más páginas o cambia al filtro Blanco y negro para reducir el peso.`,
             );
         }
 
@@ -576,13 +571,15 @@ if (typeof window !== 'undefined') {
         cloneQuad,
         isValidConvexQuad,
         detectDocumentQuad,
+        normalizePointerQuadCorner,
+        formatQuadPolygonPoints,
+        formatQuadMaskPath,
         warpPerspective,
         applyScanFilter,
         rotateImageData,
         normalizeRotation,
         movePage,
         addPageFromSource,
-        encodeImageFileToScannedPage,
         reprocessScannedPage,
         revokeScannedPageUrls,
         startRearCameraStream,

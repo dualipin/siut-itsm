@@ -1,3 +1,5 @@
+import { clamp01 } from './image-utils.ts';
+
 export interface Point2D {
     x: number;
     y: number;
@@ -88,10 +90,6 @@ function fallbackResult(): QuadDetectionResult {
         detected: false,
         confidence: 0,
     };
-}
-
-function clamp01(value: number): number {
-    return Math.max(0, Math.min(1, value));
 }
 
 function downsampleLuminance(imageData: ImageDataLike): { width: number; height: number; lum: Float32Array } {

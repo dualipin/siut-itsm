@@ -18,8 +18,13 @@
         torchSupported: false,
         torchEnabled: false,
         isCapturingFrame: false,
+        sessionId: 0,
+        cameraSessionId: 0,
+        captureSeq: 0,
+        activeCaptureId: 0,
 
         destroy() {
+            this.sessionId += 1;
             this.stopCameraStream();
             this.revokeAllPageUrls();
         },
@@ -57,18 +62,33 @@
         },
 
         async openScanner() {
+            this.sessionId += 1;
             this.errorMessage = null;
             this.cameraFallbackMessage = null;
             this.showDiscardConfirm = false;
+            this.processingCount = 0;
+            this.isCapturingFrame = false;
+            this.activeCaptureId = 0;
+            this.viewMode = 'camera';
+            this.cameraState = 'starting';
             this.isOpen = true;
+            const activeSession = this.sessionId;
 
             try {
                 const scanner = await this.ensureScannerLoaded();
+                if (activeSession !== this.sessionId || !this.isOpen) {
+                    return;
+                }
                 if (!this.pdfFilename.trim()) {
                     this.pdfFilename = scanner.buildSuggestedPdfFilename(this.readWireFormMetadata());
                 }
-                await this.openCameraView();
+                if (this.viewMode === 'camera') {
+                    await this.openCameraView();
+                }
             } catch (err) {
+                if (activeSession !== this.sessionId || !this.isOpen) {
+                    return;
+                }
                 this.cameraState = 'fallback';
                 this.viewMode = 'review';
                 this.errorMessage = err.message || 'No fue posible inicializar el escáner.';
@@ -82,13 +102,32 @@
             this.cameraState = 'starting';
             this.stopCameraStream();
 
+            const activeSession = this.sessionId;
+            const activeCameraSession = ++this.cameraSessionId;
+
             await this.$nextTick();
+
+            if (
+                activeSession !== this.sessionId
+                || activeCameraSession !== this.cameraSessionId
+                || !this.isOpen
+                || this.viewMode !== 'camera'
+                || document.hidden
+            ) {
+                return;
+            }
 
             try {
                 const scanner = await this.ensureScannerLoaded();
                 const result = await scanner.startRearCameraStream();
 
-                if (!this.isOpen || this.viewMode !== 'camera') {
+                if (
+                    activeSession !== this.sessionId
+                    || activeCameraSession !== this.cameraSessionId
+                    || !this.isOpen
+                    || this.viewMode !== 'camera'
+                    || document.hidden
+                ) {
                     if (result.ok) {
                         scanner.stopMediaStream(result.stream);
                     }
@@ -110,7 +149,12 @@
                 this.torchEnabled = false;
 
                 result.track.addEventListener('ended', () => {
-                    if (this.isOpen && this.viewMode === 'camera') {
+                    if (
+                        activeSession === this.sessionId
+                        && activeCameraSession === this.cameraSessionId
+                        && this.isOpen
+                        && this.viewMode === 'camera'
+                    ) {
                         this.stopCameraStream();
                         this.cameraState = 'fallback';
                         this.cameraFallbackMessage = 'La cámara se desconectó. Puedes reintentar con &quot;Agregar más fotos&quot; o usar &quot;Tomar foto&quot; / &quot;Seleccionar de galería&quot;.';
@@ -124,8 +168,33 @@
                     await video.play().catch(() => {});
                 }
 
+                if (
+                    activeSession !== this.sessionId
+                    || activeCameraSession !== this.cameraSessionId
+                    || !this.isOpen
+                    || this.viewMode !== 'camera'
+                    || document.hidden
+                ) {
+                    if (this.cameraStream === result.stream) {
+                        this.stopCameraStream();
+                    } else {
+                        scanner.stopMediaStream(result.stream);
+                    }
+
+                    return;
+                }
+
                 this.cameraState = 'ready';
             } catch (err) {
+                if (
+                    activeSession !== this.sessionId
+                    || activeCameraSession !== this.cameraSessionId
+                    || !this.isOpen
+                    || this.viewMode !== 'camera'
+                ) {
+                    return;
+                }
+
                 this.stopCameraStream();
                 this.cameraState = 'fallback';
                 this.cameraFallbackMessage = err.message || 'No fue posible abrir el visor continuo. Usa &quot;Tomar foto&quot; o &quot;Seleccionar de galería&quot;.';
@@ -134,6 +203,7 @@
         },
 
         stopCameraStream() {
+            this.cameraSessionId += 1;
             const video = this.$refs?.cameraVideo ?? null;
 
             if (window.transparencyScanner?.stopMediaStream) {
@@ -155,7 +225,6 @@
             this.cameraTrack = null;
             this.torchSupported = false;
             this.torchEnabled = false;
-            this.isCapturingFrame = false;
 
             if (this.cameraState !== 'fallback') {
                 this.cameraState = 'idle';
@@ -168,10 +237,8 @@
         },
 
         openGalleryFromCamera() {
+            this.$refs.galleryInput?.click();
             this.switchToReview();
-            this.$nextTick(() => {
-                this.$refs.galleryInput?.click();
-            });
         },
 
         handleVisibilityChange() {
@@ -206,6 +273,9 @@
                 return;
             }
 
+            const activeSession = this.sessionId;
+            const captureId = ++this.captureSeq;
+            this.activeCaptureId = captureId;
             this.errorMessage = null;
             this.isCapturingFrame = true;
             this.processingCount += 1;
@@ -213,23 +283,32 @@
             try {
                 const scanner = await this.ensureScannerLoaded();
                 const blob = await scanner.captureVideoFrameBlob(this.$refs.cameraVideo);
-                this.isCapturingFrame = false;
+
+                if (activeSession !== this.sessionId || !this.isOpen) {
+                    return;
+                }
 
                 const pageNumber = this.pages.length + 1;
                 const page = await scanner.addPageFromSource(blob, {
                     sourceName: `captura-${pageNumber}.jpg`,
                 });
 
-                if (this.isOpen) {
+                if (activeSession === this.sessionId && this.isOpen) {
                     this.pages.push(page);
                 } else {
                     scanner.revokeScannedPageUrls(page);
                 }
             } catch (err) {
-                this.errorMessage = err.message || 'No fue posible capturar la página desde la cámara.';
+                if (activeSession === this.sessionId && this.isOpen) {
+                    this.errorMessage = err.message || 'No fue posible capturar la página desde la cámara.';
+                }
             } finally {
-                this.isCapturingFrame = false;
-                this.processingCount = Math.max(0, this.processingCount - 1);
+                if (this.activeCaptureId === captureId) {
+                    this.isCapturingFrame = false;
+                }
+                if (activeSession === this.sessionId) {
+                    this.processingCount = Math.max(0, this.processingCount - 1);
+                }
             }
         },
 
@@ -260,6 +339,7 @@
                 return;
             }
 
+            const activeSession = this.sessionId;
             this.errorMessage = null;
             this.processingCount += files.length;
 
@@ -267,6 +347,10 @@
                 const scanner = await this.ensureScannerLoaded();
 
                 for (const file of files) {
+                    if (activeSession !== this.sessionId || !this.isOpen) {
+                        break;
+                    }
+
                     if (file.type && !file.type.startsWith('image/')) {
                         this.errorMessage = 'Solo se pueden agregar archivos de imagen (JPG, PNG, WebP).';
                         continue;
@@ -276,36 +360,35 @@
                         sourceName: file.name,
                     });
 
-                    if (this.isOpen) {
+                    if (activeSession === this.sessionId && this.isOpen) {
                         this.pages.push(page);
                     } else {
                         scanner.revokeScannedPageUrls(page);
                     }
                 }
             } catch (err) {
-                this.errorMessage = err.message || 'No se pudieron procesar una o más imágenes.';
+                if (activeSession === this.sessionId && this.isOpen) {
+                    this.errorMessage = err.message || 'No se pudieron procesar una o más imágenes.';
+                }
             } finally {
-                this.processingCount = Math.max(0, this.processingCount - files.length);
+                if (activeSession === this.sessionId) {
+                    this.processingCount = Math.max(0, this.processingCount - files.length);
+                }
             }
         },
 
         removePage(pageId) {
+            if (this.isExporting || this.processingCount > 0) {
+                return;
+            }
+
             const index = this.pages.findIndex((page) => page.id === pageId);
             if (index === -1) {
                 return;
             }
 
             const [removed] = this.pages.splice(index, 1);
-            if (window.transparencyScanner?.revokeScannedPageUrls) {
-                window.transparencyScanner.revokeScannedPageUrls(removed);
-            } else {
-                if (removed?.previewUrl) {
-                    URL.revokeObjectURL(removed.previewUrl);
-                }
-                if (removed?.originalPreviewUrl) {
-                    URL.revokeObjectURL(removed.originalPreviewUrl);
-                }
-            }
+            window.transparencyScanner?.revokeScannedPageUrls(removed);
             if (this.cropEditor?.pageId === pageId) {
                 this.cropEditor = null;
             }
@@ -314,16 +397,7 @@
 
         revokeAllPageUrls() {
             for (const page of this.pages) {
-                if (window.transparencyScanner?.revokeScannedPageUrls) {
-                    window.transparencyScanner.revokeScannedPageUrls(page);
-                } else {
-                    if (page.previewUrl) {
-                        URL.revokeObjectURL(page.previewUrl);
-                    }
-                    if (page.originalPreviewUrl) {
-                        URL.revokeObjectURL(page.originalPreviewUrl);
-                    }
-                }
+                window.transparencyScanner?.revokeScannedPageUrls(page);
             }
         },
 
@@ -392,46 +466,61 @@
 
         updateActiveCornerFromPointer(event) {
             const stage = this.$refs.cropStage;
-            if (!stage || !this.cropEditor?.activeCorner) {
+            const scanner = window.transparencyScanner;
+            if (!stage || !scanner || !this.cropEditor?.activeCorner) {
                 return;
             }
 
-            const rect = stage.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) {
-                return;
+            const corner = scanner.normalizePointerQuadCorner(
+                event.clientX,
+                event.clientY,
+                stage.getBoundingClientRect(),
+            );
+            if (corner) {
+                this.cropEditor.quad[this.cropEditor.activeCorner] = corner;
             }
-
-            const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-            const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-            this.cropEditor.quad[this.cropEditor.activeCorner] = { x, y };
         },
 
         quadPolygonPoints() {
-            const q = this.cropEditor?.quad;
-            if (!q) {
-                return '';
-            }
-
-            return [
-                (q.topLeft.x * 100) + ',' + (q.topLeft.y * 100),
-                (q.topRight.x * 100) + ',' + (q.topRight.y * 100),
-                (q.bottomRight.x * 100) + ',' + (q.bottomRight.y * 100),
-                (q.bottomLeft.x * 100) + ',' + (q.bottomLeft.y * 100),
-            ].join(' ');
+            return window.transparencyScanner?.formatQuadPolygonPoints(this.cropEditor?.quad) ?? '';
         },
 
         quadMaskPath() {
-            const q = this.cropEditor?.quad;
-            if (!q) {
-                return '';
+            return window.transparencyScanner?.formatQuadMaskPath(this.cropEditor?.quad) ?? '';
+        },
+
+        async reprocessPageAt(index, overrides = {}, activeSession = this.sessionId) {
+            const page = this.pages[index];
+            if (!page || activeSession !== this.sessionId || !this.isOpen) {
+                return null;
             }
 
-            return 'M0,0 H100 V100 H0 Z M'
-                + (q.topLeft.x * 100) + ',' + (q.topLeft.y * 100)
-                + ' L' + (q.topRight.x * 100) + ',' + (q.topRight.y * 100)
-                + ' L' + (q.bottomRight.x * 100) + ',' + (q.bottomRight.y * 100)
-                + ' L' + (q.bottomLeft.x * 100) + ',' + (q.bottomLeft.y * 100)
-                + ' Z';
+            const pageId = page.id;
+            const scanner = await this.ensureScannerLoaded();
+
+            if (activeSession !== this.sessionId || !this.isOpen) {
+                return null;
+            }
+
+            const updated = await scanner.reprocessScannedPage(
+                page,
+                overrides.quad ?? page.quad,
+                {
+                    filter: overrides.filter,
+                    rotation: overrides.rotation,
+                },
+            );
+
+            const currentIndex = this.pages.findIndex((item) => item.id === pageId);
+            if (activeSession === this.sessionId && this.isOpen && currentIndex !== -1) {
+                this.pages.splice(currentIndex, 1, updated);
+
+                return updated;
+            }
+
+            scanner.revokeScannedPageUrls(updated);
+
+            return null;
         },
 
         async recomputeEditorPage(quad, closeAfter) {
@@ -439,7 +528,12 @@
                 return;
             }
 
+            const activeSession = this.sessionId;
             const scanner = await this.ensureScannerLoaded();
+            if (activeSession !== this.sessionId || !this.isOpen || !this.cropEditor) {
+                return;
+            }
+
             if (!scanner.isValidConvexQuad(quad)) {
                 this.cropEditor.errorMessage = 'Las 4 esquinas deben formar un cuadrilátero válido sin cruzarse.';
 
@@ -457,16 +551,24 @@
             this.cropEditor.errorMessage = null;
 
             try {
-                const updated = await scanner.reprocessScannedPage(this.pages[index], quad);
-                this.pages.splice(index, 1, updated);
+                const updated = await this.reprocessPageAt(index, { quad }, activeSession);
+                if (activeSession !== this.sessionId || !this.isOpen || !this.cropEditor) {
+                    return;
+                }
+
+                if (!updated) {
+                    this.cropEditor = null;
+
+                    return;
+                }
 
                 if (closeAfter) {
                     this.cropEditor = null;
-                } else if (this.cropEditor) {
+                } else {
                     this.cropEditor.quad = scanner.cloneQuad(updated.quad);
                 }
             } catch (err) {
-                if (this.cropEditor) {
+                if (activeSession === this.sessionId && this.cropEditor) {
                     this.cropEditor.errorMessage = err.message || 'No fue posible aplicar el recorte.';
                 }
             } finally {
@@ -495,7 +597,8 @@
         },
 
         async setPageFilter(pageId, filter, selectEl = null) {
-            const page = this.pages.find((item) => item.id === pageId);
+            const index = this.pages.findIndex((item) => item.id === pageId);
+            const page = index !== -1 ? this.pages[index] : null;
             if (!page || page.filter === filter) {
                 return;
             }
@@ -508,26 +611,23 @@
                 return;
             }
 
+            const activeSession = this.sessionId;
             this.errorMessage = null;
             this.processingCount += 1;
 
             try {
-                const scanner = await this.ensureScannerLoaded();
-                const updated = await scanner.reprocessScannedPage(page, page.quad, { filter });
-                const currentIndex = this.pages.findIndex((item) => item.id === pageId);
-
-                if (currentIndex !== -1 && this.isOpen) {
-                    this.pages.splice(currentIndex, 1, updated);
-                } else {
-                    scanner.revokeScannedPageUrls(updated);
-                }
+                await this.reprocessPageAt(index, { filter }, activeSession);
             } catch (err) {
-                if (selectEl) {
-                    selectEl.value = page.filter;
+                if (activeSession === this.sessionId && this.isOpen) {
+                    if (selectEl) {
+                        selectEl.value = page.filter;
+                    }
+                    this.errorMessage = err.message || 'No fue posible aplicar el filtro a la página.';
                 }
-                this.errorMessage = err.message || 'No fue posible aplicar el filtro a la página.';
             } finally {
-                this.processingCount = Math.max(0, this.processingCount - 1);
+                if (activeSession === this.sessionId) {
+                    this.processingCount = Math.max(0, this.processingCount - 1);
+                }
             }
         },
 
@@ -544,35 +644,29 @@
                 return;
             }
 
+            const activeSession = this.sessionId;
             this.errorMessage = null;
             this.processingCount += targetIds.length;
 
             try {
-                const scanner = await this.ensureScannerLoaded();
-
                 for (const pageId of targetIds) {
-                    const currentIndex = this.pages.findIndex((item) => item.id === pageId);
-                    if (currentIndex === -1 || !this.isOpen) {
-                        continue;
+                    if (activeSession !== this.sessionId || !this.isOpen) {
+                        break;
                     }
 
-                    const updated = await scanner.reprocessScannedPage(
-                        this.pages[currentIndex],
-                        this.pages[currentIndex].quad,
-                        { filter },
-                    );
-
-                    const refreshedIndex = this.pages.findIndex((item) => item.id === pageId);
-                    if (refreshedIndex !== -1 && this.isOpen) {
-                        this.pages.splice(refreshedIndex, 1, updated);
-                    } else {
-                        scanner.revokeScannedPageUrls(updated);
+                    const currentIndex = this.pages.findIndex((item) => item.id === pageId);
+                    if (currentIndex !== -1) {
+                        await this.reprocessPageAt(currentIndex, { filter }, activeSession);
                     }
                 }
             } catch (err) {
-                this.errorMessage = err.message || 'No fue posible aplicar el filtro a todas las páginas.';
+                if (activeSession === this.sessionId && this.isOpen) {
+                    this.errorMessage = err.message || 'No fue posible aplicar el filtro a todas las páginas.';
+                }
             } finally {
-                this.processingCount = Math.max(0, this.processingCount - targetIds.length);
+                if (activeSession === this.sessionId) {
+                    this.processingCount = Math.max(0, this.processingCount - targetIds.length);
+                }
             }
         },
 
@@ -581,29 +675,28 @@
                 return;
             }
 
-            const page = this.pages.find((item) => item.id === pageId);
+            const index = this.pages.findIndex((item) => item.id === pageId);
+            const page = index !== -1 ? this.pages[index] : null;
             if (!page) {
                 return;
             }
 
+            const activeSession = this.sessionId;
             this.errorMessage = null;
             this.processingCount += 1;
 
             try {
                 const scanner = await this.ensureScannerLoaded();
                 const nextRotation = scanner.normalizeRotation((page.rotation ?? 0) + 90);
-                const updated = await scanner.reprocessScannedPage(page, page.quad, { rotation: nextRotation });
-                const currentIndex = this.pages.findIndex((item) => item.id === pageId);
-
-                if (currentIndex !== -1 && this.isOpen) {
-                    this.pages.splice(currentIndex, 1, updated);
-                } else {
-                    scanner.revokeScannedPageUrls(updated);
-                }
+                await this.reprocessPageAt(index, { rotation: nextRotation }, activeSession);
             } catch (err) {
-                this.errorMessage = err.message || 'No fue posible rotar la página.';
+                if (activeSession === this.sessionId && this.isOpen) {
+                    this.errorMessage = err.message || 'No fue posible rotar la página.';
+                }
             } finally {
-                this.processingCount = Math.max(0, this.processingCount - 1);
+                if (activeSession === this.sessionId) {
+                    this.processingCount = Math.max(0, this.processingCount - 1);
+                }
             }
         },
 
@@ -635,12 +728,16 @@
         },
 
         forceClose() {
+            this.sessionId += 1;
             this.stopCameraStream();
             this.revokeAllPageUrls();
             this.cropEditor = null;
             this.pages = [];
             this.batchFilter = 'documento';
             this.pdfFilename = '';
+            this.processingCount = 0;
+            this.isCapturingFrame = false;
+            this.activeCaptureId = 0;
             this.showDiscardConfirm = false;
             this.errorMessage = null;
             this.cameraFallbackMessage = null;
@@ -1046,7 +1143,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                             </svg>
                             <span>
-                                El peso estimado (<strong x-text="sizeStatus().formattedSize"></strong>) excede el límite máximo de 15.00 MB. Elimina una o más páginas para poder adjuntar el PDF.
+                                El peso estimado (<strong x-text="sizeStatus().formattedSize"></strong>) excede el límite máximo de 15.00 MB. Elimina una o más páginas o cambia al filtro Blanco y negro para reducir el peso.
                             </span>
                         </div>
                     </template>
@@ -1128,9 +1225,9 @@
                                                 <button
                                                     type="button"
                                                     x-on:click="removePage(page.id)"
-                                                    :disabled="isExporting"
+                                                    :disabled="isExporting || processingCount > 0"
                                                     :aria-label="'Eliminar página ' + (index + 1)"
-                                                    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                                    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
                                                 >
                                                     <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                                                         <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
