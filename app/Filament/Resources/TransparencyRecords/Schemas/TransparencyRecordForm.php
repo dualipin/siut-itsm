@@ -27,6 +27,61 @@ class TransparencyRecordForm
     {
         return $schema
             ->components([
+                Section::make('Documentos Adjuntos')
+                    ->description('Sube uno o más archivos digitalizados (máximo 15 MB por archivo).')
+                    ->icon(Heroicon::DocumentCheck)
+                    ->schema([
+                        SpatieMediaLibraryFileUpload::make('documents')
+                            ->label('Archivos')
+                            ->collection(TransparencyRecord::DOCUMENTS_COLLECTION)
+                            ->multiple()
+                            ->maxSize(15360)
+                            ->acceptedFileTypes(static fn (Get $get): array => $get->enum('type', TransparencyRecordType::class)?->allowedMimeTypes()
+                                ?? TransparencyRecordType::allAllowedMimeTypes())
+                            ->rule(static function (Get $get): string {
+                                $extensions = $get->enum('type', TransparencyRecordType::class)?->allowedExtensions()
+                                    ?? TransparencyRecordType::allAllowedExtensions();
+
+                                return 'extensions:'.implode(',', $extensions);
+                            })
+                            ->downloadable()
+                            ->openable()
+                            ->extraAttributes(['data-transparency-documents-upload' => 'true'])
+                            ->columnSpanFull()
+                            ->validationMessages([
+                                'max' => 'Cada archivo adjunto no debe superar los 15 MB.',
+                                'mimetypes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                                'mimes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                                'extensions' => 'El formato del archivo no está permitido para la categoría seleccionada.',
+                            ])
+                            ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
+                                $record = $component->getRecord();
+                                if (! $record instanceof TransparencyRecord) {
+                                    return null;
+                                }
+
+                                $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
+                                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
+
+                                if (! $media) {
+                                    return null;
+                                }
+
+                                return [
+                                    'name' => $media->getAttributeValue('name') ?? $media->getAttributeValue('file_name'),
+                                    'size' => $media->getAttributeValue('size'),
+                                    'type' => $media->getAttributeValue('mime_type'),
+                                    'url' => route('portal.transparency.documents.show', [
+                                        'record' => $record,
+                                        'media' => $media,
+                                    ]),
+                                ];
+                            }),
+
+                        View::make('filament.transparency-records.document-scanner')
+                            ->columnSpanFull(),
+                    ]),
+
                 Section::make('Información del Registro')
                     ->description('Selecciona la categoría documental para capturar únicamente los datos necesarios.')
                     ->icon(Heroicon::DocumentText)
@@ -143,62 +198,6 @@ class TransparencyRecordForm
                         Hidden::make('created_by')
                             ->default(static fn (): ?int => auth()->id())
                             ->dehydrated(static fn (?TransparencyRecord $record): bool => ! ($record?->exists ?? false)),
-                    ]),
-
-                Section::make('Documentos Adjuntos')
-                    ->description('Sube uno o más archivos digitalizados (máximo 15 MB por archivo).')
-                    ->icon(Heroicon::DocumentCheck)
-                    ->schema([
-                        SpatieMediaLibraryFileUpload::make('documents')
-                            ->label('Archivos')
-                            ->collection(TransparencyRecord::DOCUMENTS_COLLECTION)
-                            ->multiple()
-                            ->maxSize(15360)
-                            ->acceptedFileTypes(static fn (Get $get): array => (
-                                $get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros
-                            )->allowedMimeTypes())
-                            ->rule(static function (Get $get): string {
-                                $extensions = ($get->enum('type', TransparencyRecordType::class) ?? TransparencyRecordType::Otros)
-                                    ->allowedExtensions();
-
-                                return 'extensions:'.implode(',', $extensions);
-                            })
-                            ->downloadable()
-                            ->openable()
-                            ->extraAttributes(['data-transparency-documents-upload' => 'true'])
-                            ->columnSpanFull()
-                            ->validationMessages([
-                                'max' => 'Cada archivo adjunto no debe superar los 15 MB.',
-                                'mimetypes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
-                                'mimes' => 'El formato del archivo no está permitido para la categoría seleccionada.',
-                                'extensions' => 'El formato del archivo no está permitido para la categoría seleccionada.',
-                            ])
-                            ->getUploadedFileUsing(static function (SpatieMediaLibraryFileUpload $component, string $file): ?array {
-                                $record = $component->getRecord();
-                                if (! $record instanceof TransparencyRecord) {
-                                    return null;
-                                }
-
-                                $media = $record->getRelationValue('media')?->firstWhere('uuid', $file)
-                                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $file);
-
-                                if (! $media) {
-                                    return null;
-                                }
-
-                                return [
-                                    'name' => $media->getAttributeValue('name') ?? $media->getAttributeValue('file_name'),
-                                    'size' => $media->getAttributeValue('size'),
-                                    'type' => $media->getAttributeValue('mime_type'),
-                                    'url' => route('portal.transparency.documents.show', [
-                                        'record' => $record,
-                                        'media' => $media,
-                                    ]),
-                                ];
-                            }),
-
-                        View::make('filament.transparency-records.document-scanner')
-                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Visibilidad en el Portal')

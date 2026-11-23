@@ -60,7 +60,17 @@ test('transparency record type enum has 5 consolidated categories with declarati
         ->and(TransparencyRecordType::Otros->usesDocumentDate())->toBeTrue();
 
     expect(TransparencyRecordType::fromSlug('oficios'))->toBe(TransparencyRecordType::Oficios)
-        ->and(TransparencyRecordType::fromSlug('invalid'))->toBeNull();
+        ->and(TransparencyRecordType::fromSlug('invalid'))->toBeNull()
+        ->and(TransparencyRecordType::allAllowedExtensions())
+        ->toContain('pdf', 'jpg', 'jpeg', 'png', 'webp', 'xlsx', 'xls', 'csv')
+        ->and(TransparencyRecordType::allAllowedMimeTypes())
+        ->toContain(
+            'application/pdf',
+            'image/jpeg',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'text/csv',
+        );
 });
 
 test('transparency_documents table is dropped and transparency_records supports document_date, unique nullable reference_number, and nullable period', function () {
