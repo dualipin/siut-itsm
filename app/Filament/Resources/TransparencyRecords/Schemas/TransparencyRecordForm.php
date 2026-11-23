@@ -18,6 +18,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -83,7 +84,7 @@ class TransparencyRecordForm
                                     return;
                                 }
 
-                                self::applyAiResultToForm($result, $get, $set);
+                                self::applyAiResultToForm($result, $get, $set, $record);
 
                                 Notification::make()
                                     ->success()
@@ -266,6 +267,26 @@ class TransparencyRecordForm
                     ->description('Define quién puede descargar los archivos adjuntos.')
                     ->icon(Heroicon::Eye)
                     ->schema([
+                        Hidden::make('ai_pii_detected')
+                            ->default(false)
+                            ->dehydrated(false),
+
+                        Hidden::make('ai_pii_reason')
+                            ->default(null)
+                            ->dehydrated(false),
+
+                        Callout::make('Posibles datos personales sensibles detectados')
+                            ->warning()
+                            ->icon(Heroicon::ExclamationTriangle)
+                            ->description(static function (Get $get): string {
+                                $reason = trim((string) $get->string('ai_pii_reason'));
+                                $base = 'La IA detectó información personal sensible en el documento. El registro se mantiene en Consulta Interna para proteger la privacidad de los agremiados.';
+
+                                return $reason !== '' ? "{$base} Motivo sugerido: {$reason}" : $base;
+                            })
+                            ->visible(static fn (Get $get): bool => (bool) $get('ai_pii_detected'))
+                            ->columnSpanFull(),
+
                         ToggleButtons::make('status')
                             ->label('Visibilidad')
                             ->options(TransparencyRecordStatus::class)
@@ -370,25 +391,107 @@ class TransparencyRecordForm
         return null;
     }
 
-    private static function applyAiResultToForm(TransparencyAiMetadataResult $result, Get $get, Set $set): void
-    {
-        $set('type', $result->type?->value);
-        $set('name', $result->name ?? '');
-        $set('summary', $result->summary ?? '');
+    public static function applyAiResultToForm(
+        TransparencyAiMetadataResult $result,
+        Get $get,
+        Set $set,
+        ?TransparencyRecord $record = null,
+        bool $onlyEmpty = false,
+    ): void {
+        if (! $onlyEmpty || blank($get('type'))) {
+            $set('type', $result->type?->value);
+        }
 
-        if ($result->type?->usesPeriod()) {
-            $set('fiscal_year', $result->fiscalYear ?? now()->year);
-            $set('period', $result->period);
+        $effectiveType = $onlyEmpty
+            ? (self::resolveType($get('type')) ?? $result->type)
+            : $result->type;
+
+        if (! $onlyEmpty || blank($get('name'))) {
+            $set('name', $result->name ?? '');
+        }
+
+        if (! $onlyEmpty || blank($get('summary'))) {
+            $set('summary', $result->summary ?? '');
+        }
+
+        $appliedReferenceNumber = null;
+
+        if ($effectiveType?->usesPeriod()) {
+            if (! $onlyEmpty || blank($get('fiscal_year'))) {
+                $set('fiscal_year', $result->fiscalYear ?? now()->year);
+            }
+
+            if (! $onlyEmpty || blank($get('period'))) {
+                $set('period', $result->period);
+            }
+
             $set('document_date', null);
             $set('reference_number', null);
         } else {
             $set('period', null);
-            $set('document_date', $result->type?->usesDocumentDate() ? $result->documentDate : null);
-            $set('reference_number', $result->type?->usesFolio() ? $result->referenceNumber : null);
+
+            if (! ($effectiveType?->usesDocumentDate() ?? false)) {
+                $set('document_date', null);
+            } elseif (! $onlyEmpty || blank($get('document_date'))) {
+                $set('document_date', $result->documentDate);
+            }
+
+            if (! ($effectiveType?->usesFolio() ?? false)) {
+                $set('reference_number', null);
+            } elseif (! $onlyEmpty || blank($get('reference_number'))) {
+                $set('reference_number', $result->referenceNumber);
+                $appliedReferenceNumber = $result->referenceNumber;
+            }
         }
 
-        if ($get->enum('status', TransparencyRecordStatus::class) === null) {
+        self::notifyIfDuplicateReferenceNumber($appliedReferenceNumber, $record);
+
+        if ($result->containsPersonalData) {
+            $suggestion = filled($result->internalReasonSuggestion)
+                ? $result->internalReasonSuggestion
+                : 'Contiene datos personales sensibles; se mantiene en Consulta Interna.';
+
             $set('status', TransparencyRecordStatus::Interno->value);
+            $set('ai_pii_detected', true);
+            $set('ai_pii_reason', $suggestion);
+
+            if (! $onlyEmpty || blank($get('observations'))) {
+                $set('observations', $suggestion);
+            }
+        } else {
+            $set('ai_pii_detected', false);
+            $set('ai_pii_reason', null);
+
+            if ($get->enum('status', TransparencyRecordStatus::class) === null) {
+                $set('status', TransparencyRecordStatus::Interno->value);
+            }
         }
+    }
+
+    private static function notifyIfDuplicateReferenceNumber(?string $referenceNumber, ?TransparencyRecord $record): void
+    {
+        $folio = trim((string) $referenceNumber);
+
+        if ($folio === '') {
+            return;
+        }
+
+        $duplicate = TransparencyRecord::query()
+            ->where('reference_number', $folio)
+            ->when(
+                $record instanceof TransparencyRecord && $record->exists,
+                static fn ($query) => $query->whereKeyNot($record->getKey()),
+            )
+            ->first(['id', 'name']);
+
+        if (! $duplicate) {
+            return;
+        }
+
+        Notification::make()
+            ->warning()
+            ->title('Posible folio duplicado')
+            ->body("El folio \"{$folio}\" ya está registrado en otro documento ({$duplicate->name}). Revisa antes de guardar.")
+            ->send();
     }
 }
