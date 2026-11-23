@@ -7,9 +7,12 @@ use App\Services\LoanPdfGenerationService;
 use App\Support\NumberToWords;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
+
+const DUMMY_SIGNATURE_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 beforeEach(function () {
     Storage::fake('local');
@@ -34,7 +37,7 @@ it('generates all 4 loan documents and saves them privately with versions and ha
         'monthly_rate' => 6.00,
         'nomina_amount' => 12000.00,
         'nomina_fortnights' => 4,
-        'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'signature_data' => DUMMY_SIGNATURE_DATA_URI,
         'signature_type' => 'drawn',
     ]);
 
@@ -120,4 +123,54 @@ it('renders anuencia and solicitud using document.layout with union header and f
     expect($solicitudHtml)->toContain('SINDICATO ÚNICO DE TRABAJADORES')
         ->and($solicitudHtml)->toContain('SOLICITUD DE PRÉSTAMO A LA CAJA DE AHORRO')
         ->and($solicitudHtml)->toContain('c.c.p Interesado');
+});
+
+it('generates pagare without embedded digital signature while preserving loan and debtor data on a single letter page', function () {
+    $user = User::factory()->create([
+        'name' => 'María Elena',
+        'surnames' => 'García López',
+        'address' => 'Av. Tecnológico 123, Macuspana, Tabasco',
+        'phone' => '9361234567',
+    ]);
+
+    $loan = Loan::factory()->for($user)->submitted()->create([
+        'folio' => 'SOL-2026-00999',
+        'fiscal_year' => 2026,
+        'requested_amount' => 12000.00,
+        'approved_amount' => 12000.00,
+        'monthly_rate' => 6.00,
+        'nomina_amount' => 12000.00,
+        'nomina_fortnights' => 6,
+        'reviewed_at' => '2026-05-15 10:00:00',
+        'disbursed_at' => '2026-08-15',
+        'signature_data' => DUMMY_SIGNATURE_DATA_URI,
+        'signature_type' => 'drawn',
+    ]);
+
+    $admin = User::factory()->admin()->create();
+
+    $doc = $this->pdfService->generateSingleDocument($loan, LoanGeneratedDocumentType::Pagare, $admin);
+    $pdfBytes = Storage::disk('local')->get($doc->file_path);
+
+    $parsedPdf = (new Parser)->parseContent($pdfBytes);
+    $pages = $parsedPdf->getPages();
+    $pdfText = preg_replace('/\s+/', ' ', $parsedPdf->getText()) ?? '';
+
+    expect($pages)->toHaveCount(1)
+        ->and($pages[0]->getDetails()['MediaBox'] ?? null)->toBe([0.0, 0.0, 612.0, 792.0])
+        ->and($parsedPdf->getObjectsByType('XObject', 'Image'))->toBeEmpty()
+        ->and($pdfText)->toContain('PAGARÉ')
+        ->and($pdfText)->toContain('No. SOL-2026-00999. Bueno por $ 12,000.00')
+        ->and($pdfText)->toContain('En Macuspana, Tabasco a 15 de mayo de 2026.')
+        ->and($pdfText)->toContain('Debe(mos) y pagare(mos) incondicionalmente por este Pagaré')
+        ->and($pdfText)->toContain('el 15/08/2026')
+        ->and($pdfText)->toContain('(DOCE MIL PESOS 00/100 M.N.)')
+        ->and($pdfText)->toContain('serie numerada de 1 al 6')
+        ->and($pdfText)->toContain('6% mensual')
+        ->and($pdfText)->toContain('Datos del deudor')
+        ->and($pdfText)->toContain('Nombre: María Elena García López')
+        ->and($pdfText)->toContain('Dirección: Av. Tecnológico 123, Macuspana, Tabasco')
+        ->and($pdfText)->toContain('Teléfono: 9361234567')
+        ->and($pdfText)->toContain('Acepto(amos)')
+        ->and($pdfText)->toContain('Firma(s)');
 });
