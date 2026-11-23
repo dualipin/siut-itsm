@@ -9,8 +9,13 @@ use App\Filament\Resources\TransparencyRecords\Pages\ViewTransparencyRecord;
 use App\Filament\Resources\TransparencyRecords\TransparencyRecordResource;
 use App\Models\TransparencyRecord;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -19,7 +24,34 @@ use Smalot\PdfParser\Parser;
 
 beforeEach(function () {
     Storage::fake('public');
+    Cache::flush();
+    Config::set('services.document_ai.enabled', false);
     Filament::setCurrentPanel(Filament::getPanel('portal'));
+});
+
+test('create and edit forms render documentos adjuntos before informacion del registro and visibilidad', function () {
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $record = TransparencyRecord::factory()->withDocuments(1)->create([
+        'created_by' => $admin->id,
+    ]);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->assertSuccessful()
+        ->assertSeeInOrder([
+            'Documentos Adjuntos',
+            'Información del Registro',
+            'Visibilidad en el Portal',
+        ]);
+
+    Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()])
+        ->assertSuccessful()
+        ->assertSeeInOrder([
+            'Documentos Adjuntos',
+            'Información del Registro',
+            'Visibilidad en el Portal',
+        ]);
 });
 
 test('create form shows only contextual fields matching selected category and visibility', function () {
@@ -359,17 +391,59 @@ test('files over 15 MB and formats outside category are rejected with Spanish me
         ->call('create')
         ->assertHasFormErrors(['documents']);
 
-    // Spreadsheet (.xlsx) rejected when type is not selected yet (defaults to base document MIMEs)
+    // Spreadsheets (.xlsx, .xls, .csv) are accepted when type is not selected yet (only type fails as required)
     $xlsxWithoutType = UploadedFile::fake()->create(
         'sin-tipo.xlsx',
         120,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    Livewire::test(CreateTransparencyRecord::class)
+    $xlsWithoutType = UploadedFile::fake()->create(
+        'sin-tipo.xls',
+        120,
+        'application/vnd.ms-excel',
+    );
+    $csvWithoutType = UploadedFile::fake()->createWithContent('sin-tipo.csv', "concepto,monto\ningresos,1000\n");
+
+    $preCategoryComponent = Livewire::test(CreateTransparencyRecord::class)
         ->fillForm([
             'name' => 'Registro sin categoría',
             'status' => TransparencyRecordStatus::Interno->value,
-            'documents' => [$xlsxWithoutType],
+            'documents' => [$xlsxWithoutType, $xlsWithoutType, $csvWithoutType],
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['type' => 'required'])
+        ->assertHasNoFormErrors(['documents']);
+
+    // Selecting a non-Financiero category afterwards rejects the incompatible spreadsheets
+    $preCategoryComponent
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'document_date' => '2025-05-01',
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['documents'])
+        ->assertSee('El formato del archivo no está permitido para la categoría seleccionada.');
+
+    // Switching to Financiero accepts those same pre-uploaded spreadsheets and persists them
+    $preCategoryComponent
+        ->fillForm([
+            'type' => TransparencyRecordType::Financiero->value,
+            'fiscal_year' => 2025,
+            'period' => 'Anual',
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(TransparencyRecord::where('name', 'Registro sin categoría')->firstOrFail()->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION))
+        ->toHaveCount(3);
+
+    // Arbitrary .txt is still rejected when type is not selected yet
+    $txtWithoutType = UploadedFile::fake()->createWithContent('notas-sin-tipo.txt', 'texto plano');
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'name' => 'Registro sin categoría con TXT',
+            'status' => TransparencyRecordStatus::Interno->value,
+            'documents' => [$txtWithoutType],
         ])
         ->call('create')
         ->assertHasFormErrors(['type', 'documents']);
@@ -807,4 +881,1420 @@ test('multi-page scanned PDF 1.4 attaches across all categories, persists in med
         ])
         ->call('create')
         ->assertHasFormErrors(['documents']);
+});
+
+function buildFormDigitalTextPdf(string $text): string
+{
+    $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+    $stream = "BT\n/F1 12 Tf\n72 720 Td\n({$escaped}) Tj\nET\n";
+
+    $pdf = "%PDF-1.4\n";
+    $offsets = [];
+
+    $objects = [
+        1 => '<< /Type /Catalog /Pages 2 0 R >>',
+        2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        5 => '<< /Length '.strlen($stream)." >>\nstream\n{$stream}endstream",
+    ];
+
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 ".(count($objects) + 1)."\n";
+    $pdf .= "0000000000 65535 f \n";
+
+    foreach ($objects as $id => $body) {
+        $pdf .= str_pad((string) $offsets[$id], 10, '0', STR_PAD_LEFT)." 00000 n \n";
+    }
+
+    $pdf .= "trailer\n<< /Size ".(count($objects) + 1)." /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF\n";
+
+    return $pdf;
+}
+
+function enableTransparencyTestAi(): void
+{
+    Cache::flush();
+    Config::set('services.document_ai', [
+        'enabled' => true,
+        'base_url' => 'https://ai.test/v1beta/openai/',
+        'api_key' => 'test-key',
+        'model' => 'gemini-test',
+        'timeout' => 30,
+        'sync_timeout' => 15,
+        'max_tokens' => 1024,
+        'max_dimension' => 1000,
+        'jpeg_quality' => 70,
+        'json_mode' => true,
+        'headers' => [],
+    ]);
+}
+
+test('autofill_with_ai action visibility respects AI config, attachment presence, active directiva authorization, and never appears on view', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
+    $inactiveAdmin = User::factory()->admin()->create(['is_active' => false]);
+    $agremiado = User::factory()->create(['role' => UserRole::Agremiado, 'is_active' => true]);
+
+    $recordWithDoc = TransparencyRecord::factory()->withDocuments(1)->create(['created_by' => $admin->id]);
+    $pdf = UploadedFile::fake()->createWithContent('oficio.pdf', buildFormDigitalTextPdf(str_repeat('Oficio sindical de prueba. ', 4)));
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio sindical de prueba',
+                        'summary' => 'Documento sindical de prueba.',
+                        'document_date' => '2025-01-10',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => null,
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.9,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    foreach ([$admin, $lider] as $directivaUser) {
+        $this->actingAs($directivaUser);
+
+        Livewire::test(CreateTransparencyRecord::class)
+            ->assertDontSee('Autocompletar con IA')
+            ->assertActionDoesNotExist($aiAction)
+            ->fillForm(['documents' => [$pdf]])
+            ->assertActionVisible($aiAction)
+            ->assertSee('Autocompletar con IA');
+
+        Livewire::test(EditTransparencyRecord::class, ['record' => $recordWithDoc->getKey()])
+            ->assertActionVisible($aiAction)
+            ->assertSee('Autocompletar con IA');
+    }
+
+    Config::set('services.document_ai.enabled', false);
+    $this->actingAs($admin);
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$pdf]])
+        ->assertDontSee('Autocompletar con IA')
+        ->assertActionDoesNotExist($aiAction);
+
+    Config::set('services.document_ai.enabled', true);
+    Livewire::test(ViewTransparencyRecord::class, ['record' => $recordWithDoc->getKey()])
+        ->assertDontSee('Autocompletar con IA');
+
+    foreach ([$inactiveAdmin, $agremiado] as $unauthorizedUser) {
+        $this->actingAs($unauthorizedUser);
+        $this->get(TransparencyRecordResource::getUrl('create'))->assertForbidden();
+        $this->get(TransparencyRecordResource::getUrl('edit', ['record' => $recordWithDoc]))->assertForbidden();
+    }
+});
+
+test('autofill_with_ai on create analyzes digital PDF, fills contextual fields, keeps consulta interna, and persists', function () {
+    enableTransparencyTestAi();
+
+    $lider = User::factory()->create(['role' => UserRole::Lider, 'is_active' => true]);
+    $this->actingAs($lider);
+
+    $digitalPdf = UploadedFile::fake()->createWithContent(
+        'oficio-comision.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/101/2025 emitido por la Secretaria General al Director General el 15 de marzo de 2025. ', 2)),
+    );
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+                        'summary' => 'Oficio enviado por la Secretaría General a la Dirección General sobre comisión sindical.',
+                        'document_date' => '2025-03-15',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/101/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.96,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'documents' => [$digitalPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertNotified()
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+            'summary' => 'Oficio enviado por la Secretaría General a la Dirección General sobre comisión sindical.',
+            'document_date' => '2025-03-15',
+            'reference_number' => 'SIUT/101/2025',
+            'period' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+
+        return count($parts) === 1
+            && ($parts[0]['type'] ?? null) === 'text'
+            && str_contains((string) ($parts[0]['text'] ?? ''), 'SIUT/101/2025');
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Oficios->value,
+        'name' => 'Oficio de comisión sindical dirigido a Dirección General',
+        'fiscal_year' => 2025,
+        'reference_number' => 'SIUT/101/2025',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on create optimizes image for Financiero, clears non-financial fields, and handles AI failure without losing uploads', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $largeImage = UploadedFile::fake()->image('balance-q2.png', 1800, 1200);
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Upstream error']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Estado financiero del segundo trimestre 2024',
+                        'summary' => 'Balance general de ingresos y egresos sindicales del segundo trimestre.',
+                        'document_date' => '2024-06-30',
+                        'fiscal_year' => 2024,
+                        'period' => '2do Trimestre',
+                        'reference_number' => 'IGNORAR-FOLIO',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.93,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Oficios->value,
+            'name' => 'Oficio previo capturado',
+            'summary' => 'Resumen previo capturado.',
+            'document_date' => '2024-06-30',
+            'reference_number' => 'TEMP-FOLIO-01',
+            'documents' => [$largeImage],
+        ])
+        ->callAction($aiAction)
+        ->assertNotified('No se pudo autocompletar con IA');
+
+    expect($component->get('data.documents'))->not->toBeEmpty();
+
+    $component
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'name' => 'Estado financiero del segundo trimestre 2024',
+            'fiscal_year' => 2024,
+            'period' => '2do Trimestre',
+            'document_date' => null,
+            'reference_number' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $dataUrl = (string) ($parts[1]['image_url']['url'] ?? '');
+
+        if (! str_starts_with($dataUrl, 'data:image/jpeg;base64,')) {
+            return false;
+        }
+
+        $decoded = base64_decode(substr($dataUrl, strlen('data:image/jpeg;base64,')), true);
+        if (! is_string($decoded)) {
+            return false;
+        }
+
+        [$width, $height] = getimagesizefromstring($decoded);
+
+        return max($width, $height) === 1000;
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Estado financiero del segundo trimestre 2024',
+        'fiscal_year' => 2024,
+        'period' => '2do Trimestre',
+        'document_date' => null,
+        'reference_number' => null,
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on edit analyzes saved media UUID, clears out-of-context fields, uses cache on repeat, and saves', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $record = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Financiero,
+        'fiscal_year' => 2024,
+        'period' => 'Anual',
+        'document_date' => null,
+        'reference_number' => null,
+        'created_by' => $admin->id,
+    ]);
+
+    $pdfContent = buildFormDigitalTextPdf(str_repeat('Acta de asamblea extraordinaria del SIUT-ITSM folio ACTA-02-2025 del 10 de febrero de 2025. ', 2));
+    $record->addMedia(UploadedFile::fake()->createWithContent('acta-asamblea.pdf', $pdfContent))
+        ->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'actas',
+                        'name' => 'Acta de asamblea extraordinaria de febrero 2025',
+                        'summary' => 'Minuta de acuerdos tomados en asamblea extraordinaria sindical.',
+                        'document_date' => '2025-02-10',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'ACTA-02-2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Actas,
+            'name' => 'Acta de asamblea extraordinaria de febrero 2025',
+            'document_date' => '2025-02-10',
+            'reference_number' => 'ACTA-02-2025',
+            'period' => null,
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $component->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA');
+
+    Http::assertSentCount(1);
+
+    $component->call('save')->assertHasNoFormErrors();
+
+    $record->refresh();
+    expect($record->type)->toBe(TransparencyRecordType::Actas)
+        ->and($record->name)->toBe('Acta de asamblea extraordinaria de febrero 2025')
+        ->and($record->fiscal_year)->toBe(2025)
+        ->and($record->period)->toBeNull()
+        ->and($record->reference_number)->toBe('ACTA-02-2025')
+        ->and($record->status)->toBe(TransparencyRecordStatus::Interno);
+});
+
+test('autofill_with_ai keeps consulta interna, shows visual PII alert, and suggests observations on create and edit', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $piiPdf = UploadedFile::fake()->createWithContent(
+        'expediente-personal.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio con CURP ABCD900101HDFR00 y domicilio particular del agremiado. ', 2)),
+    );
+    $editPiiPdf = UploadedFile::fake()->createWithContent(
+        'expediente-edicion.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio medico con RFC ABCD900101XYZ y numero telefonico particular. ', 2)),
+    );
+    $cleanPdf = UploadedFile::fake()->createWithContent(
+        'oficio-general.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio general de convocatoria a reunion informativa sindical sin datos privados. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio de gestión de prestación sindical',
+                        'summary' => 'Solicitud administrativa presentada por agremiado ante el comité.',
+                        'document_date' => '2025-04-12',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT-PII-001',
+                        'contains_personal_data' => true,
+                        'internal_reason_suggestion' => 'Contiene CURP y domicilio particular del agremiado.',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio médico de incapacidad sindical',
+                        'summary' => 'Gestión médica del agremiado ante el instituto.',
+                        'document_date' => '2025-04-14',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT-PII-002',
+                        'contains_personal_data' => true,
+                        'internal_reason_suggestion' => 'Contiene RFC y datos médicos confidenciales.',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Convocatoria a reunión informativa',
+                        'summary' => 'Aviso general de reunión informativa para personal sindicalizado.',
+                        'document_date' => '2025-04-15',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT-CLEAN-002',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.92,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Even if status was switched to Publico before autofill, PII forces Consulta Interna, shows alert, and fills observations
+    $createComponent = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'status' => TransparencyRecordStatus::Publico->value,
+            'documents' => [$piiPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'status' => TransparencyRecordStatus::Interno,
+            'observations' => 'Contiene CURP y domicilio particular del agremiado.',
+        ])
+        ->assertSee('Posibles datos personales sensibles detectados')
+        ->assertSee('Contiene CURP y domicilio particular del agremiado.');
+
+    $createComponent->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'reference_number' => 'SIUT-PII-001',
+        'status' => TransparencyRecordStatus::Interno->value,
+        'observations' => 'Contiene CURP y domicilio particular del agremiado.',
+    ]);
+
+    // On Edit of a Publico record, PII forces Interno and shows alert; re-running on clean doc hides alert and keeps Interno
+    $publicRecord = TransparencyRecord::factory()->publico()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'document_date' => '2025-04-01',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'observations' => null,
+        'created_by' => $admin->id,
+    ]);
+    $publicRecord->addMedia($editPiiPdf)->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    $editComponent = Livewire::test(EditTransparencyRecord::class, ['record' => $publicRecord->getKey()])
+        ->assertDontSee('Posibles datos personales sensibles detectados')
+        ->callAction($aiAction)
+        ->assertFormSet([
+            'status' => TransparencyRecordStatus::Interno,
+            'observations' => 'Contiene RFC y datos médicos confidenciales.',
+        ])
+        ->assertSee('Posibles datos personales sensibles detectados');
+
+    $editComponent->call('save')->assertHasNoFormErrors();
+
+    expect($publicRecord->fresh()->status)->toBe(TransparencyRecordStatus::Interno)
+        ->and($publicRecord->fresh()->observations)->toBe('Contiene RFC y datos médicos confidenciales.');
+
+    // Re-running autofill with a clean document hides the previous PII alert and never switches to Publico automatically
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'documents' => [$piiPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertSee('Posibles datos personales sensibles detectados')
+        ->fillForm([
+            'documents' => [$cleanPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertFormSet([
+            'status' => TransparencyRecordStatus::Interno,
+        ])
+        ->assertDontSee('Posibles datos personales sensibles detectados');
+});
+
+test('autofill_with_ai immediately warns when extracted reference_number duplicates another record on create and edit', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $otherRecord = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'name' => 'Oficio Original Existente',
+        'document_date' => '2025-01-10',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'reference_number' => 'SIUT/DUP/2025',
+        'created_by' => $admin->id,
+    ]);
+
+    $ownRecord = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Actas,
+        'name' => 'Acta Propia Existente',
+        'document_date' => '2025-02-10',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'reference_number' => 'SIUT/OWN/2025',
+        'created_by' => $admin->id,
+    ]);
+
+    $dupPdf = UploadedFile::fake()->createWithContent(
+        'oficio-dup.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio con folio SIUT/DUP/2025 para deteccion inmediata de duplicados. ', 2)),
+    );
+    $ownPdf = UploadedFile::fake()->createWithContent(
+        'acta-own.pdf',
+        buildFormDigitalTextPdf(str_repeat('Acta propia con folio SIUT/OWN/2025 perteneciente al registro actual. ', 2)),
+    );
+    $finPdf = UploadedFile::fake()->createWithContent(
+        'financiero-sin-folio.pdf',
+        buildFormDigitalTextPdf(str_repeat('Balance financiero anual 2025 con referencia SIUT/DUP/2025 en texto. ', 2)),
+    );
+
+    $ownRecord->addMedia($ownPdf)->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio con folio duplicado',
+                        'summary' => 'Documento con folio ya existente.',
+                        'document_date' => '2025-03-01',
+                        'reference_number' => 'SIUT/DUP/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'actas',
+                        'name' => 'Acta Propia Existente Actualizada',
+                        'summary' => 'Acta con su propio folio sin duplicidad.',
+                        'document_date' => '2025-02-10',
+                        'reference_number' => 'SIUT/OWN/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Balance financiero anual 2025',
+                        'summary' => 'Estado financiero sin folio aplicable.',
+                        'fiscal_year' => 2025,
+                        'period' => 'Anual',
+                        'reference_number' => 'SIUT/DUP/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.91,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // On Create: warns immediately when extracted folio already exists in DB
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$dupPdf]])
+        ->callAction($aiAction)
+        ->assertNotified('Posible folio duplicado')
+        ->assertFormSet([
+            'reference_number' => $otherRecord->reference_number,
+        ]);
+
+    // On Edit: does NOT warn when extracted folio belongs to the current record itself
+    Livewire::test(EditTransparencyRecord::class, ['record' => $ownRecord->getKey()])
+        ->callAction($aiAction)
+        ->assertNotNotified('Posible folio duplicado')
+        ->assertFormSet([
+            'reference_number' => 'SIUT/OWN/2025',
+        ]);
+
+    // On Edit: warns immediately when extracted folio belongs to another record
+    Livewire::test(EditTransparencyRecord::class, ['record' => $ownRecord->getKey()])
+        ->set('data.documents', [])
+        ->fillForm(['documents' => [$dupPdf]])
+        ->callAction($aiAction)
+        ->assertNotified('Posible folio duplicado');
+
+    // Non-folio category (Financiero) never triggers duplicate folio warning
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$finPdf]])
+        ->callAction($aiAction)
+        ->assertNotNotified('Posible folio duplicado');
+});
+
+test('autofill_with_ai uses fallback PII observation when suggestion is blank and preserves user observations when clean or empty-only', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $piiNoReasonPdf = UploadedFile::fake()->createWithContent(
+        'pii-sin-sugerencia.pdf',
+        buildFormDigitalTextPdf(str_repeat('Documento con salario y firma particular de agremiado sin nota adicional. ', 2)),
+    );
+    $cleanPdf = UploadedFile::fake()->createWithContent(
+        'limpio-con-nota.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio sindical informativo sin datos personales para prueba de observaciones. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Recibo sindical con datos salariales',
+                        'summary' => 'Documento interno con información salarial.',
+                        'document_date' => '2025-05-02',
+                        'reference_number' => 'SIUT-FALLBACK-01',
+                        'contains_personal_data' => true,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.90,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Circular informativa general',
+                        'summary' => 'Circular general de difusión sindical.',
+                        'document_date' => '2025-05-03',
+                        'reference_number' => 'SIUT-CLEAN-OBS-02',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.93,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Blank internal_reason_suggestion still populates a clear fallback observation and shows PII alert
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'documents' => [$piiNoReasonPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertFormSet([
+            'status' => TransparencyRecordStatus::Interno,
+            'observations' => 'Contiene datos personales sensibles; se mantiene en Consulta Interna.',
+        ])
+        ->assertSee('Posibles datos personales sensibles detectados');
+
+    // Clean document does not clear user-typed observations and keeps status Interno
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'observations' => 'Motivo capturado manualmente por la Directiva.',
+            'documents' => [$cleanPdf],
+        ])
+        ->callAction($aiAction)
+        ->assertFormSet([
+            'status' => TransparencyRecordStatus::Interno,
+            'observations' => 'Motivo capturado manualmente por la Directiva.',
+        ])
+        ->assertDontSee('Posibles datos personales sensibles detectados');
+});
+
+function buildFormSyntheticXlsx(): string
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'form_xlsx_');
+    $zip = new ZipArchive;
+    $zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $zip->addFromString(
+        'xl/workbook.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        .'<sheets><sheet name="Balanza Q3" sheetId="1" r:id="rId1"/></sheets>'
+        .'</workbook>',
+    );
+    $zip->addFromString(
+        'xl/_rels/workbook.xml.rels',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        .'</Relationships>',
+    );
+    $zip->addFromString(
+        'xl/sharedStrings.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">'
+        .'<si><t>Balanza financiera tercer trimestre 2025</t></si>'
+        .'<si><t>Ingresos sindicales netos</t></si>'
+        .'</sst>',
+    );
+    $zip->addFromString(
+        'xl/worksheets/sheet1.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        .'<sheetData>'
+        .'<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Monto</t></is></c></row>'
+        .'<row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>98500.25</v></c></row>'
+        .'</sheetData>'
+        .'</worksheet>',
+    );
+    $zip->close();
+
+    $bytes = (string) file_get_contents($tmp);
+    unlink($tmp);
+
+    return $bytes;
+}
+
+test('autofill_with_ai on create extracts page 1 JPEG from multipage DCTDecode PDF and saves', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $scannedPdf = UploadedFile::fake()->createWithContent('escaneo-3p.pdf', buildClientStyleMultipagePdf(3));
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio escaneado multipagina de gestion sindical',
+                        'summary' => 'Oficio digitalizado en tres paginas mediante escaner.',
+                        'document_date' => '2025-05-18',
+                        'reference_number' => 'SIUT-MP-03',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.92,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$scannedPdf]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio escaneado multipagina de gestion sindical',
+            'document_date' => '2025-05-18',
+            'reference_number' => 'SIUT-MP-03',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+        $dataUrl = (string) ($parts[1]['image_url']['url'] ?? '');
+
+        return count($parts) === 2
+            && ($parts[1]['type'] ?? null) === 'image_url'
+            && str_starts_with($dataUrl, 'data:image/jpeg;base64,');
+    });
+
+    $component->call('create')->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Oficios->value,
+        'name' => 'Oficio escaneado multipagina de gestion sindical',
+        'reference_number' => 'SIUT-MP-03',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ]);
+});
+
+test('autofill_with_ai on create extracts text-only from CSV and synthetic XLSX for Financiero and saves', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $csvFile = UploadedFile::fake()->createWithContent(
+        'balanza-q1.csv',
+        "Concepto,Trimestre,Monto\nCuotas sindicales,1er Trimestre,54000.00\n",
+    );
+    $xlsxFile = UploadedFile::fake()->createWithContent('balanza-q3.xlsx', buildFormSyntheticXlsx());
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Balanza de cuotas del primer trimestre 2025',
+                        'summary' => 'Detalle de cuotas sindicales en formato CSV.',
+                        'fiscal_year' => 2025,
+                        'period' => '1er Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Balanza financiera tercer trimestre 2025',
+                        'summary' => 'Libro contable del tercer trimestre en formato XLSX.',
+                        'fiscal_year' => 2025,
+                        'period' => '3er Trimestre',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $csvComponent = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$csvFile]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'fiscal_year' => 2025,
+            'period' => '1er Trimestre',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $csvComponent->call('create')->assertHasNoFormErrors();
+
+    $xlsxComponent = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$xlsxFile]])
+        ->callAction($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'name' => 'Balanza financiera tercer trimestre 2025',
+            'fiscal_year' => 2025,
+            'period' => '3er Trimestre',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    $xlsxComponent->call('create')->assertHasNoFormErrors();
+
+    Http::assertSentCount(2);
+    Http::assertSent(function (Request $request): bool {
+        $parts = $request['messages'][1]['content'] ?? [];
+
+        return count($parts) === 1 && ($parts[0]['type'] ?? null) === 'text';
+    });
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'name' => 'Balanza de cuotas del primer trimestre 2025',
+        'period' => '1er Trimestre',
+    ]);
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'name' => 'Balanza financiera tercer trimestre 2025',
+        'period' => '3er Trimestre',
+    ]);
+});
+
+test('autofill_with_ai on create degrades cleanly on binary .xls without losing attachment and allows manual save', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $xlsBinary = UploadedFile::fake()->createWithContent(
+        'historico-2020.xls',
+        "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".str_repeat("\x00", 512),
+    );
+
+    Http::fake();
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm(['documents' => [$xlsBinary]])
+        ->callAction($aiAction)
+        ->assertNotified('No se pudo autocompletar con IA');
+
+    Http::assertNothingSent();
+    expect($component->get('data.documents'))->not->toBeEmpty();
+
+    $component->fillForm([
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Reporte financiero historico 2020',
+        'fiscal_year' => 2020,
+        'period' => 'Anual',
+        'status' => TransparencyRecordStatus::Interno->value,
+    ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $this->assertDatabaseHas(TransparencyRecord::class, [
+        'type' => TransparencyRecordType::Financiero->value,
+        'name' => 'Reporte financiero historico 2020',
+        'fiscal_year' => 2020,
+        'period' => 'Anual',
+    ]);
+});
+
+test('create auto-triggers AI once on first attachment, ignores additional attachments, never auto-triggers on edit, and resets on createAnother', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $firstPdf = UploadedFile::fake()->createWithContent(
+        'oficio-inicial.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/210/2025 emitido para solicitud de mantenimiento general. ', 2)),
+    );
+    $secondPdf = UploadedFile::fake()->createWithContent(
+        'anexo-2.pdf',
+        buildFormDigitalTextPdf(str_repeat('Anexo secundario que no debe disparar IA automáticamente. ', 2)),
+    );
+    $thirdPdf = UploadedFile::fake()->createWithContent(
+        'anexo-3.pdf',
+        buildFormDigitalTextPdf(str_repeat('Tercer anexo informativo sin disparo automático. ', 2)),
+    );
+    $nextRecordPdf = UploadedFile::fake()->createWithContent(
+        'balance-siguiente.pdf',
+        buildFormDigitalTextPdf(str_repeat('Estado financiero anual 2024 del sindicato SIUT-ITSM. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio de solicitud de mantenimiento general',
+                        'summary' => 'Oficio inicial enviado para solicitar mantenimiento general en instalaciones.',
+                        'document_date' => '2025-04-02',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/210/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'financiero',
+                        'name' => 'Estado financiero anual 2024',
+                        'summary' => 'Resumen financiero anual del ejercicio fiscal 2024.',
+                        'document_date' => null,
+                        'fiscal_year' => 2024,
+                        'period' => 'Anual',
+                        'reference_number' => null,
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.92,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    // 1. First upload on Create auto-triggers AI once and fills contextual fields
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->set('data.documents', [$firstPdf])
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio de solicitud de mantenimiento general',
+            'summary' => 'Oficio inicial enviado para solicitar mantenimiento general en instalaciones.',
+            'document_date' => '2025-04-02',
+            'reference_number' => 'SIUT/210/2025',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSentCount(1);
+
+    // 2. Adding 2nd and 3rd attachments must NOT re-trigger AI automatically
+    $component
+        ->set('data.documents', [$secondPdf])
+        ->set('data.documents', [$thirdPdf]);
+
+    expect($component->get('data.documents'))->toHaveCount(3);
+    Http::assertSentCount(1);
+
+    // 3. createAnother resets the auto-trigger flag for the next record session
+    $component->call('createAnother')->assertHasNoFormErrors();
+
+    $component
+        ->set('data.documents', [$nextRecordPdf])
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'name' => 'Estado financiero anual 2024',
+            'fiscal_year' => 2024,
+            'period' => 'Anual',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    Http::assertSentCount(2);
+
+    // 4. Edit page never auto-triggers when adding a new attachment
+    $existing = TransparencyRecord::factory()->withDocuments(1)->create([
+        'created_by' => $admin->id,
+    ]);
+
+    $editExtraPdf = UploadedFile::fake()->createWithContent(
+        'extra-edit.pdf',
+        buildFormDigitalTextPdf(str_repeat('Documento extra agregado en edición. ', 3)),
+    );
+
+    Livewire::test(EditTransparencyRecord::class, ['record' => $existing->getKey()])
+        ->set('data.documents.new_upload', $editExtraPdf);
+
+    Http::assertSentCount(2);
+});
+
+test('create auto-trigger preserves user-entered fields and only fills empty metadata fields', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $pdf = UploadedFile::fake()->createWithContent(
+        'oficio-parcial.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/305/2025 dirigido a Dirección Académica el 18 de abril de 2025. ', 2)),
+    );
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Nombre sugerido por IA que no debe pisar el del usuario',
+                        'summary' => 'Resumen completado automáticamente por IA.',
+                        'document_date' => '2025-04-18',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/305/2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.91,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'name' => 'Oficio capturado manualmente por usuario',
+            'documents' => [$pdf],
+        ])
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Oficios,
+            'name' => 'Oficio capturado manualmente por usuario',
+            'summary' => 'Resumen completado automáticamente por IA.',
+            'document_date' => '2025-04-18',
+            'reference_number' => 'SIUT/305/2025',
+            'status' => TransparencyRecordStatus::Interno,
+        ]);
+
+    // When user pre-selected Financiero and fiscal_year, auto-trigger keeps Financiero and user fiscal_year even if AI says Oficios
+    $financieroPdf = UploadedFile::fake()->createWithContent(
+        'reporte-pre-categorizado.pdf',
+        buildFormDigitalTextPdf(str_repeat('Reporte contable interno del ejercicio 2023. ', 3)),
+    );
+
+    Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'type' => TransparencyRecordType::Financiero->value,
+            'fiscal_year' => 2023,
+            'documents' => [$financieroPdf],
+        ])
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Financiero,
+            'fiscal_year' => 2023,
+            'name' => 'Nombre sugerido por IA que no debe pisar el del usuario',
+            'summary' => 'Resumen completado automáticamente por IA.',
+            'document_date' => null,
+            'reference_number' => null,
+        ]);
+});
+
+test('autofill_with_ai executes directly with 1 file and empty metadata, and requests confirmation before overwriting filled metadata', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $pdf = UploadedFile::fake()->createWithContent(
+        'acta-directa.pdf',
+        buildFormDigitalTextPdf(str_repeat('Acta ordinaria de asamblea sindical del 12 de mayo de 2025. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Temporary outage']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'actas',
+                        'name' => 'Acta ordinaria de mayo 2025',
+                        'summary' => 'Minuta de la asamblea ordinaria celebrada en mayo de 2025.',
+                        'document_date' => '2025-05-12',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'ACTA-05-2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.95,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Initial auto-trigger fails with 500, leaving metadata empty
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->set('data.documents', [$pdf])
+        ->assertNotified('No se pudo autocompletar con IA');
+
+    // 1 file + empty metadata => mounting autofill_with_ai executes directly without modal
+    $component
+        ->mountAction($aiAction)
+        ->assertActionNotMounted($aiAction)
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Actas,
+            'name' => 'Acta ordinaria de mayo 2025',
+            'reference_number' => 'ACTA-05-2025',
+        ]);
+
+    Http::assertSentCount(2);
+
+    // User edits name; now metadata is filled => mounting autofill_with_ai opens confirmation modal
+    $component
+        ->fillForm([
+            'name' => 'Nombre editado por el usuario',
+        ])
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->assertMountedActionModalSee('¿Sobrescribir metadatos actuales con IA?');
+
+    // Cancelling confirmation leaves user edits untouched and sends no extra HTTP requests
+    $component
+        ->unmountAction()
+        ->assertActionNotMounted($aiAction)
+        ->assertFormSet([
+            'name' => 'Nombre editado por el usuario',
+        ]);
+
+    Http::assertSentCount(2);
+
+    // Confirming overwrites with AI result (served from SHA-256 cache without extra HTTP call)
+    $component
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->callMountedAction()
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'name' => 'Acta ordinaria de mayo 2025',
+        ]);
+});
+
+test('autofill_with_ai shows file selector preselecting first file when 2 or more documents exist on create and edit', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $firstPdf = UploadedFile::fake()->createWithContent(
+        'primer-documento.pdf',
+        buildFormDigitalTextPdf(str_repeat('CONTENIDO_ARCHIVO_UNO oficio inicial SIUT/001/2025. ', 2)),
+    );
+    $secondPdf = UploadedFile::fake()->createWithContent(
+        'segundo-documento.pdf',
+        buildFormDigitalTextPdf(str_repeat('CONTENIDO_ARCHIVO_DOS convenio colectivo legal SIUT/CONV-2025. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Initial failure']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'legal',
+                        'name' => 'Convenio colectivo extraído del segundo archivo',
+                        'summary' => 'Convenio analizado explícitamente al seleccionar el segundo archivo.',
+                        'document_date' => '2025-06-01',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/CONV-2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Create with 2 files (metadata still empty after failed auto-trigger on 1st file)
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->set('data.documents', [$firstPdf])
+        ->assertNotified('No se pudo autocompletar con IA')
+        ->set('data.documents', [$secondPdf]);
+
+    $component
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->assertActionDataSet(['selected_document' => 'doc:0'])
+        ->assertMountedActionModalSee('1. primer-documento.pdf')
+        ->assertMountedActionModalSee('2. segundo-documento.pdf')
+        ->assertMountedActionModalDontSee('¿Sobrescribir metadatos actuales con IA?')
+        ->setActionData(['selected_document' => 'doc:1'])
+        ->callMountedAction()
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Legal,
+            'name' => 'Convenio colectivo extraído del segundo archivo',
+            'reference_number' => 'SIUT/CONV-2025',
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $text = (string) ($request['messages'][1]['content'][0]['text'] ?? '');
+
+        return str_contains($text, 'CONTENIDO_ARCHIVO_DOS')
+            && ! str_contains($text, 'CONTENIDO_ARCHIVO_UNO');
+    });
+});
+
+test('autofill_with_ai shows file selector and overwrite warning on edit with 2 or more saved documents', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    Http::fake([
+        'ai.test/*' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'actas',
+                        'name' => 'Acta extraída del segundo anexo guardado',
+                        'summary' => 'Acta obtenida del segundo documento guardado en el registro.',
+                        'document_date' => '2025-07-15',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'ACTA-07-2025',
+                        'contains_personal_data' => false,
+                        'internal_reason_suggestion' => '',
+                        'confidence' => 0.96,
+                    ]),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    $record = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'name' => 'Nombre previo guardado en BD',
+        'document_date' => '2025-01-05',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'created_by' => $admin->id,
+    ]);
+
+    $mediaOne = $record->addMedia(UploadedFile::fake()->createWithContent(
+        'guardado-uno.pdf',
+        buildFormDigitalTextPdf(str_repeat('CONTENIDO_GUARDADO_UNO no debe enviarse si eligen el dos. ', 2)),
+    ))->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    $mediaTwo = $record->addMedia(UploadedFile::fake()->createWithContent(
+        'guardado-dos.pdf',
+        buildFormDigitalTextPdf(str_repeat('CONTENIDO_GUARDADO_DOS acta extraordinaria ACTA-07-2025. ', 2)),
+    ))->toMediaCollection(TransparencyRecord::DOCUMENTS_COLLECTION);
+
+    $editComponent = Livewire::test(EditTransparencyRecord::class, ['record' => $record->getKey()]);
+
+    $editComponent
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->assertActionDataSet(['selected_document' => 'doc:0'])
+        ->assertMountedActionModalSee('1. guardado-uno.pdf')
+        ->assertMountedActionModalSee('2. guardado-dos.pdf')
+        ->assertMountedActionModalSee('sobrescritos');
+
+    $editComponent
+        ->setActionData(['selected_document' => 'doc:1'])
+        ->callMountedAction()
+        ->assertNotified('Metadatos propuestos con IA')
+        ->assertFormSet([
+            'type' => TransparencyRecordType::Actas,
+            'name' => 'Acta extraída del segundo anexo guardado',
+            'reference_number' => 'ACTA-07-2025',
+        ]);
+
+    Http::assertSent(function (Request $request): bool {
+        $text = (string) ($request['messages'][1]['content'][0]['text'] ?? '');
+
+        return str_contains($text, 'CONTENIDO_GUARDADO_DOS')
+            && ! str_contains($text, 'CONTENIDO_GUARDADO_UNO');
+    });
+});
+
+test('autofill_with_ai requests overwrite confirmation when only observations is filled and warns when folio matches a soft-deleted record', function () {
+    enableTransparencyTestAi();
+
+    $admin = User::factory()->admin()->create(['is_active' => true]);
+    $this->actingAs($admin);
+
+    $trashedRecord = TransparencyRecord::factory()->interno()->create([
+        'type' => TransparencyRecordType::Oficios,
+        'name' => 'Oficio Eliminado En Papelera',
+        'document_date' => '2025-01-12',
+        'fiscal_year' => 2025,
+        'period' => null,
+        'reference_number' => 'SIUT/TRASH/2025',
+        'created_by' => $admin->id,
+    ]);
+    $trashedRecord->delete();
+
+    $pdf = UploadedFile::fake()->createWithContent(
+        'oficio-observaciones-y-papelera.pdf',
+        buildFormDigitalTextPdf(str_repeat('Oficio SIUT/TRASH/2025 con datos personales sensibles para prueba de confirmación. ', 2)),
+    );
+
+    Http::fakeSequence('ai.test/*')
+        ->push(['error' => ['message' => 'Initial auto-trigger outage']], 500)
+        ->push([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'type' => 'oficios',
+                        'name' => 'Oficio con folio en papelera',
+                        'summary' => 'Oficio de prueba para validar confirmación de observaciones y folio eliminado.',
+                        'document_date' => '2025-04-20',
+                        'fiscal_year' => null,
+                        'period' => null,
+                        'reference_number' => 'SIUT/TRASH/2025',
+                        'contains_personal_data' => true,
+                        'internal_reason_suggestion' => 'Sugerencia generada por IA.',
+                        'confidence' => 0.94,
+                    ]),
+                ],
+            ]],
+        ], 200);
+
+    $aiAction = TestAction::make('autofill_with_ai')->schemaComponent('documents-section');
+
+    // Only observations is filled by the user (auto-trigger failed); mounting autofill_with_ai must ask for overwrite confirmation
+    $component = Livewire::test(CreateTransparencyRecord::class)
+        ->fillForm([
+            'observations' => 'Nota interna escrita manualmente por la Directiva.',
+        ])
+        ->set('data.documents', [$pdf])
+        ->assertNotified('No se pudo autocompletar con IA')
+        ->mountAction($aiAction)
+        ->assertActionMounted($aiAction)
+        ->assertMountedActionModalSee('¿Sobrescribir metadatos actuales con IA?');
+
+    // Cancelling preserves user-typed observations and sends no extra HTTP request
+    $component
+        ->unmountAction()
+        ->assertFormSet([
+            'observations' => 'Nota interna escrita manualmente por la Directiva.',
+        ]);
+
+    Http::assertSentCount(1);
+
+    // Confirming executes AI analysis, overwrites observations with PII suggestion, and warns on soft-deleted folio duplicate
+    $component
+        ->mountAction($aiAction)
+        ->callMountedAction()
+        ->assertNotified('Posible folio duplicado')
+        ->assertFormSet([
+            'reference_number' => 'SIUT/TRASH/2025',
+            'observations' => 'Sugerencia generada por IA.',
+        ]);
 });
