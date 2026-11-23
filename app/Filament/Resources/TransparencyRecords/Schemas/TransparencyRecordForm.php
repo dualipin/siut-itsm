@@ -5,7 +5,11 @@ namespace App\Filament\Resources\TransparencyRecords\Schemas;
 use App\Enums\TransparencyRecordStatus;
 use App\Enums\TransparencyRecordType;
 use App\Models\TransparencyRecord;
+use App\Models\User;
+use App\Services\TransparencyDocumentAIService;
+use App\Support\TransparencyAiMetadataResult;
 use Closure;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -13,13 +17,17 @@ use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Size;
 use Filament\Support\Icons\Heroicon;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class TransparencyRecordForm
 {
@@ -28,8 +36,62 @@ class TransparencyRecordForm
         return $schema
             ->components([
                 Section::make('Documentos Adjuntos')
+                    ->key('documents-section', isInheritable: false)
                     ->description('Sube uno o más archivos digitalizados (máximo 15 MB por archivo).')
                     ->icon(Heroicon::DocumentCheck)
+                    ->headerActions([
+                        Action::make('autofill_with_ai')
+                            ->label('Autocompletar con IA')
+                            ->icon(Heroicon::Sparkles)
+                            ->color('primary')
+                            ->outlined()
+                            ->size(Size::Small)
+                            ->authorize(static fn (): bool => self::isActiveDirectiva())
+                            ->visible(static fn (Get $get, string $operation): bool => in_array($operation, ['create', 'edit'], true)
+                                && self::isActiveDirectiva()
+                                && app(TransparencyDocumentAIService::class)->isEnabled()
+                                && filled($get->array('documents')))
+                            ->action(static function (Get $get, Set $set, ?TransparencyRecord $record): void {
+                                if (! self::isActiveDirectiva()) {
+                                    return;
+                                }
+
+                                $firstDocument = self::resolveFirstDocument($get->array('documents'), $record);
+                                $aiService = app(TransparencyDocumentAIService::class);
+
+                                if ($firstDocument instanceof TemporaryUploadedFile) {
+                                    $result = $aiService->analyzeTemporaryUpload($firstDocument);
+                                } elseif ($firstDocument instanceof Media) {
+                                    $result = $aiService->analyzeMedia($firstDocument);
+                                } else {
+                                    Notification::make()
+                                        ->warning()
+                                        ->title('No se pudo leer el archivo adjunto')
+                                        ->body('Adjunta un documento válido para analizarlo con IA o captura los datos manualmente.')
+                                        ->send();
+
+                                    return;
+                                }
+
+                                if (! $result->successful) {
+                                    Notification::make()
+                                        ->warning()
+                                        ->title('No se pudo autocompletar con IA')
+                                        ->body($result->errorMessage ?? 'Puedes continuar capturando los metadatos manualmente.')
+                                        ->send();
+
+                                    return;
+                                }
+
+                                self::applyAiResultToForm($result, $get, $set);
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Metadatos propuestos con IA')
+                                    ->body('Revisa la categoría y los campos completados antes de guardar el registro.')
+                                    ->send();
+                            }),
+                    ])
                     ->schema([
                         SpatieMediaLibraryFileUpload::make('documents')
                             ->label('Archivos')
@@ -274,5 +336,59 @@ class TransparencyRecordForm
         }
 
         return filled($value) ? TransparencyRecordStatus::tryFrom((string) $value) : null;
+    }
+
+    private static function isActiveDirectiva(): bool
+    {
+        $user = auth()->user();
+
+        return $user instanceof User
+            && (bool) $user->is_active
+            && $user->isLeaderOrAdmin();
+    }
+
+    /**
+     * @param  array<mixed>  $documentsState
+     */
+    private static function resolveFirstDocument(array $documentsState, ?TransparencyRecord $record): TemporaryUploadedFile|Media|null
+    {
+        foreach ($documentsState as $item) {
+            if ($item instanceof TemporaryUploadedFile) {
+                return $item;
+            }
+
+            if (is_string($item) && $item !== '' && $record instanceof TransparencyRecord) {
+                $media = $record->getRelationValue('media')?->firstWhere('uuid', $item)
+                    ?? $record->getMedia(TransparencyRecord::DOCUMENTS_COLLECTION)->firstWhere('uuid', $item);
+
+                if ($media instanceof Media) {
+                    return $media;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static function applyAiResultToForm(TransparencyAiMetadataResult $result, Get $get, Set $set): void
+    {
+        $set('type', $result->type?->value);
+        $set('name', $result->name ?? '');
+        $set('summary', $result->summary ?? '');
+
+        if ($result->type?->usesPeriod()) {
+            $set('fiscal_year', $result->fiscalYear ?? now()->year);
+            $set('period', $result->period);
+            $set('document_date', null);
+            $set('reference_number', null);
+        } else {
+            $set('period', null);
+            $set('document_date', $result->type?->usesDocumentDate() ? $result->documentDate : null);
+            $set('reference_number', $result->type?->usesFolio() ? $result->referenceNumber : null);
+        }
+
+        if ($get->enum('status', TransparencyRecordStatus::class) === null) {
+            $set('status', TransparencyRecordStatus::Interno->value);
+        }
     }
 }
