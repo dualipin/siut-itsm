@@ -2,6 +2,7 @@
     wire:ignore
     x-data="{
         isOpen: false,
+        viewMode: 'camera',
         showDiscardConfirm: false,
         cropEditor: null,
         pages: [],
@@ -9,6 +10,18 @@
         processingCount: 0,
         isExporting: false,
         errorMessage: null,
+        cameraState: 'idle',
+        cameraFallbackMessage: null,
+        cameraStream: null,
+        cameraTrack: null,
+        torchSupported: false,
+        torchEnabled: false,
+        isCapturingFrame: false,
+
+        destroy() {
+            this.stopCameraStream();
+            this.revokeAllPageUrls();
+        },
 
         async ensureScannerLoaded() {
             if (window.transparencyScanner) {
@@ -44,6 +57,7 @@
 
         async openScanner() {
             this.errorMessage = null;
+            this.cameraFallbackMessage = null;
             this.showDiscardConfirm = false;
             this.isOpen = true;
 
@@ -52,9 +66,174 @@
                 if (!this.pdfFilename.trim()) {
                     this.pdfFilename = scanner.buildSuggestedPdfFilename(this.readWireFormMetadata());
                 }
+                await this.openCameraView();
             } catch (err) {
+                this.cameraState = 'fallback';
+                this.viewMode = 'review';
                 this.errorMessage = err.message || 'No fue posible inicializar el escáner.';
             }
+        },
+
+        async openCameraView() {
+            this.errorMessage = null;
+            this.cameraFallbackMessage = null;
+            this.viewMode = 'camera';
+            this.cameraState = 'starting';
+            this.stopCameraStream();
+
+            await this.$nextTick();
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+                const result = await scanner.startRearCameraStream();
+
+                if (!this.isOpen || this.viewMode !== 'camera') {
+                    if (result.ok) {
+                        scanner.stopMediaStream(result.stream);
+                    }
+
+                    return;
+                }
+
+                if (!result.ok) {
+                    this.cameraState = 'fallback';
+                    this.cameraFallbackMessage = result.message;
+                    this.viewMode = 'review';
+
+                    return;
+                }
+
+                this.cameraStream = result.stream;
+                this.cameraTrack = result.track;
+                this.torchSupported = Boolean(result.torchSupported);
+                this.torchEnabled = false;
+
+                result.track.addEventListener('ended', () => {
+                    if (this.isOpen && this.viewMode === 'camera') {
+                        this.stopCameraStream();
+                        this.cameraState = 'fallback';
+                        this.cameraFallbackMessage = 'La cámara se desconectó. Puedes reintentar con &quot;Agregar más fotos&quot; o usar &quot;Tomar foto&quot; / &quot;Seleccionar de galería&quot;.';
+                        this.viewMode = 'review';
+                    }
+                }, { once: true });
+
+                const video = this.$refs.cameraVideo;
+                if (video) {
+                    video.srcObject = result.stream;
+                    await video.play().catch(() => {});
+                }
+
+                this.cameraState = 'ready';
+            } catch (err) {
+                this.stopCameraStream();
+                this.cameraState = 'fallback';
+                this.cameraFallbackMessage = err.message || 'No fue posible abrir el visor continuo. Usa &quot;Tomar foto&quot; o &quot;Seleccionar de galería&quot;.';
+                this.viewMode = 'review';
+            }
+        },
+
+        stopCameraStream() {
+            const video = this.$refs?.cameraVideo ?? null;
+
+            if (window.transparencyScanner?.stopMediaStream) {
+                window.transparencyScanner.stopMediaStream(this.cameraStream, video);
+            } else {
+                if (this.cameraStream) {
+                    for (const track of this.cameraStream.getTracks()) {
+                        try {
+                            track.stop();
+                        } catch (e) {}
+                    }
+                }
+                if (video) {
+                    video.srcObject = null;
+                }
+            }
+
+            this.cameraStream = null;
+            this.cameraTrack = null;
+            this.torchSupported = false;
+            this.torchEnabled = false;
+            this.isCapturingFrame = false;
+
+            if (this.cameraState !== 'fallback') {
+                this.cameraState = 'idle';
+            }
+        },
+
+        switchToReview() {
+            this.stopCameraStream();
+            this.viewMode = 'review';
+        },
+
+        openGalleryFromCamera() {
+            this.switchToReview();
+            this.$nextTick(() => {
+                this.$refs.galleryInput?.click();
+            });
+        },
+
+        handleVisibilityChange() {
+            if (document.hidden) {
+                this.stopCameraStream();
+
+                return;
+            }
+
+            if (this.isOpen && this.viewMode === 'camera' && !this.cameraStream && this.cameraState === 'idle') {
+                this.openCameraView();
+            }
+        },
+
+        async toggleTorch() {
+            if (!this.torchSupported || !this.cameraTrack || !window.transparencyScanner) {
+                return;
+            }
+
+            this.errorMessage = null;
+            const nextState = !this.torchEnabled;
+
+            try {
+                this.torchEnabled = await window.transparencyScanner.setTrackTorch(this.cameraTrack, nextState);
+            } catch (err) {
+                this.errorMessage = 'No se pudo cambiar la linterna en este dispositivo.';
+            }
+        },
+
+        async captureCameraPage() {
+            if (this.cameraState !== 'ready' || this.isCapturingFrame || this.isExporting) {
+                return;
+            }
+
+            this.errorMessage = null;
+            this.isCapturingFrame = true;
+            this.processingCount += 1;
+
+            try {
+                const scanner = await this.ensureScannerLoaded();
+                const blob = await scanner.captureVideoFrameBlob(this.$refs.cameraVideo);
+                this.isCapturingFrame = false;
+
+                const pageNumber = this.pages.length + 1;
+                const page = await scanner.addPageFromSource(blob, {
+                    sourceName: `captura-${pageNumber}.jpg`,
+                });
+
+                if (this.isOpen) {
+                    this.pages.push(page);
+                } else {
+                    scanner.revokeScannedPageUrls(page);
+                }
+            } catch (err) {
+                this.errorMessage = err.message || 'No fue posible capturar la página desde la cámara.';
+            } finally {
+                this.isCapturingFrame = false;
+                this.processingCount = Math.max(0, this.processingCount - 1);
+            }
+        },
+
+        lastPagePreviewUrl() {
+            return this.pages.length > 0 ? this.pages[this.pages.length - 1].previewUrl : null;
         },
 
         normalizeFilenameOnBlur() {
@@ -92,8 +271,15 @@
                         continue;
                     }
 
-                    const page = await scanner.encodeImageFileToScannedPage(file);
-                    this.pages.push(page);
+                    const page = await scanner.addPageFromSource(file, {
+                        sourceName: file.name,
+                    });
+
+                    if (this.isOpen) {
+                        this.pages.push(page);
+                    } else {
+                        scanner.revokeScannedPageUrls(page);
+                    }
                 }
             } catch (err) {
                 this.errorMessage = err.message || 'No se pudieron procesar una o más imágenes.';
@@ -322,12 +508,16 @@
         },
 
         forceClose() {
+            this.stopCameraStream();
             this.revokeAllPageUrls();
             this.cropEditor = null;
             this.pages = [];
             this.pdfFilename = '';
             this.showDiscardConfirm = false;
             this.errorMessage = null;
+            this.cameraFallbackMessage = null;
+            this.viewMode = 'camera';
+            this.cameraState = 'idle';
             this.isOpen = false;
         },
 
@@ -398,6 +588,7 @@
 
             this.errorMessage = null;
             this.isExporting = true;
+            this.stopCameraStream();
 
             try {
                 const { scanner, file } = await this.buildCurrentPdf();
@@ -411,6 +602,8 @@
         }
     }"
     x-on:keydown.escape.window="if (isOpen) { if (cropEditor) { closeCropEditor(); } else if (showDiscardConfirm) { showDiscardConfirm = false; } else { requestClose(); } }"
+    x-on:pagehide.window="stopCameraStream()"
+    x-on:visibilitychange.window="handleVisibilityChange()"
     class="pt-1"
 >
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/40">
@@ -445,7 +638,175 @@
             aria-labelledby="transparency-scanner-title"
             class="fixed inset-0 z-50 flex flex-col bg-gray-950/80 backdrop-blur-xs"
         >
-            <div class="flex h-full w-full flex-col bg-white dark:bg-gray-900">
+            <!-- Shared hidden file inputs for gallery multi-select and native capture -->
+            <input
+                type="file"
+                accept="image/*"
+                multiple
+                x-ref="galleryInput"
+                x-on:change="handleFilesSelected($event)"
+                class="hidden"
+            />
+            <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                x-ref="cameraInput"
+                x-on:change="handleFilesSelected($event)"
+                class="hidden"
+            />
+
+            <!-- Continuous rear-camera viewfinder mode -->
+            <div
+                x-show="viewMode === 'camera'"
+                class="flex h-full w-full flex-col bg-gray-950 text-white"
+            >
+                <header class="flex items-center justify-between gap-3 border-b border-white/10 bg-gray-950/90 px-4 py-3 sm:px-6">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-sm font-semibold text-white">Visor de cámara</span>
+                        <span
+                            class="inline-flex items-center rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-semibold text-white"
+                            x-text="pages.length === 1 ? '1 página' : pages.length + ' páginas'"
+                        ></span>
+                        <template x-if="processingCount > 0">
+                            <span class="inline-flex items-center gap-1.5 text-xs text-primary-300">
+                                <svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"></path>
+                                </svg>
+                                <span>Procesando...</span>
+                            </span>
+                        </template>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            x-show="torchSupported"
+                            x-on:click="toggleTorch()"
+                            :aria-pressed="torchEnabled ? 'true' : 'false'"
+                            :class="torchEnabled ? 'bg-amber-400 text-gray-950 hover:bg-amber-300' : 'bg-white/10 text-white hover:bg-white/20'"
+                            class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+                        >
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
+                            </svg>
+                            <span x-text="torchEnabled ? 'Linterna activa' : 'Linterna'"></span>
+                        </button>
+
+                        <button
+                            type="button"
+                            x-on:click="requestClose()"
+                            :disabled="isExporting"
+                            aria-label="Cerrar escáner"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 disabled:opacity-50"
+                        >
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                            <span>Cerrar</span>
+                        </button>
+                    </div>
+                </header>
+
+                <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
+                    <video
+                        x-ref="cameraVideo"
+                        autoplay
+                        playsinline
+                        muted
+                        class="h-full w-full object-contain"
+                    ></video>
+
+                    <!-- Subtle document framing corner guides -->
+                    <div class="pointer-events-none absolute inset-6 sm:inset-10">
+                        <div class="absolute top-0 left-0 h-6 w-6 border-t-2 border-l-2 border-white/60"></div>
+                        <div class="absolute top-0 right-0 h-6 w-6 border-t-2 border-r-2 border-white/60"></div>
+                        <div class="absolute bottom-0 left-0 h-6 w-6 border-b-2 border-l-2 border-white/60"></div>
+                        <div class="absolute right-0 bottom-0 h-6 w-6 border-r-2 border-b-2 border-white/60"></div>
+                    </div>
+
+                    <template x-if="cameraState === 'starting'">
+                        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-950/80 text-xs text-gray-200">
+                            <svg class="h-6 w-6 animate-spin text-white" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"></path>
+                            </svg>
+                            <span>Iniciando cámara trasera...</span>
+                        </div>
+                    </template>
+
+                    <template x-if="errorMessage">
+                        <div class="absolute top-4 right-4 left-4 mx-auto max-w-lg rounded-xl border border-red-400/40 bg-red-950/90 px-3.5 py-2.5 text-xs text-red-100 shadow-lg">
+                            <span x-text="errorMessage"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <footer class="border-t border-white/10 bg-gray-950/95 px-4 py-4 sm:px-6">
+                    <div class="mx-auto flex max-w-2xl items-center justify-between gap-4">
+                        <div class="flex w-28 items-center">
+                            <template x-if="lastPagePreviewUrl()">
+                                <button
+                                    type="button"
+                                    x-on:click="switchToReview()"
+                                    aria-label="Ver última página capturada"
+                                    class="relative flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 p-1 transition hover:bg-white/20"
+                                >
+                                    <img
+                                        :src="lastPagePreviewUrl()"
+                                        alt="Última captura"
+                                        class="h-12 w-9 rounded object-cover"
+                                    />
+                                    <span
+                                        class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[11px] font-bold text-white"
+                                        x-text="pages.length"
+                                    ></span>
+                                </button>
+                            </template>
+
+                            <template x-if="!lastPagePreviewUrl()">
+                                <button
+                                    type="button"
+                                    x-on:click="openGalleryFromCamera()"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+                                >
+                                    <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                                    </svg>
+                                    <span>Galería</span>
+                                </button>
+                            </template>
+                        </div>
+
+                        <button
+                            type="button"
+                            x-on:click="captureCameraPage()"
+                            :disabled="cameraState !== 'ready' || isCapturingFrame || isExporting"
+                            aria-label="Capturar página"
+                            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4 border-white bg-white/20 p-1.5 transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <span class="h-full w-full rounded-full bg-white"></span>
+                        </button>
+
+                        <div class="flex w-28 justify-end">
+                            <button
+                                type="button"
+                                x-on:click="switchToReview()"
+                                :disabled="isExporting"
+                                class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:opacity-50"
+                                x-text="'Revisar (' + pages.length + ')'"
+                            ></button>
+                        </div>
+                    </div>
+                </footer>
+            </div>
+
+            <!-- Batch review & export mode -->
+            <div
+                x-show="viewMode === 'review'"
+                class="flex h-full w-full flex-col bg-white dark:bg-gray-900"
+            >
                 <!-- Modal header -->
                 <header class="flex items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
                     <div class="flex items-center gap-3">
@@ -481,28 +842,24 @@
                 <!-- Capture / Import toolbar -->
                 <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:px-6 dark:border-gray-800 dark:bg-gray-950/40">
                     <div class="flex flex-wrap items-center gap-2.5">
-                        <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            x-ref="galleryInput"
-                            x-on:change="handleFilesSelected($event)"
-                            class="hidden"
-                        />
-                        <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            x-ref="cameraInput"
-                            x-on:change="handleFilesSelected($event)"
-                            class="hidden"
-                        />
+                        <button
+                            type="button"
+                            x-on:click="openCameraView()"
+                            :disabled="isExporting"
+                            class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:opacity-50"
+                        >
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+                            </svg>
+                            <span>Agregar más fotos</span>
+                        </button>
 
                         <button
                             type="button"
                             x-on:click="$refs.cameraInput.click()"
                             :disabled="isExporting"
-                            class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-500 disabled:opacity-50"
+                            class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 shadow-xs transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                         >
                             <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
@@ -537,6 +894,15 @@
 
                 <!-- Main page tray -->
                 <main class="flex-1 overflow-y-auto p-4 sm:p-6">
+                    <template x-if="cameraFallbackMessage">
+                        <div class="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                            <svg class="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                            </svg>
+                            <span x-text="cameraFallbackMessage"></span>
+                        </div>
+                    </template>
+
                     <template x-if="errorMessage">
                         <div class="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
                             <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
@@ -566,7 +932,7 @@
                                 Aún no hay páginas en el lote
                             </p>
                             <p class="mt-1 max-w-md text-xs text-gray-500 dark:text-gray-400">
-                                Usa "Tomar foto" para capturar hojas con la cámara del dispositivo o "Seleccionar de galería" para importar varias imágenes a la vez.
+                                Usa "Agregar más fotos" para volver al visor continuo, "Tomar foto" con la cámara nativa o "Seleccionar de galería" para importar varias imágenes a la vez.
                             </p>
                         </div>
                     </template>

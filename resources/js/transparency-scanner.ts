@@ -23,12 +23,19 @@ import {
     DEFAULT_MAX_LONG_SIDE,
     warpPerspective,
 } from './scanner/perspective.ts';
+import {
+    assessCameraEnvironment,
+    buildRearCameraConstraints,
+    buildTorchConstraints,
+    mapCameraErrorToSpanish,
+    supportsTrackTorch,
+} from './scanner/camera.ts';
 
 export interface ScannedPageItem extends PdfJpegPage {
     id: string;
     previewUrl: string;
     sourceName: string;
-    originalFile: File;
+    originalSource: Blob;
     originalPreviewUrl: string;
     originalWidth: number;
     originalHeight: number;
@@ -41,7 +48,24 @@ export interface EncodeImageOptions {
     quality?: number;
 }
 
+export interface AddPageFromSourceOptions extends EncodeImageOptions {
+    sourceName?: string;
+}
+
+export type StartRearCameraResult =
+    | {
+          ok: true;
+          stream: MediaStream;
+          track: MediaStreamTrack;
+          torchSupported: boolean;
+      }
+    | {
+          ok: false;
+          message: string;
+      };
+
 const DEFAULT_JPEG_QUALITY = 0.78;
+const CAPTURE_FRAME_JPEG_QUALITY = 0.92;
 const MAX_WORKING_LONG_SIDE = 2400;
 const DETECTION_LONG_SIDE = 160;
 
@@ -52,9 +76,9 @@ interface DecodedImageSource {
     cleanup: () => void;
 }
 
-async function loadImageSource(file: File): Promise<DecodedImageSource> {
+async function loadImageSource(source: Blob, sourceName: string): Promise<DecodedImageSource> {
     if (typeof createImageBitmap === 'function') {
-        const bitmap = await createImageBitmap(file);
+        const bitmap = await createImageBitmap(source);
 
         return {
             width: bitmap.width,
@@ -64,13 +88,13 @@ async function loadImageSource(file: File): Promise<DecodedImageSource> {
         };
     }
 
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(source);
 
     try {
         const image = await new Promise<HTMLImageElement>((resolve, reject) => {
             const img = new Image();
             img.onload = () => resolve(img);
-            img.onerror = () => reject(new Error(`No se pudo cargar la imagen "${file.name}".`));
+            img.onerror = () => reject(new Error(`No se pudo cargar la imagen "${sourceName}".`));
             img.src = objectUrl;
         });
 
@@ -226,18 +250,19 @@ async function renderQuadFromSource(
     }
 }
 
-export async function encodeImageFileToScannedPage(
-    file: File,
-    options: EncodeImageOptions = {},
+export async function addPageFromSource(
+    source: Blob | File,
+    options: AddPageFromSourceOptions = {},
 ): Promise<ScannedPageItem> {
     const maxLongSide = options.maxLongSide ?? DEFAULT_MAX_LONG_SIDE;
     const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
-    const source = await loadImageSource(file);
-    const originalPreviewUrl = URL.createObjectURL(file);
+    const sourceName = options.sourceName || (source instanceof File ? source.name : '') || 'pagina.jpg';
+    const loaded = await loadImageSource(source, sourceName);
+    const originalPreviewUrl = URL.createObjectURL(source);
 
     try {
-        const detection = detectQuadFromSource(source);
-        const rendered = await renderQuadFromSource(source, detection.quad, maxLongSide, quality);
+        const detection = detectQuadFromSource(loaded);
+        const rendered = await renderQuadFromSource(loaded, detection.quad, maxLongSide, quality);
 
         return {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -245,11 +270,11 @@ export async function encodeImageFileToScannedPage(
             width: rendered.width,
             height: rendered.height,
             previewUrl: rendered.previewUrl,
-            sourceName: file.name || 'pagina.jpg',
-            originalFile: file,
+            sourceName,
+            originalSource: source,
             originalPreviewUrl,
-            originalWidth: source.width,
-            originalHeight: source.height,
+            originalWidth: loaded.width,
+            originalHeight: loaded.height,
             quad: detection.quad,
             autoDetected: detection.detected,
         };
@@ -257,8 +282,18 @@ export async function encodeImageFileToScannedPage(
         URL.revokeObjectURL(originalPreviewUrl);
         throw error;
     } finally {
-        source.cleanup();
+        loaded.cleanup();
     }
+}
+
+export async function encodeImageFileToScannedPage(
+    file: File,
+    options: EncodeImageOptions = {},
+): Promise<ScannedPageItem> {
+    return addPageFromSource(file, {
+        ...options,
+        sourceName: file.name || 'pagina.jpg',
+    });
 }
 
 export async function reprocessScannedPage(
@@ -272,11 +307,11 @@ export async function reprocessScannedPage(
 
     const maxLongSide = options.maxLongSide ?? DEFAULT_MAX_LONG_SIDE;
     const quality = options.quality ?? DEFAULT_JPEG_QUALITY;
-    const source = await loadImageSource(page.originalFile);
+    const loaded = await loadImageSource(page.originalSource, page.sourceName);
 
     try {
         const nextQuad = cloneQuad(quad);
-        const rendered = await renderQuadFromSource(source, nextQuad, maxLongSide, quality);
+        const rendered = await renderQuadFromSource(loaded, nextQuad, maxLongSide, quality);
         const previousPreviewUrl = page.previewUrl;
 
         if (previousPreviewUrl) {
@@ -292,7 +327,7 @@ export async function reprocessScannedPage(
             quad: nextQuad,
         };
     } finally {
-        source.cleanup();
+        loaded.cleanup();
     }
 }
 
@@ -307,6 +342,117 @@ export function revokeScannedPageUrls(page: Partial<ScannedPageItem> | null | un
 
     if (page.originalPreviewUrl) {
         URL.revokeObjectURL(page.originalPreviewUrl);
+    }
+}
+
+export function stopMediaStream(
+    stream: MediaStream | null | undefined,
+    videoElement?: HTMLVideoElement | null,
+): void {
+    if (stream) {
+        for (const track of stream.getTracks()) {
+            try {
+                track.stop();
+            } catch {
+                // Ignore tracks already stopped by the browser.
+            }
+        }
+    }
+
+    if (videoElement) {
+        try {
+            videoElement.pause();
+        } catch {
+            // Ignore pause errors on detached video elements.
+        }
+        videoElement.srcObject = null;
+    }
+}
+
+export async function startRearCameraStream(): Promise<StartRearCameraResult> {
+    const hasMediaDevices = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices);
+    const hasGetUserMedia = hasMediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
+    const isSecure = typeof window !== 'undefined' && Boolean(window.isSecureContext);
+
+    const environment = assessCameraEnvironment({
+        isSecureContext: isSecure,
+        hasMediaDevices,
+        hasGetUserMedia,
+    });
+
+    if (!environment.supported) {
+        return {
+            ok: false,
+            message: environment.message ?? 'El visor continuo de cámara no está disponible.',
+        };
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia(buildRearCameraConstraints());
+        const [track] = stream.getVideoTracks();
+
+        if (!track) {
+            stopMediaStream(stream);
+
+            return {
+                ok: false,
+                message: mapCameraErrorToSpanish({ name: 'NotFoundError' }).message,
+            };
+        }
+
+        const capabilities = typeof track.getCapabilities === 'function'
+            ? (track.getCapabilities() as { torch?: unknown })
+            : null;
+
+        return {
+            ok: true,
+            stream,
+            track,
+            torchSupported: supportsTrackTorch(capabilities),
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            message: mapCameraErrorToSpanish(error).message,
+        };
+    }
+}
+
+export async function setTrackTorch(
+    track: MediaStreamTrack | null | undefined,
+    enabled: boolean,
+): Promise<boolean> {
+    if (!track || typeof track.applyConstraints !== 'function') {
+        throw new Error('La linterna no es compatible con este dispositivo.');
+    }
+
+    await track.applyConstraints(buildTorchConstraints(enabled) as unknown as MediaTrackConstraints);
+
+    return enabled;
+}
+
+export async function captureVideoFrameBlob(videoElement: HTMLVideoElement | null | undefined): Promise<Blob> {
+    if (!videoElement || videoElement.videoWidth <= 0 || videoElement.videoHeight <= 0) {
+        throw new Error('La cámara aún está enfocando. Intenta capturar nuevamente.');
+    }
+
+    const canvas = document.createElement('canvas');
+
+    try {
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('No fue posible capturar el cuadro de la cámara.');
+        }
+
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+        return await canvasToJpegBlob(canvas, CAPTURE_FRAME_JPEG_QUALITY);
+    } finally {
+        canvas.width = 0;
+        canvas.height = 0;
     }
 }
 
@@ -379,9 +525,14 @@ if (typeof window !== 'undefined') {
         isValidConvexQuad,
         detectDocumentQuad,
         warpPerspective,
+        addPageFromSource,
         encodeImageFileToScannedPage,
         reprocessScannedPage,
         revokeScannedPageUrls,
+        startRearCameraStream,
+        setTrackTorch,
+        stopMediaStream,
+        captureVideoFrameBlob,
         buildScannedPdfFile,
         injectPdfIntoTransparencyUpload,
         triggerLocalPdfDownload,
