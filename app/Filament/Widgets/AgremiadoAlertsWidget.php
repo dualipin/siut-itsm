@@ -146,7 +146,7 @@ class AgremiadoAlertsWidget extends Widget
                 'heading' => $invalidCount === 1
                     ? 'Tienes 1 documento rechazado en tu expediente'
                     : "Tienes {$invalidCount} documentos rechazados en tu expediente",
-                'description' => 'Revisa las observaciones y vuelve a subir el archivo correspondiente en Mi Perfil.',
+                'description' => 'Revisa el motivo del rechazo en Mi Perfil y vuelve a subir el archivo.',
                 'actionLabel' => 'Corregir en Mi Perfil',
                 'actionUrl' => $profileUrl,
                 'newTab' => false,
@@ -161,8 +161,8 @@ class AgremiadoAlertsWidget extends Widget
                 'heading' => $missingCount === 1
                     ? 'Te falta 1 documento obligatorio por subir'
                     : "Te faltan {$missingCount} documentos obligatorios por subir",
-                'description' => 'Completa tu expediente digital de afiliación en Mi Perfil para mantener tus trámites al día.',
-                'actionLabel' => 'Ir a Mi Perfil',
+                'description' => 'Sube los documentos faltantes en Mi Perfil para validar tu expediente.',
+                'actionLabel' => 'Subir documentos',
                 'actionUrl' => $profileUrl,
                 'newTab' => false,
             ];
@@ -191,7 +191,7 @@ class AgremiadoAlertsWidget extends Widget
                 'icon' => Heroicon::OutlinedInformationCircle,
                 'heading' => "Cierre de año — Recepción anticipada para el ejercicio fiscal {$targetFiscalYear}",
                 'description' => sprintf(
-                    'El ejercicio %d se encuentra cerrado. Las nuevas solicitudes se registrarán para el ejercicio fiscal %d.',
+                    'El ejercicio %d está cerrado. Las nuevas solicitudes de préstamo se registrarán para el ejercicio fiscal %d.',
                     now()->year,
                     $targetFiscalYear,
                 ),
@@ -211,8 +211,8 @@ class AgremiadoAlertsWidget extends Widget
                 'key' => 'loan-draft',
                 'color' => 'warning',
                 'icon' => Heroicon::OutlinedDocumentText,
-                'heading' => "Tienes un préstamo en borrador sin enviar ({$draftLoan->folio})",
-                'description' => 'Retoma tu solicitud pendiente para completarla, firmarla y enviarla a revisión.',
+                'heading' => "Tienes una solicitud de préstamo en borrador sin enviar ({$draftLoan->folio})",
+                'description' => 'Complétala, fírmala y envíala a revisión.',
                 'actionLabel' => 'Continuar préstamo',
                 'actionUrl' => LoanResource::getUrl('view', ['record' => $draftLoan]),
                 'newTab' => false,
@@ -245,7 +245,7 @@ class AgremiadoAlertsWidget extends Widget
                         'color' => 'info',
                         'icon' => Heroicon::OutlinedMegaphone,
                         'heading' => "Convocatoria abierta: Pliego Anual {$pendingPetition->year}",
-                        'description' => "Puedes registrar tus propuestas hasta el {$pendingPetition->deadline->format('d/m/Y')}.",
+                        'description' => "Registra tus propuestas antes del {$pendingPetition->deadline->format('d/m/Y')}. Se abre en una nueva pestaña.",
                         'actionLabel' => 'Participar en Pliego Anual',
                         'actionUrl' => route('petitions.index', ['annualPetition' => $pendingPetition]),
                         'newTab' => true,

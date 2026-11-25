@@ -2,30 +2,38 @@
 
 @if (! $post)
     <p class="text-sm text-gray-500">
-        Este comunicado ya no se encuentra vigente o no está disponible.
+        Este comunicado ya no está disponible o su vigencia ha finalizado.
     </p>
 @else
     @php
         $attachments = $post->getMedia('attachments');
+        $rawContent = trim((string) ($post->content ?? ''));
+        $hasHtmlMarkup = (bool) preg_match('/<[a-z][\s\S]*>/i', $rawContent);
+        $renderedContent = $hasHtmlMarkup
+            ? Str::sanitizeHtml($rawContent)
+            : collect(preg_split("/\r\n\r\n|\n\n|\r\r/", $rawContent) ?: [])
+                ->filter(fn (string $paragraph): bool => trim($paragraph) !== '')
+                ->map(fn (string $paragraph): string => '<p>' . nl2br(e(trim($paragraph))) . '</p>')
+                ->implode('');
     @endphp
 
     <div class="space-y-5">
-        <div class="prose prose-sm max-w-none leading-relaxed text-gray-700">
-            {!! Str::sanitizeHtml((string) ($post->content ?? '')) !!}
+        <div class="fi-prose max-w-none text-sm leading-relaxed">
+            {!! $renderedContent !!}
         </div>
 
         @if ($attachments->isNotEmpty())
-            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-700">
+            <div class="border-t border-gray-200 pt-4">
+                <div class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
                     <x-filament::icon icon="heroicon-m-paper-clip" class="h-4 w-4 text-primary-600" />
                     <span>Archivos adjuntos ({{ $attachments->count() }})</span>
                 </div>
 
-                <ul class="space-y-2">
+                <ul class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-gray-50/50">
                     @foreach ($attachments as $attachment)
-                        <li class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                        <li class="flex items-center justify-between gap-3 px-3.5 py-2.5">
                             <div class="min-w-0">
-                                <p class="truncate text-sm font-medium text-gray-900">
+                                <p class="truncate text-sm font-medium text-gray-950">
                                     {{ $attachment->file_name }}
                                 </p>
                                 <p class="text-xs text-gray-500">
@@ -33,15 +41,17 @@
                                 </p>
                             </div>
 
-                            <a
-                                href="{{ route('publications.attachment.download', ['media' => $attachment]) }}"
+                            <x-filament::button
+                                tag="a"
+                                :href="route('publications.attachment.download', ['media' => $attachment])"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-primary-500"
+                                color="primary"
+                                size="xs"
+                                icon="heroicon-m-arrow-down-tray"
                             >
-                                <x-filament::icon icon="heroicon-m-arrow-down-tray" class="h-3.5 w-3.5" />
-                                <span>Descargar</span>
-                            </a>
+                                Descargar
+                            </x-filament::button>
                         </li>
                     @endforeach
                 </ul>

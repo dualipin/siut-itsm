@@ -49,7 +49,7 @@ class AgremiadoAnnouncementsWidget extends Widget implements HasActions, HasSche
                     return null;
                 }
 
-                return ($post->type?->getLabel() ?? 'Comunicado').' · '.$post->created_at->translatedFormat('d \d\e F, Y');
+                return ($post->type?->getLabel() ?? 'Comunicado').' · Publicado el '.$post->created_at->translatedFormat('d \d\e F \d\e Y');
             })
             ->modalContent(fn (array $arguments): View => view('filament.widgets.partials.announcement-modal', [
                 'post' => $this->resolveAnnouncement($arguments['post'] ?? null),

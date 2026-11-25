@@ -61,11 +61,17 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
         $validDocumentsCount = collect($documentTypes)
             ->filter(fn (UserDocumentType $type): bool => $user->getDocumentStatus($type) === DocumentStatus::Valid)
             ->count();
+        $hasMissingDocuments = collect($documentTypes)
+            ->contains(fn (UserDocumentType $type): bool => $user->getDocumentStatus($type) === 'sin_subir');
         $overallStatus = $user->getOverallDocumentStatus();
+
+        $description = ($overallStatus === DocumentStatus::Pending && $hasMissingDocuments)
+            ? 'Pendiente de subir'
+            : $overallStatus->getLabel();
 
         return Stat::make('Expediente documental', "{$validDocumentsCount}/".count($documentTypes))
             ->icon(Heroicon::OutlinedDocumentCheck)
-            ->description($overallStatus->getLabel())
+            ->description($description)
             ->descriptionIcon($overallStatus->getIcon())
             ->descriptionColor($overallStatus->getColor())
             ->url(Profile::getUrl());
@@ -78,8 +84,9 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
         if (! $activeLoan) {
             return Stat::make('Préstamo activo', 'Sin préstamo activo')
                 ->icon(Heroicon::OutlinedBanknotes)
-                ->description('Consulta o solicita un préstamo')
+                ->description('Ver historial o solicitar')
                 ->descriptionColor('gray')
+                ->extraAttributes(['class' => 'agremiado-stat-text-value'])
                 ->url(LoanResource::getUrl('index'));
         }
 
@@ -102,6 +109,7 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
             ->icon(Heroicon::OutlinedBanknotes)
             ->description($description)
             ->descriptionColor($activeLoan->status->getColor())
+            ->extraAttributes(['class' => 'agremiado-stat-text-value'])
             ->url(LoanResource::getUrl('view', ['record' => $activeLoan]));
     }
 
@@ -111,9 +119,15 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
             ->whereIn('status', [RequestStatus::Pending, RequestStatus::UnderReview])
             ->count();
 
+        $description = match ($inProgressCount) {
+            0 => 'Sin solicitudes pendientes',
+            1 => 'Pendiente o en revisión',
+            default => 'Pendientes o en revisión',
+        };
+
         return Stat::make('Solicitudes en curso', (string) $inProgressCount)
             ->icon(Heroicon::OutlinedClipboardDocumentList)
-            ->description($inProgressCount === 0 ? 'Sin solicitudes pendientes' : 'Pendientes o en revisión')
+            ->description($description)
             ->descriptionColor($inProgressCount > 0 ? 'warning' : 'gray')
             ->url(UserRequestResource::getUrl('index'));
     }
@@ -132,7 +146,7 @@ class AgremiadoStatsWidget extends StatsOverviewWidget
 
         return Stat::make('Mensajes sin leer', (string) $unreadCount)
             ->icon(Heroicon::OutlinedChatBubbleLeftRight)
-            ->description($unreadCount === 0 ? 'Bandeja al día' : 'Por leer en tus conversaciones')
+            ->description($unreadCount === 0 ? 'Bandeja al día' : 'Abrir mensajería')
             ->descriptionColor($unreadCount > 0 ? 'info' : 'gray')
             ->url(Messages::getUrl());
     }

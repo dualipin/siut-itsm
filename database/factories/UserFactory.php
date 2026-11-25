@@ -14,24 +14,21 @@ use Illuminate\Support\Str;
 class UserFactory extends Factory
 {
     /**
-     * The current password being used by the factory.
-     */
-    protected static ?string $password;
-
-    /**
      * Define the model's default state.
      *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
+        $curp = strtoupper(fake()->unique()->bothify('????######??????##'));
+
         return [
             'name' => fake()->firstName(),
             'surnames' => fake()->lastName().' '.fake()->lastName(),
             'email' => fake()->unique()->safeEmail(),
             'role' => UserRole::Agremiado,
             'is_active' => true,
-            'curp' => strtoupper(fake()->unique()->bothify('????######??????##')),
+            'curp' => $curp,
             'birth_date' => fake()->dateTimeBetween('-60 years', '-18 years')->format('Y-m-d'),
             'phone' => fake()->numerify('##########'),
             'address' => fake()->address(),
@@ -41,7 +38,7 @@ class UserFactory extends Factory
             'salary' => fake()->randomFloat(2, 5000, 50000),
             'hiring_date' => fake()->dateTimeBetween('-10 years', 'now')->format('Y-m-d'),
             'email_verified_at' => now(),
-            'password' => static::$password ??= Hash::make('admin123'), // password
+            'password' => fn (array $attributes): string => Hash::make((string) ($attributes['curp'] ?? $curp)),
             'remember_token' => Str::random(10),
         ];
     }

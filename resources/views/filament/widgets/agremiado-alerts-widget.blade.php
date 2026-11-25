@@ -15,6 +15,7 @@
                                 tag="a"
                                 :href="$alert['actionUrl']"
                                 :target="$alert['newTab'] ? '_blank' : null"
+                                :rel="$alert['newTab'] ? 'noopener noreferrer' : null"
                                 :color="$alert['color']"
                                 size="sm"
                             >

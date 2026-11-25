@@ -2,8 +2,6 @@
 
 use App\Enums\LoanOperationalState;
 use App\Enums\LoanStatus;
-use App\Filament\Pages\Messages;
-use App\Filament\Pages\Profile;
 use App\Filament\Resources\Loans\LoanResource;
 use App\Filament\Resources\UserRequests\UserRequestResource;
 use App\Filament\Widgets\AgremiadoWelcomeWidget;
@@ -23,7 +21,7 @@ test('guests cannot view role-restricted dashboard widgets', function (): void {
     expect(DirectivaAccountWidget::canView())->toBeFalse();
 });
 
-test('agremiado sees welcome header and four quick links without account or qr widgets', function (): void {
+test('agremiado sees distilled welcome bar with primary ctas without account or qr widgets', function (): void {
     $agremiado = User::factory()->agremiado()->active()->create([
         'name' => 'Sofía',
     ]);
@@ -36,10 +34,6 @@ test('agremiado sees welcome header and four quick links without account or qr w
     $response->assertSee(LoanResource::getUrl('apply'));
     $response->assertSee('Nueva solicitud');
     $response->assertSee(UserRequestResource::getUrl('create'));
-    $response->assertSee('Mensajería');
-    $response->assertSee(Messages::getUrl());
-    $response->assertSee('Mi Perfil');
-    $response->assertSee(Profile::getUrl());
     $response->assertDontSee('fi-account-widget');
     $response->assertDontSee('data-vue="portal/qr-generator"', escape: false);
 
@@ -48,7 +42,11 @@ test('agremiado sees welcome header and four quick links without account or qr w
 
     Livewire::test(AgremiadoWelcomeWidget::class)
         ->assertSuccessful()
-        ->assertSee($agremiado->name);
+        ->assertSee($agremiado->name)
+        ->assertSee('Solicitar préstamo')
+        ->assertSee('Nueva solicitud')
+        ->assertDontSee('Mensajería')
+        ->assertDontSee('Mi Perfil');
 });
 
 test('agremiado with draft loan sees continuar borrador linking directly to the draft view', function (): void {

@@ -54,3 +54,31 @@
 .custom-auth-form-panel {
     @apply py-8! lg:px-12! xl:px-16!;
 }
+
+.fi-main {
+    @apply selection:bg-primary-500/15 selection:text-primary-950;
+}
+
+.fi-wi-stats-overview-stat-value {
+    font-variant-numeric: tabular-nums;
+}
+
+.fi-wi-stats-overview-stat.agremiado-stat-text-value .fi-wi-stats-overview-stat-value {
+    @apply text-lg! leading-9!;
+}
+
+[data-testid="agremiado-alerts-widget"] .fi-callout {
+    @apply flex-wrap items-start sm:flex-nowrap sm:items-center;
+
+    & .fi-callout-main {
+        @apply min-w-[calc(100%-2.5rem)] sm:min-w-0;
+    }
+
+    & .fi-callout-controls {
+        @apply w-full pl-9 sm:w-auto sm:self-center sm:pl-0;
+    }
+
+    & .fi-callout-controls .fi-btn {
+        @apply min-h-10 w-full justify-center sm:min-h-0 sm:w-auto;
+    }
+}

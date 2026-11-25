@@ -257,3 +257,22 @@ test('quick read modal does not expose expired or non announcement posts', funct
         ->assertMountedActionModalSee('Comunicado no disponible')
         ->assertMountedActionModalDontSee('Contenido de contrato que no pertenece al widget.');
 });
+
+test('quick read modal preserves paragraph breaks for plain text posts', function () {
+    $agremiado = User::factory()->agremiado()->active()->create();
+    $author = User::factory()->admin()->active()->create();
+
+    $plainTextPost = Post::factory()->create([
+        'author_id' => $author->id,
+        'type' => PostType::Aviso,
+        'title' => 'Aviso Texto Plano',
+        'content' => "Primer párrafo informativo.\n\nSegundo párrafo de seguimiento.",
+        'expires_at' => now()->addDays(5),
+    ]);
+
+    $this->actingAs($agremiado);
+
+    Livewire::test(AgremiadoAnnouncementsWidget::class)
+        ->mountAction('readAnnouncement', ['post' => $plainTextPost->id])
+        ->assertMountedActionModalSeeHtml('<p>Primer párrafo informativo.</p><p>Segundo párrafo de seguimiento.</p>');
+});

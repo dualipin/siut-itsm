@@ -4,6 +4,7 @@ use App\Enums\UserRole;
 use App\Models\User;
 use Filament\Models\Contracts\HasAvatar;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 
 test('user role enum has expected cases and values', function () {
@@ -102,4 +103,15 @@ test('user implements HasAvatar and resolves filament avatar url correctly', fun
         'photo_path' => 'https://example.com/avatar.jpg',
     ]);
     expect($userWithUrl->getFilamentAvatarUrl())->toBe('https://example.com/avatar.jpg');
+});
+
+test('user factory sets each generated user password to their own curp', function () {
+    $first = User::factory()->create();
+    $second = User::factory()->create();
+    $custom = User::factory()->create(['curp' => 'MELC950515HDFRRN09']);
+
+    expect(Hash::check($first->curp, $first->password))->toBeTrue();
+    expect(Hash::check($second->curp, $second->password))->toBeTrue();
+    expect(Hash::check($first->curp, $second->password))->toBeFalse();
+    expect(Hash::check('MELC950515HDFRRN09', $custom->password))->toBeTrue();
 });

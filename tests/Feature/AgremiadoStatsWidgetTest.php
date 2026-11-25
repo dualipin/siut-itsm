@@ -78,11 +78,11 @@ test('document stat displays valid count out of 5 and overall document status', 
     $agremiado = User::factory()->create(['is_active' => true]);
     $this->actingAs($agremiado);
 
-    // 0 of 5 uploaded => Pending
+    // 0 of 5 uploaded => Pending upload
     Livewire::test(AgremiadoStatsWidget::class)
         ->assertSuccessful()
         ->assertSee('0/5')
-        ->assertSee('Pendiente')
+        ->assertSee('Pendiente de subir')
         ->assertSee(Profile::getUrl(), escape: false);
 
     // 3 valid + 1 invalid + 1 missing => Invalid
@@ -103,11 +103,20 @@ test('document stat displays valid count out of 5 and overall document status', 
         ->assertSee('3/5')
         ->assertSee('Inválido');
 
-    // All 5 valid => Valid
-    $agremiado->fresh()->getDocumentMedia($types[3])?->setCustomProperty('status', DocumentStatus::Valid->value)->save();
+    // All 5 uploaded (4 valid + 1 pending) => Pending review
+    $agremiado->fresh()->getDocumentMedia($types[3])?->setCustomProperty('status', DocumentStatus::Pending->value)->save();
     $agremiado->addMedia(UploadedFile::fake()->create("{$types[4]->value}.pdf", 100, 'application/pdf'))
         ->withCustomProperties(['status' => DocumentStatus::Valid->value])
         ->toMediaCollection($types[4]->value);
+
+    $this->actingAs($agremiado->fresh());
+
+    Livewire::test(AgremiadoStatsWidget::class)
+        ->assertSee('4/5')
+        ->assertSee('Pendiente de Revisión');
+
+    // All 5 valid => Valid
+    $agremiado->fresh()->getDocumentMedia($types[3])?->setCustomProperty('status', DocumentStatus::Valid->value)->save();
 
     $this->actingAs($agremiado->fresh());
 
